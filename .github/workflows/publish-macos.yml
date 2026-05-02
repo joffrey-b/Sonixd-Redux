@@ -1,0 +1,33 @@
+name: Publish (macOS)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v4
+
+      - name: Install Node, NPM and Yarn
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          yarn install
+
+      - name: Publish releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          yarn postinstall && yarn build && yarn electron-builder --publish always --mac

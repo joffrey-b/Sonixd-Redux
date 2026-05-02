@@ -1,0 +1,397 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { ipcRenderer, shell } from 'electron';
+import { Form, Whisper } from 'rsuite';
+import { WhisperInstance } from 'rsuite/lib/Whisper';
+import { Trans, useTranslation } from 'react-i18next';
+import { ConfigOptionDescription, ConfigOptionName, ConfigPanel } from '../styled';
+import {
+  StyledButton,
+  StyledInput,
+  StyledInputGroup,
+  StyledInputNumber,
+  StyledLink,
+  StyledPanel,
+  StyledToggle,
+} from '../../shared/styled';
+import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
+import i18n from '../../../i18n/i18n';
+import { setPlaybackSetting } from '../../../redux/playQueueSlice';
+import ListViewTable from '../../viewtypes/ListViewTable';
+import { appendPlaybackFilter } from '../../../redux/configSlice';
+import ConfigOption from '../ConfigOption';
+import { Server } from '../../../types';
+import { isWindows, isWindows10 } from '../../../shared/utils';
+import Popup from '../../shared/Popup';
+import { settings } from '../../shared/setDefaultSettings';
+
+const playbackFilterColumns = [
+  {
+    id: '#',
+    dataKey: 'index',
+    alignment: 'center',
+    resizable: false,
+    width: 50,
+    label: '#',
+  },
+  {
+    id: 'Filter',
+    dataKey: 'filter',
+    alignment: 'left',
+    resizable: false,
+    flexGrow: 2,
+    label: i18n.t('Filter'),
+  },
+  {
+    id: 'Enabled',
+    dataKey: 'filterEnabled',
+    alignment: 'left',
+    resizable: false,
+    width: 100,
+    label: i18n.t('Enabled'),
+  },
+  {
+    id: 'Delete',
+    dataKey: 'filterDelete',
+    alignment: 'left',
+    resizable: false,
+    width: 100,
+    label: i18n.t('Delete'),
+  },
+];
+
+const PlayerConfig = ({ bordered }: any) => {
+  const { t } = useTranslation();
+  const dispatch = useAppDispatch();
+  const playQueue = useAppSelector((state) => state.playQueue);
+  const multiSelect = useAppSelector((state) => state.multiSelect);
+  const config = useAppSelector((state) => state.config);
+  const [newFilter, setNewFilter] = useState({ string: '', valid: false });
+  const [transcode, setTranscode] = useState(Boolean(settings.get('transcode')));
+  const [globalMediaHotkeys, setGlobalMediaHotkeys] = useState(
+    Boolean(settings.get('globalMediaHotkeys'))
+  );
+  const [systemMediaTransportControls, setSystemMediaTransportControls] = useState(
+    Boolean(settings.get('systemMediaTransportControls'))
+  );
+  const [resume, setResume] = useState(Boolean(settings.get('resume')));
+  const [scrobble, setScrobble] = useState(Boolean(settings.get('scrobble')));
+  const transcodingRestartWhisper = useRef<WhisperInstance>();
+
+  useEffect(() => {
+    settings.set('playbackFilters', config.playback.filters);
+  }, [config.playback.filters]);
+
+  return (
+    <ConfigPanel bordered={bordered} header={t('Player')}>
+      <ConfigOption
+        name={t('Seek Forward')}
+        description={t(
+          'The number in seconds the player will skip forwards when clicking the seek forward button.'
+        )}
+        option={
+          <StyledInputNumber
+            defaultValue={String(settings.get('seekForwardInterval')) || '0'}
+            step={0.5}
+            min={0}
+            max={100}
+            width={125}
+            onChange={(e: any) => {
+              settings.set('seekForwardInterval', Number(e));
+            }}
+          />
+        }
+      />
+      <ConfigOption
+        name={t('Seek Backward')}
+        description={t(
+          'The number in seconds the player will skip backwards when clicking the seek backward button.'
+        )}
+        option={
+          <StyledInputNumber
+            defaultValue={String(settings.get('seekBackwardInterval')) || '0'}
+            step={0.5}
+            min={0}
+            max={100}
+            width={125}
+            onChange={(e: any) => {
+              settings.set('seekBackwardInterval', Number(e));
+            }}
+          />
+        }
+      />
+      <ConfigOption
+        name={t('Direct Previous Track')}
+        description={t(
+          'When enabled, the previous button always goes to the previous song. When disabled, it restarts the current song if you are more than 5 seconds in.'
+        )}
+        option={
+          <StyledToggle
+            size="md"
+            defaultChecked={Boolean(settings.get('directPreviousTrack'))}
+            checked={Boolean(settings.get('directPreviousTrack'))}
+            onChange={(e: boolean) => {
+              settings.set('directPreviousTrack', e);
+              dispatch(setPlaybackSetting({ setting: 'directPreviousTrack', value: e }));
+            }}
+          />
+        }
+      />
+      <ConfigOption
+        name={t('Preserve Play Next Order')}
+        description={t(
+          'When enabled, songs added via "Play Next" are queued in the order they were added. When disabled, each "Play Next" inserts at the top of the queue.'
+        )}
+        option={
+          <StyledToggle
+            size="md"
+            defaultChecked={Boolean(settings.get('preservePlayNextOrder'))}
+            checked={Boolean(settings.get('preservePlayNextOrder'))}
+            onChange={(e: boolean) => {
+              settings.set('preservePlayNextOrder', e);
+              dispatch(setPlaybackSetting({ setting: 'preservePlayNextOrder', value: e }));
+            }}
+          />
+        }
+      />
+      <ConfigOption
+        name={t('Persist queue across sessions')}
+        description={t(
+          'Saves your entire play queue and restores it on next launch, including your position in the queue.'
+        )}
+        option={
+          <StyledToggle
+            defaultChecked={resume}
+            checked={resume}
+            onChange={(e: boolean) => {
+              settings.set('resume', e);
+              setResume(e);
+            }}
+          />
+        }
+      />
+      {config.serverType === Server.Jellyfin && (
+        <ConfigOption
+          name={t('Allow Transcoding')}
+          description={t(
+            'If your audio files are not playing properly or are not in a supported web streaming format, you will need to enable this (requires app restart).'
+          )}
+          option={
+            <>
+              <Whisper
+                ref={transcodingRestartWhisper}
+                trigger="none"
+                placement="auto"
+                speaker={
+                  <Popup title={t('Restart?')}>
+                    <div>{t('Do you want to restart the application now?')}</div>
+                    <strong>{t('This is highly recommended!')}</strong>
+                    <div>
+                      <StyledButton
+                        id="titlebar-restart-button"
+                        size="sm"
+                        onClick={() => {
+                          ipcRenderer.send('reload');
+                        }}
+                        appearance="primary"
+                      >
+                        {t('Yes')}
+                      </StyledButton>
+                    </div>
+                  </Popup>
+                }
+              >
+                <StyledToggle
+                  defaultChecked={transcode}
+                  checked={transcode}
+                  onChange={(e: boolean) => {
+                    settings.set('transcode', e);
+                    setTranscode(e);
+                    transcodingRestartWhisper.current?.open();
+                  }}
+                />
+              </Whisper>
+            </>
+          }
+        />
+      )}
+
+      <ConfigOption
+        name={t('Global Media Hotkeys')}
+        description={
+          <Trans>
+            Enable or disable global media hotkeys (play/pause, next, previous, stop, etc). For
+            macOS, you will need to add Sonixd Redux as a{' '}
+            <StyledLink
+              onClick={() =>
+                shell.openExternal(
+                  'https://developer.apple.com/library/archive/documentation/Accessibility/Conceptual/AccessibilityMacOSX/OSXAXTestingApps.html'
+                )
+              }
+            >
+              trusted accessibility client.
+            </StyledLink>{' '}
+            If you plan to bind media keys in the Keyboard Shortcuts tab, it is advised to disable
+            this option to avoid conflicts.
+          </Trans>
+        }
+        option={
+          <StyledToggle
+            defaultChecked={globalMediaHotkeys}
+            checked={globalMediaHotkeys}
+            onChange={(e: boolean) => {
+              settings.set('globalMediaHotkeys', e);
+              setGlobalMediaHotkeys(e);
+              if (e) {
+                ipcRenderer.send('enableGlobalHotkeys');
+
+                settings.set('systemMediaTransportControls', !e);
+                setSystemMediaTransportControls(!e);
+                ipcRenderer.send('disableSystemMediaTransportControls');
+              } else {
+                ipcRenderer.send('disableGlobalHotkeys');
+              }
+            }}
+          />
+        }
+      />
+
+      {isWindows() && isWindows10() && (
+        <ConfigOption
+          name={t('Windows System Media Transport Controls')}
+          description={
+            <>
+              {t(
+                'Enable or disable the Windows System Media Transport Controls (play/pause, next, previous, stop). This will show the Windows Media Popup (Windows 10 only) when pressing a media key. This feauture will override the Global Media Hotkeys option. If you plan to bind media keys in the Keyboard Shortcuts tab, it is advised to disable this option to avoid conflicts.'
+              )}
+            </>
+          }
+          option={
+            <StyledToggle
+              defaultChecked={systemMediaTransportControls}
+              checked={systemMediaTransportControls}
+              onChange={(e: boolean) => {
+                settings.set('systemMediaTransportControls', e);
+                setSystemMediaTransportControls(e);
+                if (e) {
+                  ipcRenderer.send('enableSystemMediaTransportControls');
+
+                  settings.set('globalMediaHotkeys', !e);
+                  setGlobalMediaHotkeys(!e);
+                  ipcRenderer.send('disableGlobalHotkeys');
+                } else {
+                  ipcRenderer.send('disableSystemMediaTransportControls');
+                }
+              }}
+            />
+          }
+        />
+      )}
+
+      <ConfigOption
+        name={t('Scrobble')}
+        description={t(
+          'Send player updates to your server. This is required by servers such as Jellyfin and Navidrome to track play counts and use external services such as Last.fm.'
+        )}
+        option={
+          <StyledToggle
+            defaultChecked={scrobble}
+            checked={scrobble}
+            onChange={(e: boolean) => {
+              settings.set('scrobble', e);
+              dispatch(setPlaybackSetting({ setting: 'scrobble', value: e }));
+              setScrobble(e);
+            }}
+          />
+        }
+      />
+      <ConfigOption
+        name={t('Scrobble Threshold')}
+        description={t(
+          'Percentage of a track that must be played before it is scrobbled. A track is also scrobbled after 4 minutes regardless of this setting.'
+        )}
+        option={
+          <StyledInputNumber
+            defaultValue={String(settings.get('scrobbleThreshold') ?? 90)}
+            step={5}
+            min={1}
+            max={100}
+            width={125}
+            disabled={!scrobble}
+            onChange={(e: any) => {
+              const val = Math.min(100, Math.max(1, Number(e)));
+              settings.set('scrobbleThreshold', val);
+              dispatch(setPlaybackSetting({ setting: 'scrobbleThreshold', value: val }));
+            }}
+          />
+        }
+      />
+      <ConfigOptionName>{t('Track Filters')}</ConfigOptionName>
+      <ConfigOptionDescription>
+        {t(
+          'Filter out tracks based on regex string(s) by their title when adding to the queue. Adding by double-clicking a track will ignore all filters for that one track.'
+        )}
+      </ConfigOptionDescription>
+      <br />
+      <StyledPanel bodyFill>
+        <Form fluid>
+          <StyledInputGroup>
+            <StyledInput
+              style={{ width: 'auto' }}
+              value={newFilter.string}
+              onChange={(e: string) => {
+                let isValid = true;
+                try {
+                  // eslint-disable-next-line no-new
+                  new RegExp(e);
+                } catch {
+                  isValid = false;
+                }
+
+                setNewFilter({ string: e, valid: isValid });
+              }}
+              placeholder={t('Enter regex string')}
+            />
+            <StyledButton
+              type="submit"
+              disabled={newFilter.string === '' || newFilter.valid === false}
+              onClick={() => {
+                dispatch(appendPlaybackFilter({ filter: newFilter.string, enabled: true }));
+                settings.set(
+                  'playbackFilters',
+                  config.playback.filters.concat({
+                    filter: newFilter,
+                    enabled: true,
+                  })
+                );
+                setNewFilter({ string: '', valid: false });
+              }}
+            >
+              {t('Add')}
+            </StyledButton>
+          </StyledInputGroup>
+        </Form>
+
+        <ListViewTable
+          data={config.playback.filters || []}
+          autoHeight
+          columns={playbackFilterColumns}
+          rowHeight={35}
+          fontSize={12}
+          listType="column"
+          cacheImages={{ enabled: false }}
+          playQueue={playQueue}
+          multiSelect={multiSelect}
+          isModal={false}
+          miniView={false}
+          disableContextMenu
+          disableRowClick
+          handleRowClick={() => {}}
+          handleRowDoubleClick={() => {}}
+          config={[]}
+        />
+      </StyledPanel>
+    </ConfigPanel>
+  );
+};
+
+export default PlayerConfig;

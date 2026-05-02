@@ -1,0 +1,59 @@
+name: Publish (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v4
+
+      - name: Install Node, NPM
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'yarn'
+
+      - name: Setup yarn
+        run: npm install -g yarn
+
+      - name: Install `src/` dependencies
+        uses: nick-invision/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_on: error
+          command: |
+            cd src && yarn --frozen-lockfile --ignore-scripts --network-concurrency 1 --network-timeout 300000
+          on_retry_command: npm cache clean --force && yarn cache clean --all
+          shell: cmd
+
+      - name: Install dependencies
+        uses: nick-invision/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_on: error
+          command: |
+            yarn install --frozen-lockfile --network-concurrency 1 --network-timeout 300000
+          on_retry_command: npm cache clean --force && yarn cache clean --all
+          shell: cmd
+
+      - name: Publish releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        uses: nick-invision/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_on: error
+          command: |
+            yarn postinstall && yarn build && yarn electron-builder --publish always --win
+          on_retry_command: npm cache clean --force && yarn cache clean --all
+          shell: cmd

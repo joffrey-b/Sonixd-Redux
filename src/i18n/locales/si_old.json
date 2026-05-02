@@ -1,0 +1,20 @@
+{
+  "Advanced": "උසස් සැකසුම්",
+  "Auto scroll": "ස්වයංක්\u200dරීය අනුචලනය",
+  "Automatic Updates": "ස්වයංක්\u200dරීය යාවත්කාලීන කිරීම්",
+  "Deselect All": "සියල්ල තේරීම ඉවත් කරන්න",
+  "Display Song Images": "ගීත රූප පෙන්වන්න",
+  "Displays the debug window.": "නිදොස් කිරීමේ කවුළුව පෙන්වයි.",
+  "Enables or disables automatic updates. When a new version is detected, it will automatically be downloaded and installed.": "ස්වයංක්\u200dරීය යාවත්කාලීන කිරීම් සබල කරයි හෝ අබල කරයි. නව අනුවාදයක් අනාවරණය වූ විට, එය ස්වයංක්රීයව බාගත කර ස්ථාපනය කරනු ලැබේ.",
+  "Go": "යන්න",
+  "Move selected to [...]": "තෝරා ගෙන [...]",
+  "Move selected to bottom": "තෝරාගත් පහළට ගෙන යන්න",
+  "Move selected to top": "තෝරාගත් ඉහළට ගෙන යන්න",
+  "Move to index": "දර්ශකය වෙත යන්න",
+  "Open settings JSON": "JSON සැකසුම් විවෘත කරන්න",
+  "Reset All": "සියල්ල යළි සකසන්න",
+  "Show Debug Window": "නිදොස් කිරීමේ කවුළුව පෙන්වන්න",
+  "Similar To": "සමානයි",
+  "The application theme. Want to create your own themes? Check out the documentation <2>here</2>.": "යෙදුම් තේමාව. ඔබේම තේමා නිර්මාණය කිරීමට අවශ්\u200dයද? ලේඛන <2>මෙහි</2> පරීක්ෂා කරන්න.",
+  "Uses the song image returned by your server (only works if your server is publically accessible).": "ඔබේ සේවාදායකය ලබා දෙන ගීත රූප භාවිතා කරයි (සේවාදායකය ප්\u200dරසිද්ධියේ ලබා ගත හැකි නම් පමණි)."
+}

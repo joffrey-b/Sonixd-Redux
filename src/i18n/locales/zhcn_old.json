@@ -1,0 +1,20 @@
+{
+  "Advanced": "高级",
+  "Auto scroll": "自动滚动",
+  "Automatic Updates": "自动更新",
+  "Deselect All": "取消全选",
+  "Display Song Images": "显示歌曲图片",
+  "Displays the debug window.": "显示调试窗口。",
+  "Enables or disables automatic updates. When a new version is detected, it will automatically be downloaded and installed.": "启用或禁用自动更新。当检测到新版本时，程序将自动下载并安装。",
+  "Go": "转到",
+  "Move selected to [...]": "移动选项至 [...]",
+  "Move selected to bottom": "移动选项至底部",
+  "Move selected to top": "移动选项至顶部",
+  "Move to index": "移至索引",
+  "Open settings JSON": "打开设置的 JSON 文件",
+  "Reset All": "全部重置",
+  "Show Debug Window": "显示调试窗口",
+  "Similar To": "相似于",
+  "The application theme. Want to create your own themes? Check out the documentation <2>here</2>.": "软件主题。 想创建自己的主题？ 在<2>此处</2>查看文档。",
+  "Uses the song image returned by your server (only works if your server is publically accessible).": "使用服务器返回的歌曲图片（仅在服务器可公开访问时有效）。"
+}
