@@ -27,7 +27,7 @@ jobs:
       - name: Install Node, NPM and Yarn
         uses: actions/setup-node@v1
         with:
-          node-version: '20.x'
+          node-version: '24.x'
 
       - name: Get yarn cache directory path
         id: yarn-cache-dir-path

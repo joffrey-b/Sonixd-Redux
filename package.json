@@ -310,8 +310,8 @@
     "styled-components": "^5"
   },
   "devEngines": {
-    "node": ">=12.13.0",
-    "npm": ">=6.x",
+    "node": ">=24.0.0",
+    "npm": ">=10.x",
     "yarn": ">=1.21.3"
   },
   "browserslist": [],
