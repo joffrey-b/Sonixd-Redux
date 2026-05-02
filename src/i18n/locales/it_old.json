@@ -1,0 +1,20 @@
+{
+  "Advanced": "Avanzato",
+  "Auto scroll": "Scorrimento automatico",
+  "Automatic Updates": "Aggiornamenti Automatici",
+  "Deselect All": "Deselezione Tutto",
+  "Display Song Images": "Mostra immagini brani",
+  "Displays the debug window.": "Visualizza la finestra di debug.",
+  "Enables or disables automatic updates. When a new version is detected, it will automatically be downloaded and installed.": "Attiva o disattiva gli aggiornamenti automatici. Quando verrà trovata una nuova versione, sarà automaticamente scaricata e installata",
+  "Go": "Vai",
+  "Move selected to [...]": "Sposta i selezionati a [...]",
+  "Move selected to bottom": "Sposta i selezionanti alla fine",
+  "Move selected to top": "Sposta i selezionati all'inizio",
+  "Move to index": "Sposta all'indice",
+  "Open settings JSON": "Apri impostazioni JSON",
+  "Reset All": "Ripristina tutto",
+  "Show Debug Window": "Visualizza Finestra di Debug",
+  "Similar To": "Simile a",
+  "The application theme. Want to create your own themes? Check out the documentation <2>here</2>.": "Il tema dell'applicazione. Vuoi creare il tuo tema? Guarda <2>qui</2> la documentazione.",
+  "Uses the song image returned by your server (only works if your server is publically accessible).": "Usa l'immagine del brano fornita dal server (funziona solo se il server è accessibile pubblicamente)."
+}

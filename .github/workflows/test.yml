@@ -1,0 +1,48 @@
+name: Test
+
+# Test only if js/ts files are changed
+on:
+  push:
+    paths:
+      - '**.js*'
+      - '**.ts*'
+  pull_request:
+    paths:
+      - '**.js*'
+      - '**.ts*'
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js, NPM and Yarn
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'yarn'
+
+      - name: yarn install
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          yarn install --frozen-lockfile --network-timeout 300000 --network-concurrency 1
+
+      - name: Download Electron binary
+        run: node node_modules/electron/install.js
+
+      - name: yarn test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          yarn package
+          yarn lint
+          yarn tsc-silent -p ./tsconfig.json --suppress 2702@/node_modules/react-chartjs-2/ 9006@/src/main.dev.js
+          yarn test
