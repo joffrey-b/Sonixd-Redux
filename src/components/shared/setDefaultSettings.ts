@@ -180,7 +180,7 @@ const DEFAULT_SETTINGS: Settings = {
   serverType: 'subsonic',
   legacyAuth: false,
   language: 'en',
-  theme: 'defaultDark',
+  theme: 'followSystem',
   font: 'Poppins',
   dynamicBackground: false,
   highlightOnRowHover: true,
@@ -476,6 +476,167 @@ const DEFAULT_SETTINGS: Settings = {
       },
     },
     {
+      label: 'OLED Dark',
+      value: 'oledDark',
+      type: 'dark',
+      fonts: {
+        size: {
+          page: '14px',
+          panelTitle: '20px',
+        },
+      },
+      colors: {
+        primary: '#2196F3',
+        layout: {
+          page: {
+            color: '#E8E8E8',
+            colorSecondary: '#707070',
+            background: '#000000',
+          },
+          playerBar: {
+            color: '#E8E8E8',
+            colorSecondary: '#707070',
+            background: '#0A0A0A',
+            button: {
+              color: 'rgba(232, 232, 232, 0.85)',
+              colorHover: '#FFFFFF',
+            },
+          },
+          sideBar: {
+            background: '#050505',
+            button: {
+              color: '#C0C0C0',
+              colorHover: '#FFFFFF',
+            },
+          },
+          titleBar: {
+            color: '#FFFFFF',
+            background: '#000000',
+          },
+          miniPlayer: {
+            background: '#050505',
+          },
+        },
+        button: {
+          default: {
+            color: '#D0D0D0',
+            colorHover: '#FFFFFF',
+            background: '#1A1A1A',
+            backgroundHover: '#2A2A2A',
+          },
+          primary: {
+            color: '#FFFFFF',
+            colorHover: '#FFFFFF',
+            backgroundHover: '#3B89EC',
+          },
+          subtle: {
+            color: '#C0C0C0',
+            colorHover: '#FFFFFF',
+            backgroundHover: 'transparent',
+          },
+        },
+        card: {
+          overlayButton: {
+            color: '#FFFFFF',
+            background: 'transparent',
+            backgroundHover: '#3B89EC',
+            opacity: 0.9,
+          },
+        },
+        contextMenu: {
+          color: '#D0D0D0',
+          colorDisabled: '#555555',
+          background: '#111111',
+          backgroundHover: '#1E1E1E',
+        },
+        input: {
+          color: '#D0D0D0',
+          background: '#141414',
+          backgroundHover: '#1E1E1E',
+          backgroundActive: 'rgba(33, 150, 243, .15)',
+        },
+        nav: {
+          color: '#D0D0D0',
+        },
+        popover: {
+          color: '#D0D0D0',
+          background: '#111111',
+        },
+        slider: {
+          background: '#2A2A2A',
+          progressBar: '#2196F3',
+        },
+        spinner: {
+          background: 'rgba(33, 150, 243, 0.2)',
+          foreground: '#2196F3',
+        },
+        table: {
+          selectedRow: 'rgba(33, 150, 243, .2)',
+        },
+        tag: {
+          background: '#1E1E1E',
+          text: '#C8C8C8',
+        },
+        tooltip: {
+          color: '#D0D0D0',
+          background: '#111111',
+        },
+      },
+      other: {
+        button: {
+          borderRadius: '15px',
+        },
+        coverArtBorderRadius: '5px',
+        coverArtFilter: 'none',
+        card: {
+          border: 'none',
+          hover: {
+            transform: 'none',
+            transition: 'none',
+            filter: 'none',
+          },
+          image: {
+            borderTop: '2px transparent ridge',
+            borderRight: '2px transparent ridge',
+            borderBottom: '2px transparent ridge',
+            borderLeft: '2px transparent ridge',
+            borderRadius: '15px',
+          },
+          info: {
+            borderTop: 'none',
+            borderRight: 'none',
+            borderBottom: 'none',
+            borderLeft: 'none',
+            borderRadius: '0px',
+          },
+        },
+        input: {
+          borderRadius: '15px',
+        },
+        miniPlayer: {
+          height: '450px',
+          opacity: 0.95,
+        },
+        panel: {
+          borderRadius: '0px',
+        },
+        playerBar: {
+          borderTop: '1px solid rgba(33, 150, 243, .12)',
+          borderRight: 'none',
+          borderBottom: 'none',
+          borderLeft: 'none',
+          filter: 'none',
+        },
+        tag: {
+          borderRadius: '15px',
+        },
+        tooltip: {
+          border: '1px #2A2A2A solid',
+          borderRadius: '5px',
+        },
+      },
+    },
+    {
       label: 'Default Light',
       value: 'defaultLight',
       type: 'light',
@@ -494,24 +655,24 @@ const DEFAULT_SETTINGS: Settings = {
             background: 'linear-gradient(0deg, rgba(255,255,255,1) 64%, rgba(220,220,220,1) 100%)',
           },
           playerBar: {
-            color: '#FFFFFF',
-            colorSecondary: '#888e94',
-            background: '#212121',
+            color: '#212121',
+            colorSecondary: '#666666',
+            background: '#E8E8EB',
             button: {
-              color: 'rgba(240, 240, 240, 0.8)',
-              colorHover: '#FFFFFF',
+              color: '#575757',
+              colorHover: '#000000',
             },
           },
           sideBar: {
-            background: '#212121',
+            background: '#DFDFE2',
             button: {
-              color: '#D8D8D8',
-              colorHover: '#FFFFFF',
+              color: '#575757',
+              colorHover: '#000000',
             },
           },
           titleBar: {
-            color: '#FFFFFF',
-            background: '#212121',
+            color: '#212121',
+            background: '#DFDFE2',
           },
           miniPlayer: {
             background: 'rgba(255,255,255,1)',
@@ -564,8 +725,8 @@ const DEFAULT_SETTINGS: Settings = {
           background: '#FFFFFF',
         },
         slider: {
-          background: '#3C3F43',
-          progressBar: '#888E94',
+          background: '#C8C8CC',
+          progressBar: '#285DA0',
         },
         spinner: {
           background: 'rgba(0, 0, 0, 0.3)',
@@ -622,7 +783,7 @@ const DEFAULT_SETTINGS: Settings = {
           borderRadius: '0px',
         },
         playerBar: {
-          borderTop: '1px solid rgba(240, 240, 240, .15)',
+          borderTop: '1px solid rgba(0, 0, 0, .1)',
           borderRight: 'none',
           borderBottom: 'none',
           borderLeft: 'none',
@@ -1780,6 +1941,9 @@ export const setDefaultSettings = (force: boolean) => {
   if (force) {
     settings.clear();
   }
+
+  // Always overwrite built-in themes so updates reach existing installs automatically.
+  settings.set('themesDefault', DEFAULT_SETTINGS.themesDefault);
 
   if (force || !settings.has('cachePath')) {
     settings.set('cachePath', path.join(path.dirname(settings.path)));

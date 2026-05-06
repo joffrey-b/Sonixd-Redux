@@ -323,6 +323,8 @@
   "Select only one row": "Sadece bir satır seçin",
   "Select which pages to apply media folder filtering to:": "Medya klasörü filtrelemesinin uygulanacağı sayfaları seçin:",
   "Selected audio device is no longer available. Using system default.": "Seçili ses cihazı artık mevcut değil. Sistem varsayılanı kullanılıyor.",
+  "Selected MPV audio device is no longer available. Using system default.": "Seçili MPV ses cihazı artık mevcut değil. Sistem varsayılanı kullanılıyor.",
+  "Follow System": "Sistemi Takip Et",
   "Send player updates to your server. This is required by servers such as Jellyfin and Navidrome to track play counts and use external services such as Last.fm.": "Oynatıcı güncellemelerini sunucuya gönder. Bunun için Jellyfin yada Navidrome gibi bir sunucu gerekir.",
   "Server": "Sunucu",
   "Server type": "Sunucu tipi",

@@ -373,7 +373,7 @@ const ArtistView = ({ ...rest }: any) => {
               <>
                 <PageHeaderSubtitleDataLine $top $overflow>
                   <StyledLink onClick={() => history.push(`/library/artist`)}>
-                    <strong>ARTIST</strong>
+                    <strong>{t('Artist')}</strong>
                   </StyledLink>{' '}
                   • {data.albumCount} albums • {artistSongTotal} songs, {artistDurationTotal}
                 </PageHeaderSubtitleDataLine>

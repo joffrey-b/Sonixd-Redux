@@ -323,6 +323,8 @@
   "Select only one row": "Seleziona solo una riga",
   "Select which pages to apply media folder filtering to:": "Seleziona a quale pagina applicare il filtro dei media:",
   "Selected audio device is no longer available. Using system default.": "Il dispositivo audio selezionato non è più disponibile. Verrà utilizzato il predefinito di sistema.",
+  "Selected MPV audio device is no longer available. Using system default.": "Il dispositivo audio MPV selezionato non è più disponibile. Verrà utilizzato il predefinito di sistema.",
+  "Follow System": "Segui sistema",
   "Send player updates to your server. This is required by servers such as Jellyfin and Navidrome to track play counts and use external services such as Last.fm.": "Invia aggiornamenti del player al tuo server. Questo è richiesto da server come Jellyfin e Navidrome per tenere traccia delle riproduzioni da usare un un servizion come Last.fm.",
   "Server": "Server",
   "Server type": "Tipo server",

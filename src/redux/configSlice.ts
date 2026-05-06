@@ -321,7 +321,7 @@ const configSlice = createSlice({
       state.lookAndFeel.font = action.payload;
     },
 
-    setAudioDeviceId: (state, action: PayloadAction<string>) => {
+    setAudioDeviceId: (state, action: PayloadAction<string | undefined>) => {
       state.playback.audioDeviceId = action.payload;
     },
 

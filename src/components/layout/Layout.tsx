@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { useHistory } from 'react-router-dom';
 import { ButtonToolbar, Content, FlexboxGrid, Icon } from 'rsuite';
@@ -12,6 +12,7 @@ import { StyledButton } from '../shared/styled';
 import { setSidebar } from '../../redux/configSlice';
 import SearchBar from '../search/SearchBar';
 import { settings } from '../shared/setDefaultSettings';
+import { isCached } from '../../shared/utils';
 
 const Layout = ({ footer, children, disableSidebar, font }: any) => {
   const history = useHistory();
@@ -19,6 +20,29 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
   const misc = useAppSelector((state) => state.misc);
   const config = useAppSelector((state) => state.config);
   const multiSelect = useAppSelector((state) => state.multiSelect);
+  const playQueue = useAppSelector((state) => state.playQueue);
+  const [dynamicBgSrc, setDynamicBgSrc] = useState('');
+
+  useEffect(() => {
+    if (!misc.dynamicBackground) {
+      setDynamicBgSrc('');
+      return;
+    }
+    const albumId = playQueue.current?.albumId;
+    const image = playQueue.current?.image;
+    if (!image || image.includes('placeholder')) {
+      setDynamicBgSrc('');
+      return;
+    }
+    const cachedPath = `${misc.imageCachePath}album_${albumId}.jpg`;
+    const cssCachedPath = cachedPath.replaceAll('\\', '/');
+    const serverPath = image.replace(/size=\d+/, 'size=500');
+    if (!isCached(cachedPath)) {
+      const preloadImage = new Image();
+      preloadImage.src = serverPath;
+    }
+    setDynamicBgSrc(isCached(cachedPath) ? cssCachedPath : serverPath);
+  }, [misc.imageCachePath, misc.dynamicBackground, playQueue]);
 
   useHotkeys(
     config.hotkeys.navigateBack,
@@ -112,6 +136,25 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
           }
         }}
       >
+        {dynamicBgSrc && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: 'calc(100% - 98px)',
+              backgroundImage: `url("${dynamicBgSrc}")`,
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: 'cover',
+              opacity: 0.3,
+              filter: 'blur(50px) brightness(0.8)',
+              zIndex: 0,
+              pointerEvents: 'none',
+            }}
+          />
+        )}
         <MainContainer
           id="container-main"
           expanded={config.lookAndFeel.sidebar.expand}

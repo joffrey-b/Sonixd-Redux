@@ -412,11 +412,13 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
       f.gain.value = initGains[i] ?? 0;
     });
 
-    // Apply initial audio device
-    const deviceId = config.playback.audioDeviceId || '';
-    if (deviceId) {
-      (h1 as any).setSinkId(deviceId).catch(() => (h1 as any).setSinkId('').catch(() => {}));
-      (h2 as any).setSinkId(deviceId).catch(() => (h2 as any).setSinkId('').catch(() => {}));
+    // Apply initial audio device (web backend only — MPV handles its own routing)
+    if (!isMpv) {
+      const deviceId = config.playback.audioDeviceId || '';
+      if (deviceId) {
+        (h1 as any).setSinkId(deviceId).catch(() => (h1 as any).setSinkId('').catch(() => {}));
+        (h2 as any).setSinkId(deviceId).catch(() => (h2 as any).setSinkId('').catch(() => {}));
+      }
     }
 
     return () => {
@@ -912,6 +914,7 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
   // Audio travels: player audio element → Web Audio chain → MediaStream → hidden element → device.
   // setSinkId on the original player elements would be ignored since audio exits via the chain.
   useEffect(() => {
+    if (isMpv) return undefined; // MPV handles its own audio routing; don't touch setSinkId
     const deviceId = config.playback.audioDeviceId || '';
     const applySinkId = async () => {
       const h1 = hiddenAudio1Ref.current;
@@ -933,7 +936,7 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
     applySinkId();
     navigator.mediaDevices.addEventListener('devicechange', applySinkId);
     return () => navigator.mediaDevices.removeEventListener('devicechange', applySinkId);
-  }, [config.playback.audioDeviceId]);
+  }, [config.playback.audioDeviceId, isMpv]);
 
   // Reset the player volumes when the track changes
   useEffect(() => {

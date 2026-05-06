@@ -323,6 +323,8 @@
   "Select only one row": "එක් පේළියක් පමණක් තෝරන්න",
   "Select which pages to apply media folder filtering to:": "මාධ්‍ය ෆෝල්ඩර පෙරීම යෙදිය යුතු පිටු තෝරන්න:",
   "Selected audio device is no longer available. Using system default.": "තෝරාගත් ශ්‍රව්‍ය උපාංගය තවදුරටත් ලබා ගත නොහැක. පද්ධතියේ පෙරනිමිය භාවිතා කෙරේ.",
+  "Selected MPV audio device is no longer available. Using system default.": "තෝරාගත් MPV ශ්‍රව්‍ය උපාංගය තවදුරටත් ලබා ගත නොහැක. පද්ධතියේ පෙරනිමිය භාවිතා කෙරේ.",
+  "Follow System": "පද්ධතිය අනුගමනය කරන්න",
   "Send player updates to your server. This is required by servers such as Jellyfin and Navidrome to track play counts and use external services such as Last.fm.": "ඔබගේ සේවාදායකයට ක්‍රීඩක යාවත්කාල කිරීම් යවන්න. මෙය Jellyfin සහ Navidrome වැනි සේවාදායකයන්ට ක්‍රීඩා ගණන නිරීක්ෂණය කිරීමට සහ Last.fm වැනි බාහිර සේවා භාවිතා කිරීමට අවශ්‍ය වේ.",
   "Server": "සේවාදායකය",
   "Server type": "Server වර්ගය",

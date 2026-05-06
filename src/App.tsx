@@ -78,7 +78,20 @@ const App = () => {
       process.env.NODE_ENV === 'test'
         ? mockSettings.themesDefault
         : _.concat(settings.get('themes'), settings.get('themesDefault'));
-    setTheme(getTheme(themes, misc.theme) || defaultDark);
+
+    if (misc.theme !== 'followSystem') {
+      setTheme(getTheme(themes, misc.theme) || defaultDark);
+      return undefined;
+    }
+
+    const apply = () => {
+      const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setTheme(getTheme(themes, isDark ? 'defaultDark' : 'defaultLight') || defaultDark);
+    };
+    apply();
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
   }, [misc.theme]);
 
   useEffect(() => {

@@ -323,6 +323,8 @@
   "Select only one row": "只选择一行",
   "Select which pages to apply media folder filtering to:": "选择需要应用媒体目录过滤的页面:",
   "Selected audio device is no longer available. Using system default.": "所选音频设备不再可用。使用系统默认设备。",
+  "Selected MPV audio device is no longer available. Using system default.": "所选MPV音频设备不再可用。使用系统默认设备。",
+  "Follow System": "跟随系统",
   "Send player updates to your server. This is required by servers such as Jellyfin and Navidrome to track play counts and use external services such as Last.fm.": "将播放器更新发送到你的服务器。 Jellyfin 和 Navidrome 等服务器需要这样做来跟踪播放次数并使用 Last.fm 等外部服务。",
   "Server": "服务器",
   "Server type": "服务器类型",

@@ -377,7 +377,7 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
             <StyledInputGroup>
               <StyledInputPicker
                 container={() => themePickerContainerRef.current}
-                data={themeList}
+                data={[{ label: t('Follow System'), value: 'followSystem' }, ...themeList]}
                 labelKey="label"
                 valueKey="value"
                 cleanable={false}

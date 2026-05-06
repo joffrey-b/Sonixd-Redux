@@ -124,33 +124,9 @@ export const WindowControlButton = styled.div<{
 `;
 
 // GenericPage.tsx
-export const PageContainer = styled(Container)<{ $backgroundSrc?: string }>`
+export const PageContainer = styled(Container)`
   height: 100%;
   overflow-x: hidden;
-
-  ${(props) =>
-    props.$backgroundSrc &&
-    `
-    &:before {
-      content: '';
-      position: fixed;
-      left: 0;
-      right: 0;
-
-      display: block;
-      background-image: ${props.$backgroundSrc ? `url(${props.$backgroundSrc})` : undefined};
-      transition: background-image 1s ease-in-out;
-
-      width: 100%;
-      height: calc(100% - 130px);
-      background-position: center;
-      background-repeat: no-repeat;
-      background-size: cover;
-      opacity: 0.3;
-
-      filter: blur(50px) brightness(0.8);
-  }
-  `}
 `;
 
 export const PageHeader = styled(Header)<{ padding?: string }>`
@@ -251,7 +227,10 @@ export const PageHeaderWrapper = styled.div<{
   width: ${(props) => (props.hasImage ? `calc(100% - ${props.imageHeight + 15}px)` : '100%')};
   margin-left: ${(props) => (props.hasImage ? '15px' : '0px')};
   vertical-align: top;
-  color: ${(props) => (props.isDark ? '#D8D8D8' : props.theme.colors.layout.page.color)};
+  color: ${(props) =>
+    props.isDark && props.theme.type !== 'light'
+      ? '#D8D8D8'
+      : props.theme.colors.layout.page.color};
   user-select: none;
 `;
 
@@ -309,7 +288,10 @@ export const BlurredBackgroundWrapper = styled.div<{
     props.expanded ? `calc(100% - ${props.sidebarwidth})` : 'calc(100% - 56px)'};
   top: ${(props) => (props.$titleBar === 'native' ? '0px' : '32px')};
   z-index: 1;
-  background: ${(props) => (props.hasImage ? '#0b0908' : '#00395A')};
+  background: ${(props) => {
+    if (props.hasImage) return props.theme.type === 'light' ? '#f0f0f2' : '#0b0908';
+    return props.theme.type === 'light' ? '#e8e8eb' : '#00395A';
+  }};
   filter: ${(props) => (props.hasImage ? 'none' : 'brightness(0.3)')};
 `;
 
@@ -317,7 +299,7 @@ export const BlurredBackground = styled.img<{ expanded: boolean }>`
   background-position: center 30%;
   background-size: cover;
   filter: ${(props) =>
-    props.theme.type === 'dark' ? `blur(10px) brightness(0.3)` : `blur(10px) brightness(0.6)`};
+    props.theme.type === 'dark' ? `blur(10px) brightness(0.3)` : `blur(10px) brightness(0.9)`};
 
   outline: none !important;
   border: none !important;
@@ -340,7 +322,7 @@ export const GradientBackground = styled.div<{
   background: ${(props) =>
     `linear-gradient(0deg, transparent 10%, ${props.$color.replace(
       ',1)',
-      `${props.theme.type === 'dark' ? ',0.2' : ',0.5'})`
+      `${props.theme.type === 'dark' ? ',0.2' : ',0.15'})`
     )} 100%)`};
   top: ${(props) => (props.$titleBar === 'native' ? '0px' : '32px')};
   left: ${(props) => (props.$expanded ? props.sidebarwidth : '56px')};

@@ -48,6 +48,12 @@ const PlaybackConfig = ({ bordered }: any) => {
   const mpvReplayGainPickerContainerRef = useRef(null);
 
   const isMpv = config.playback.playerBackend === 'mpv';
+  // Keep a ref to the latest mpvAudioDeviceId so the 2-second retry timer in
+  // refreshMpvDevices doesn't fire the toast again from a stale closure.
+  const mpvAudioDeviceIdRef = useRef(config.playback.mpvAudioDeviceId);
+  useEffect(() => {
+    mpvAudioDeviceIdRef.current = config.playback.mpvAudioDeviceId;
+  }, [config.playback.mpvAudioDeviceId]);
 
   const GAPLESS_OPTIONS = [
     { label: t('Weak (recommended)'), value: 'weak' },
@@ -60,7 +66,10 @@ const PlaybackConfig = ({ bordered }: any) => {
       getAudioDevice()
         .then((dev) => {
           setAudioDevices(dev);
+          // Only check web audio device availability when in web mode — in MPV mode
+          // the web audioDeviceId is unused and may hold a stale ID from another machine.
           if (
+            !isMpv &&
             config.playback.audioDeviceId &&
             !dev.find((d) => d.deviceId === config.playback.audioDeviceId)
           ) {
@@ -74,6 +83,10 @@ const PlaybackConfig = ({ bordered }: any) => {
                 'warning',
                 t('Selected audio device is no longer available. Using system default.')
               );
+              // Clear the stale ID so this toast doesn't fire again on every remount.
+              dispatch(setAudioDeviceId(undefined));
+              settings.set('audioDeviceId', null);
+              settings.set('audioDeviceLabel', null);
             }
           }
           return null;
@@ -85,7 +98,7 @@ const PlaybackConfig = ({ bordered }: any) => {
     navigator.mediaDevices.addEventListener('devicechange', refreshAudioDevices);
     return () => navigator.mediaDevices.removeEventListener('devicechange', refreshAudioDevices);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t, config.playback.audioDeviceId]);
+  }, [t, config.playback.audioDeviceId, isMpv]);
 
   const handleSetCrossfadeDuration = (e: number) => {
     setCrossfadeDuration(e);
@@ -117,7 +130,20 @@ const PlaybackConfig = ({ bordered }: any) => {
 
   const refreshMpvDevices = async () => {
     const devices = await ipcRenderer.invoke('player-get-audio-devices');
-    setMpvAudioDevices(devices || []);
+    const deviceList = devices || [];
+    setMpvAudioDevices(deviceList);
+    // Only check when MPV returned a real list — empty means MPV isn't running yet.
+    // Silently clear a stale device ID when the settings page opens.
+    // The toast is shown by MpvPlayer at startup; we only need to clean up here
+    // in case the device disappeared after init (e.g. unplugged mid-session).
+    if (
+      deviceList.length > 0 &&
+      mpvAudioDeviceIdRef.current &&
+      !deviceList.find((d: { value: string }) => d.value === mpvAudioDeviceIdRef.current)
+    ) {
+      dispatch(setMpvAudioDeviceId(undefined));
+      settings.set('mpvAudioDeviceId', null);
+    }
   };
 
   // Auto-load MPV device list on mount. Retry after a delay because MPV may

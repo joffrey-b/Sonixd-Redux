@@ -33,7 +33,7 @@ echo "Bumped src/package.json to $VERSION"
 
 git add src/package.json
 git commit -m "Bump version to $VERSION"
-git push
+git push -o ci.skip origin main
 
 git tag "$TAG"
 git push origin "$TAG"

@@ -674,7 +674,13 @@ const createWindow = async () => {
 
   ipcMain.on('player-seek-to', (_, time) => {
     const mpv = getMpv();
-    if (mpv && mpv.isRunning()) mpv.goToPosition(time).catch(() => {});
+    if (mpv && mpv.isRunning()) {
+      mpv.goToPosition(time).catch(() => {});
+      // Immediately sync the renderer's displayed time — MPV doesn't emit
+      // timeposition events while paused, so the progress bar would otherwise
+      // stay at the old position until playback resumes.
+      sendToRenderer('renderer-player-current-time', time);
+    }
   });
 
   ipcMain.on('player-volume', (_, value) => {
@@ -772,6 +778,7 @@ const createWindow = async () => {
       if (canceled || !filePath) return { success: false };
       const store = { ...settings.store };
       CREDENTIAL_KEYS.forEach((k) => delete store[k]);
+      delete store.themesDefault;
       fs.writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf-8');
       return { success: true };
     } catch {
@@ -791,7 +798,7 @@ const createWindow = async () => {
       if (typeof parsed !== 'object' || Array.isArray(parsed))
         return { success: false, error: true };
       Object.entries(parsed).forEach(([key, value]) => {
-        if (!CREDENTIAL_KEYS.has(key)) settings.set(key, value);
+        if (!CREDENTIAL_KEYS.has(key) && key !== 'themesDefault') settings.set(key, value);
       });
       return { success: true };
     } catch {

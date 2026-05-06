@@ -9,6 +9,7 @@ import {
   getNextPlayerIndex,
 } from '../../redux/playQueueSlice';
 import { setStatus } from '../../redux/playerSlice';
+import { setMpvAudioDeviceId } from '../../redux/configSlice';
 import { EqState } from '../../redux/eqSlice';
 import { PeqState } from '../../redux/peqSlice';
 import { buildMpvAfChain } from '../../shared/mpvEqFilter';
@@ -89,8 +90,30 @@ const MpvPlayer = () => {
         extraParameters,
         properties,
       })
-      .then(() => {
+      .then(async () => {
+        // Verify the saved MPV audio device before marking as initialized.
+        // Doing this first prevents the track-change effect from firing while
+        // the device fix is still in progress (race condition on next-track press).
+        const savedDeviceId = config.playback.mpvAudioDeviceId;
+        if (savedDeviceId) {
+          try {
+            const devices = await ipcRenderer.invoke('player-get-audio-devices');
+            if (devices?.length > 0 && !devices.find((d: any) => d.value === savedDeviceId)) {
+              await ipcRenderer.invoke('player-set-audio-device', 'auto');
+              dispatch(setMpvAudioDeviceId(undefined));
+              settings.set('mpvAudioDeviceId', null);
+              notifyToast(
+                'warning',
+                t('Selected MPV audio device is no longer available. Using system default.')
+              );
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
         initializedRef.current = true;
+
         // Load initial queue if a song is already selected
         const pq = playQueueRef.current;
         const list = pq[entryListKey(pq)] ?? [];
@@ -136,11 +159,18 @@ const MpvPlayer = () => {
       // Compute next-next from OLD state before dispatching, to avoid stale playQueueRef
       const newNextUrl = getNextUrl(nextIndex);
 
-      autoNextPendingRef.current = true;
+      const nextUrl = nextSong?.streamUrl || '';
+      // Only arm the flag when the URL actually changes. For single-song repeat-all
+      // or repeat-one, nextUrl === currentUrlRef.current, so the track-change effect
+      // deps won't change and the effect won't fire to clear it — leaving the flag
+      // stuck true and causing the next manual song change to be ignored.
+      if (nextUrl && nextUrl !== currentUrlRef.current) {
+        autoNextPendingRef.current = true;
+      }
       dispatch(incrementCurrentIndex('none'));
       if (nextSong) {
         dispatch(setCurrentIndex(nextSong));
-        currentUrlRef.current = nextSong.streamUrl || '';
+        currentUrlRef.current = nextUrl;
       }
 
       // Stop after current: advance the queue display but pause immediately
@@ -150,6 +180,7 @@ const MpvPlayer = () => {
         preloadedNextUrlRef.current = null;
         ipcRenderer.send('player-auto-next', { url: null });
         ipcRenderer.send('player-pause');
+        ipcRenderer.send('player-seek-to', 0);
         return;
       }
 

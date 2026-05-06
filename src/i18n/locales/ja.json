@@ -323,6 +323,8 @@
   "Select only one row": "1行だけ選択",
   "Select which pages to apply media folder filtering to:": "メディアフォルダーフィルタリングを適用するページを選択:",
   "Selected audio device is no longer available. Using system default.": "選択したオーディオデバイスが利用できなくなりました。システムデフォルトを使用します。",
+  "Selected MPV audio device is no longer available. Using system default.": "選択したMPVオーディオデバイスが利用できなくなりました。システムデフォルトを使用します。",
+  "Follow System": "システムに従う",
   "Send player updates to your server. This is required by servers such as Jellyfin and Navidrome to track play counts and use external services such as Last.fm.": "プレーヤーの更新をサーバーに送信します。これは、JellyfinやNavidromeなどのサーバーで再生回数を追跡し、Last.fmなどの外部サービスを使用するために必要です。",
   "Server": "サーバー",
   "Server type": "サーバータイプ",
