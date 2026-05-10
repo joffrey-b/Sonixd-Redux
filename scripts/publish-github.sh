@@ -32,7 +32,7 @@ echo "Creating release branch from github/main..."
 git checkout -b "$BRANCH" github/main
 
 echo "Squashing changes..."
-git merge --squash main
+git merge --squash -X theirs main
 
 # Set the correct public version (local GitLab builds may be ahead, e.g. 1.0.8)
 node -e "
@@ -57,6 +57,10 @@ git push github "$COMMIT:refs/tags/$TAG"
 echo "Cleaning up..."
 git checkout main
 git branch -D "$BRANCH"
+
+echo "Syncing github/main into local main..."
+git fetch github
+git merge github/main -X ours --no-edit
 
 echo ""
 echo "Done. Tag $TAG pushed to GitHub — Linux, macOS and Windows builds are now running."
