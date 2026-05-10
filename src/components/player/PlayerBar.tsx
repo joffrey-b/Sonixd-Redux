@@ -47,6 +47,7 @@ import { apiController } from '../../api/controller';
 import Slider from '../slider/Slider';
 import useDiscordRpc from '../../hooks/useDiscordRpc';
 import { settings } from '../shared/setDefaultSettings';
+import { incrementPlayCountInCache } from '../../hooks/useLibraryCache';
 
 const PlayerBar = () => {
   const { t } = useTranslation();
@@ -422,6 +423,7 @@ const PlayerBar = () => {
     if (!duration) return;
     if (currentTime >= 240 || currentTime >= duration * (playQueue.scrobbleThreshold / 100)) {
       mpvSubmissionScrobbledRef.current = true;
+      incrementPlayCountInCache(playQueue.current?.id);
       apiController({
         serverType: config.serverType,
         endpoint: 'scrobble',

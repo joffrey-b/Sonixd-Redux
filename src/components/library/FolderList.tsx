@@ -85,7 +85,7 @@ const FolderList = () => {
         const selected = folderData?.id ? folderData?.child : indexData?.child;
         dispatch(
           setPlayQueueByRowClick({
-            entries: selected.filter((entry: any) => entry?.isDir === false),
+            entries: (selected || []).filter((entry: any) => entry?.isDir === false),
             currentIndex: rowData.rowIndex,
             currentSongId: rowData.id,
             uniqueSongId: rowData.uniqueId,
@@ -104,7 +104,7 @@ const FolderList = () => {
   return (
     <>
       {(isLoading || isLoadingMusicFolders) && <CenterLoader />}
-      {isError && <div>Error: {error}</div>}
+      {isError && <div>{(error as any)?.message || 'Failed to load.'}</div>}
       {!isLoading && indexData && (
         <GenericPage
           hideDivider

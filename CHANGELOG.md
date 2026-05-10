@@ -4,35 +4,51 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.0.2]
+
+### Added
+
+- **Artist Radio** ([#8](https://github.com/joffrey-b/Sonixd-Redux/issues/8)): One-click similar-artist mix from any artist page. Available as the wand (✦) button in the artist toolbar - replaces the queue with 50 similar songs and starts playback immediately.
+
+- **Smart Playlists** ([#9](https://github.com/joffrey-b/Sonixd-Redux/issues/9)): Rule-based playlists stored locally. Filter by Genre, Year, Play Count, Rating, Starred, and Duration. Set sort order and a song limit. Save the result to your server as a static playlist snapshot. Accessible from the new Smart Playlists entry in the sidebar.
+
+- **Library Cache**: Full local index of your library for accurate Smart Playlist filtering. Click **Sync Library** on the Smart Playlists page to index all songs. When active, all rules and sorting run against your entire library. The cache syncs automatically on every launch; play count, starred status, and rating are also kept up to date as you use the app.
+
+### Fixed
+
+- **App crash on offline server**: Albums, Songs, and Folders views crashed with a blank screen when the server was unreachable. They now show an error message instead.
+- **Update notification cannot be dismissed**: The "new version available" toast had no visible close button. A Dismiss button is now shown alongside the GitHub link.
+- "PLAYLIST" label on the playlist detail page now displays as "Playlist", consistent with the "Album" and "Artist" casing used elsewhere.
+
+---
+
 ## [1.0.1]
 
 ### Added
 
-- **Follow System theme** ([#6](https://github.com/joffrey-b/Sonixd-Redux/issues/6)): New "Follow System" option at the top of the theme picker - automatically switches between Default Dark and Default Light based on the OS theme, with live switching when the OS theme changes. Selected by default on fresh installs.
-- **Default Light theme** ([#5](https://github.com/joffrey-b/Sonixd-Redux/issues/5)): Completed the previously unfinished Default Light theme - player bar, sidebar, and title bar are now consistently light (`#E8E8EB` / `#DFDFE2`) with dark text to match the content area.
-- **OLED Dark theme** ([#7](https://github.com/joffrey-b/Sonixd-Redux/issues/7)): New built-in theme designed for OLED displays - true black (`#000000`) page background so pixels are fully off, near-black surfaces for the player bar and sidebar, and the same blue accent (`#2196F3`) as Default Dark for primary elements, progress bars, and row selection.
-- **Built-in theme enforcement** ([#5](https://github.com/joffrey-b/Sonixd-Redux/issues/5)): Built-in themes (`themesDefault`) are always overwritten on startup so theme fixes and additions reach existing installs automatically without requiring a reset.
+- **Follow System theme** ([#6](https://github.com/joffrey-b/Sonixd-Redux/issues/6)): New "Follow System" option in the theme picker - automatically switches between Default Dark and Default Light based on your OS theme, with live switching when the OS theme changes. Selected by default on fresh installs.
+- **Default Light theme** ([#5](https://github.com/joffrey-b/Sonixd-Redux/issues/5)): Completed the previously unfinished Default Light theme - player bar, sidebar, and title bar are now consistently light with dark text.
+- **OLED Dark theme** ([#7](https://github.com/joffrey-b/Sonixd-Redux/issues/7)): New built-in theme for OLED displays - true black background so pixels are fully off, with the same blue accent as Default Dark.
+- **Built-in theme updates**: Built-in themes are now always refreshed on startup, so theme improvements reach existing installs automatically.
 
 ### Changed
 
-- **Settings export/import**: `themesDefault` is now excluded from exported files and ignored on import. Built-in themes are always managed by the app; only custom user themes (`themes`) are transferred.
-- **CI**: Added `.gitlab-ci.yml` for local GitLab development runner (Windows, `shell` executor) - test job on every push, Windows `.exe` build job on tags.
-- **CI**: Bumped Node.js from `20.x` to `24.x` across all GitHub Actions workflows and `package.json` engines field.
+- **Settings export/import**: Built-in themes are excluded from exports and ignored on import - only your custom themes are transferred.
 
 ### Fixed
 
 #### MPV
 
-- **Single-song repeat track-skip bug** ([#1](https://github.com/joffrey-b/Sonixd-Redux/issues/1)): Double-clicking a new song after a single-song album had looped at least once was silently ignored. The `autoNextPendingRef` flag was left stuck `true` because the track-change effect never fired (same index and song ID - no dep change). Fixed by only arming the flag when the URL actually changes.
-- **Stop-after-current progress bar** ([#2](https://github.com/joffrey-b/Sonixd-Redux/issues/2)): After stopping at the end of a song, the progress bar showed the elapsed time of the finished song against the duration of the next song (e.g. `3:51 ── 3:39`). Fixed by sending `player-seek-to 0` on stop-after-current, and by immediately syncing `renderer-player-current-time` from the main process on every seek (MPV does not emit `timeposition` events while paused).
-- **Invalid MPV audio device on startup** ([#3](https://github.com/joffrey-b/Sonixd-Redux/issues/3)): When an unavailable `mpvAudioDeviceId` was loaded (e.g. after importing settings from another machine), MPV was initialized with the bad `--audio-device` flag and rapidly skipped through every track in the queue. Fixed by verifying the device immediately after MPV initializes - before loading the queue - and hot-swapping to `auto` if not found.
-- **Invalid MPV audio device double toast** ([#3](https://github.com/joffrey-b/Sonixd-Redux/issues/3)): The "device unavailable" toast could fire twice due to a stale closure in `refreshMpvDevices`'s 2-second retry timer. Fixed with a ref that always reflects the latest device ID. The toast is now shown once by `MpvPlayer` at startup; `PlaybackConfig` silently clears any stale ID when settings are opened.
-- **`setSinkId` called in MPV mode** ([#3](https://github.com/joffrey-b/Sonixd-Redux/issues/3)): The Web Audio `setSinkId` effect in `Player.tsx` ran regardless of backend, causing Chromium's audio device system to malfunction when an invalid `audioDeviceId` was present (e.g. imported from another machine), which in turn caused the MPV device list to appear empty. Fixed by guarding both `setSinkId` call sites with `!isMpv`.
+- **Single-song repeat track-skip bug** ([#1](https://github.com/joffrey-b/Sonixd-Redux/issues/1)): Double-clicking a new song after a looping single-song album was silently ignored.
+- **Stop-after-current progress bar** ([#2](https://github.com/joffrey-b/Sonixd-Redux/issues/2)): After stopping at the end of a song, the progress bar showed the wrong elapsed time against the next song's duration.
+- **Invalid MPV audio device on startup** ([#3](https://github.com/joffrey-b/Sonixd-Redux/issues/3)): Loading a saved audio device that no longer exists (e.g. after importing settings from another machine) caused MPV to rapidly skip through every track in the queue. The app now falls back to the default device automatically.
+- **Invalid MPV audio device double notification** ([#3](https://github.com/joffrey-b/Sonixd-Redux/issues/3)): The "device unavailable" warning could appear twice on startup.
+- **MPV mode interfering with web audio device selection** ([#3](https://github.com/joffrey-b/Sonixd-Redux/issues/3)): Using an invalid audio device while in MPV mode could cause the MPV device list to appear empty.
 
 #### Audio device settings
 
-- **Web audio device toast repeated on every remount** ([#4](https://github.com/joffrey-b/Sonixd-Redux/issues/4)): When `audioDeviceId` referred to an unavailable device, the warning toast fired every time the Settings page was opened. Fixed by clearing the stale ID from Redux and the store when the toast fires, so the condition cannot be true again.
-- **Web audio device toast in MPV mode** ([#4](https://github.com/joffrey-b/Sonixd-Redux/issues/4)): The "selected audio device is no longer available" toast was shown even when using the MPV backend, where `audioDeviceId` is irrelevant. Fixed with a `!isMpv` guard.
+- **Audio device warning repeated on every settings open** ([#4](https://github.com/joffrey-b/Sonixd-Redux/issues/4)): The "selected audio device is no longer available" warning appeared every time the Settings page was opened, even after being dismissed.
+- **Audio device warning shown in MPV mode** ([#4](https://github.com/joffrey-b/Sonixd-Redux/issues/4)): The web audio device warning was incorrectly shown when using the MPV backend, where audio device selection works differently.
 
 ---
 

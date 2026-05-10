@@ -39,6 +39,9 @@ Sonixd Redux is a fork of [Sonixd](https://github.com/jeffvli/sonixd) by jeffvli
 - **EQ preamp** - preamp control for both the graphic EQ and parametric EQ
 - **Custom EQ/PEQ presets** - save, load, and delete named presets
 - **Spectrogram** - full-track spectrogram with frequency, time, and dB axes
+- **Artist Radio** - one-click similar-artist mix from any artist page, powered by Last.fm (Navidrome) or InstantMix (Jellyfin)
+- **Smart Playlists** - rule-based playlists filtered by genre, year, play count, rating, starred status, and duration, with sort and limit controls; save to server as a static playlist snapshot
+- **Library Cache** - sync your full library locally so Smart Playlists filter against every song, not just a random pool; play count, starred status, and rating stay up to date automatically
 - **Scrobble threshold** - configure what percentage of a track must be played before it is scrobbled
 - **Lyrics support** - Synced and unsynced lyrics support with "click on text" and zoom function
 - **Discord RPC** - now shows album images, retrieved from iTunes
@@ -113,6 +116,8 @@ Full documentation is available at **[joffrey-b.github.io/Sonixd-Redux](https://
 - [MPV Backend](https://joffrey-b.github.io/Sonixd-Redux/mpv-backend)
 - [Equalizer & PEQ](https://joffrey-b.github.io/Sonixd-Redux/equalizer)
 - [Library](https://joffrey-b.github.io/Sonixd-Redux/library)
+- [Artist Radio](https://joffrey-b.github.io/Sonixd-Redux/artist-radio)
+- [Smart Playlists](https://joffrey-b.github.io/Sonixd-Redux/smart-playlists)
 - [Lyrics](https://joffrey-b.github.io/Sonixd-Redux/lyrics)
 - [Scrobbling](https://joffrey-b.github.io/Sonixd-Redux/scrobbling)
 - [Sleep Timer](https://joffrey-b.github.io/Sonixd-Redux/sleep-timer)

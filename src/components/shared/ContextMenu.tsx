@@ -45,6 +45,7 @@ import { setStatus } from '../../redux/playerSlice';
 import { apiController } from '../../api/controller';
 import { Server } from '../../types';
 import SpectrogramModal from './SpectrogramModal';
+import { updateStarredInCache, updateRatingInCache } from '../../hooks/useLibraryCache';
 
 export const ContextMenuButton = ({ text, hotkey, ...rest }: any) => {
   return (
@@ -649,6 +650,7 @@ export const GlobalContextMenu = () => {
         notifyToast('error', errorMessages(res)[0]);
       } else {
         dispatch(setStar({ id: ids, type: 'star' }));
+        ids.forEach((id) => updateStarredInCache(id, true));
       }
 
       await refetchActive();
@@ -676,6 +678,7 @@ export const GlobalContextMenu = () => {
         notifyToast('error', errorMessages(res)[0]);
       } else {
         dispatch(setStar({ id: ids, type: 'unstar' }));
+        ids.forEach((id) => updateStarredInCache(id, false));
       }
 
       await refetchActive();
@@ -726,6 +729,7 @@ export const GlobalContextMenu = () => {
     });
     dispatch(setRate({ id: ids, rating }));
     dispatch(setPlaylistRate({ id: ids, rating }));
+    ids.forEach((id) => updateRatingInCache(id, rating));
     await refetchActive();
   };
 

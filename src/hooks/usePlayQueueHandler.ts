@@ -56,6 +56,7 @@ const usePlayQueueHandler = () => {
     byItemType?: { item: Item; id: string; endpoint?: APIEndpoints };
     play: Play;
     musicFolder?: string;
+    onEmpty?: () => void;
   }) => {
     if (options.byData) {
       dispatchSongsToQueue(options.byData, options.play);
@@ -80,6 +81,12 @@ const usePlayQueueHandler = () => {
         endpoint: options.byItemType.endpoint || getEndpoint(options.byItemType.item),
         args: { id: options.byItemType.id, musicFolder: options.musicFolder },
       });
+
+      const songs = data?.song ?? data;
+      if (options.onEmpty && Array.isArray(songs) && songs.length === 0) {
+        options.onEmpty();
+        return;
+      }
 
       if (options.byItemType.item === Item.Album) {
         queryClient.setQueryData(['album', options.byItemType.id], data);

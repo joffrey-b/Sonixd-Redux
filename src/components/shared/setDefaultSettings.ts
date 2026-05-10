@@ -141,6 +141,7 @@ interface Settings {
   genreListFontSize: string | number;
   genreListRowHeight: string | number;
   genreListColumns?: Column[];
+  smartPlaylists: any[];
   themes: any[];
   themesDefault: any[];
   infoMode?: boolean;
@@ -221,6 +222,7 @@ const DEFAULT_SETTINGS: Settings = {
     'collapse',
     'playlists',
     'playlistList',
+    'smartplaylists',
   ],
   pagination: {
     music: {
@@ -312,6 +314,7 @@ const DEFAULT_SETTINGS: Settings = {
     { enabled: true, type: 'peaking', freq: 8000, gain: 0, q: 1.0 },
     { enabled: true, type: 'peaking', freq: 16000, gain: 0, q: 1.0 },
   ],
+  smartPlaylists: [],
   themes: [],
   themesDefault: [
     {
@@ -1944,6 +1947,12 @@ export const setDefaultSettings = (force: boolean) => {
 
   // Always overwrite built-in themes so updates reach existing installs automatically.
   settings.set('themesDefault', DEFAULT_SETTINGS.themesDefault);
+
+  // Add new sidebar items to existing installs if missing.
+  const sidebarSelected: string[] = settings.get('sidebar.selected') || [];
+  if (!sidebarSelected.includes('smartplaylists')) {
+    settings.set('sidebar.selected', [...sidebarSelected, 'smartplaylists']);
+  }
 
   if (force || !settings.has('cachePath')) {
     settings.set('cachePath', path.join(path.dirname(settings.path)));

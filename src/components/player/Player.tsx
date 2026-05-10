@@ -7,6 +7,7 @@ import React, {
   useCallback,
 } from 'react';
 import { ipcRenderer } from 'electron';
+import { incrementPlayCountInCache } from '../../hooks/useLibraryCache';
 import ReactAudioPlayer from 'react-audio-player';
 import { Helmet } from 'react-helmet-async';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
@@ -77,6 +78,7 @@ const gaplessListenHandler = (
     currentSeek <= duration - 2
   ) {
     setScrobbled(true);
+    incrementPlayCountInCache(playQueue.currentSongId);
     apiController({
       serverType,
       endpoint: 'scrobble',
@@ -242,6 +244,7 @@ const listenHandler = (
     currentSeek <= fadeAtTime
   ) {
     setScrobbled(true);
+    incrementPlayCountInCache(playQueue.currentSongId);
     apiController({
       serverType,
       endpoint: 'scrobble',

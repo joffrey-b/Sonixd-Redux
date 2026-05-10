@@ -58,6 +58,7 @@ export type APIEndpoints =
   | 'getMusicDirectorySongs'
   | 'getDownloadUrl'
   | 'getSongs'
+  | 'getAllSongs'
   | 'getTopSongs'
   | 'getSongsByGenre'
   | 'getLyrics'
@@ -200,4 +201,33 @@ export interface Pagination {
   activePage?: number;
   serverSide?: boolean;
   recordsPerPage: number;
+}
+
+export type SmartPlaylistRuleField =
+  | 'genre'
+  | 'year'
+  | 'playCount'
+  | 'rating'
+  | 'starred'
+  | 'duration';
+
+export type SmartPlaylistRuleOperator = 'is' | 'isNot' | 'gte' | 'lte' | 'gt' | 'lt' | 'between';
+
+export type SmartPlaylistSortField = 'playCount' | 'year' | 'rating' | 'duration' | 'random';
+
+export interface SmartPlaylistRule {
+  id: string;
+  field: SmartPlaylistRuleField;
+  operator: SmartPlaylistRuleOperator;
+  value: string | number | boolean;
+  value2?: number;
+}
+
+export interface SmartPlaylist {
+  id: string;
+  name: string;
+  rules: SmartPlaylistRule[];
+  sort: SmartPlaylistSortField;
+  sortDirection: 'asc' | 'desc';
+  limit: number;
 }

@@ -5,6 +5,7 @@ import { useAppDispatch, useAppSelector } from '../redux/hooks';
 import { apiController } from '../api/controller';
 import { setStar } from '../redux/playQueueSlice';
 import { setPlaylistStar } from '../redux/playlistSlice';
+import { updateStarredInCache } from './useLibraryCache';
 
 const useFavorite = () => {
   const dispatch = useAppDispatch();
@@ -65,6 +66,7 @@ const useFavorite = () => {
 
       dispatch(setStar({ id: [rowData.id], type: favorite ? 'star' : 'unstar' }));
       dispatch(setPlaylistStar({ id: [rowData.id], type: favorite ? 'star' : 'unstar' }));
+      updateStarredInCache(rowData.id, favorite);
     },
     [config.serverType, dispatch, queryClient]
   );

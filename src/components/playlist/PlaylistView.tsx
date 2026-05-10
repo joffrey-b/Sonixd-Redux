@@ -421,7 +421,7 @@ const PlaylistView = ({ ...rest }) => {
             <div>
               <PageHeaderSubtitleDataLine $top>
                 <StyledLink onClick={() => history.push('/playlist')}>
-                  <strong>{t('PLAYLIST')}</strong>
+                  <strong>{t('Playlist')}</strong>
                 </StyledLink>{' '}
                 • {data.songCount} songs, {formatDuration(data.duration)} •{' '}
                 {data.public ? t('Public') : t('Private')}

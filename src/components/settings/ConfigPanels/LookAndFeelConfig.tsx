@@ -698,6 +698,10 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
                   value: 'playlists',
                 },
                 {
+                  label: i18n.t('Smart Playlists'),
+                  value: 'smartplaylists',
+                },
+                {
                   label: i18n.t('Favorites'),
                   value: 'favorites',
                 },

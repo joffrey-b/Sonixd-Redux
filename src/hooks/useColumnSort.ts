@@ -87,9 +87,10 @@ const useColumnSort = (data: any[], type: Item, sort: { column: string; type: 'a
   useEffect(() => {
     setSortProps(sort);
 
+    const safeData = data || [];
     const sortedByColumn = sortProps.column
       ? _.orderBy(
-          data,
+          safeData,
           [
             (entry: any) => {
               return typeof entry[sortProps.column!] === 'string'
@@ -99,7 +100,7 @@ const useColumnSort = (data: any[], type: Item, sort: { column: string; type: 'a
           ],
           sortProps.type
         )
-      : data;
+      : safeData;
 
     setSortedData(sortedByColumn);
     // eslint-disable-next-line react-hooks/exhaustive-deps

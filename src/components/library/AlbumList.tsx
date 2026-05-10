@@ -359,7 +359,7 @@ const AlbumList = () => {
         />
       }
     >
-      {isError && <div>Error: {error}</div>}
+      {isError && <div>{(error as any)?.message || 'Failed to load.'}</div>}
       {!isError && viewType === 'list' && (
         <ListViewType
           ref={listRef}

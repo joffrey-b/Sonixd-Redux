@@ -10,7 +10,7 @@ const useSearchQuery = (searchQuery: string, data: any[], filterProperties: stri
       if (searchQuery !== '') {
         const matches: SetStateAction<any[]> = [];
         filterProps.map((prop: string) => {
-          const filteredDataByProp = data.filter((entry: any) => {
+          const filteredDataByProp = (data || []).filter((entry: any) => {
             if (prop.match('artist')) {
               return String(entry.albumArtist)?.toLowerCase().includes(searchQuery.toLowerCase());
             }

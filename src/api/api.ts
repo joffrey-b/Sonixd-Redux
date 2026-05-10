@@ -784,6 +784,20 @@ export const getSearch = async (options: {
   };
 };
 
+export const getAllSongs = async (options: { offset: number; count: number }) => {
+  const { data } = await api.get('/search3.view', {
+    params: {
+      query: '',
+      songCount: options.count,
+      songOffset: options.offset,
+      artistCount: 0,
+      albumCount: 0,
+    },
+  });
+  const songs = (data.searchResult3?.song || []).map((entry: any) => normalizeSong(entry));
+  return { songs, total: null as number | null };
+};
+
 export const scrobble = async (options: { id: string; time?: number; submission?: boolean }) => {
   const { data } = await api.get(`/scrobble.view`, { params: options });
   return data;

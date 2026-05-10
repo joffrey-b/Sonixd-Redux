@@ -519,6 +519,27 @@ const ArtistView = ({ ...rest }: any) => {
                         })
                       }
                     />
+                    <CustomTooltip text={t('Artist Mix')}>
+                      <StyledButton
+                        aria-label={t('Artist Mix')}
+                        appearance="subtle"
+                        size="lg"
+                        onClick={() =>
+                          handlePlayQueueAdd({
+                            byItemType: {
+                              item: Item.Artist,
+                              id: data.id,
+                              endpoint: 'getSimilarSongs',
+                            },
+                            play: Play.Play,
+                            onEmpty: () =>
+                              notifyToast('warning', t('No similar songs found for this artist.')),
+                          })
+                        }
+                      >
+                        <Icon icon="magic" />
+                      </StyledButton>
+                    </CustomTooltip>
                     <FavoriteButton
                       size="lg"
                       appearance="subtle"
@@ -928,54 +949,7 @@ const ArtistView = ({ ...rest }: any) => {
               {data.info?.similarArtist.length > 0 && (
                 <StyledPanel>
                   <ScrollingMenu
-                    title={`${t('Related Artists')} `}
-                    subtitle={
-                      <ButtonGroup>
-                        <PlayButton
-                          size="sm"
-                          appearance="subtle"
-                          text={t('Play Artist Mix')}
-                          onClick={() =>
-                            handlePlayQueueAdd({
-                              byItemType: {
-                                item: Item.Artist,
-                                id: data.id,
-                                endpoint: 'getSimilarSongs',
-                              },
-                              play: Play.Play,
-                            })
-                          }
-                        />
-                        <PlayAppendNextButton
-                          size="sm"
-                          appearance="subtle"
-                          onClick={() =>
-                            handlePlayQueueAdd({
-                              byItemType: {
-                                item: Item.Artist,
-                                id: data.id,
-                                endpoint: 'getSimilarSongs',
-                              },
-                              play: Play.Next,
-                            })
-                          }
-                        />
-                        <PlayAppendButton
-                          size="sm"
-                          appearance="subtle"
-                          onClick={() =>
-                            handlePlayQueueAdd({
-                              byItemType: {
-                                item: Item.Artist,
-                                id: data.id,
-                                endpoint: 'getSimilarSongs',
-                              },
-                              play: Play.Later,
-                            })
-                          }
-                        />
-                      </ButtonGroup>
-                    }
+                    title={t('Related Artists')}
                     data={data.info.similarArtist}
                     cardTitle={{
                       prefix: '/library/artist',

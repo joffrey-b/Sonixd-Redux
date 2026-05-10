@@ -5,6 +5,7 @@ import { useAppDispatch, useAppSelector } from '../redux/hooks';
 import { apiController } from '../api/controller';
 import { setRate } from '../redux/playQueueSlice';
 import { setPlaylistRate } from '../redux/playlistSlice';
+import { updateRatingInCache } from './useLibraryCache';
 
 export const useRating = () => {
   const queryClient = useQueryClient();
@@ -57,6 +58,7 @@ export const useRating = () => {
 
       dispatch(setRate({ id: [rowData.id], rating: options.rating }));
       dispatch(setPlaylistRate({ id: [rowData.id], rating: options.rating }));
+      updateRatingInCache(rowData.id, options.rating);
     },
     [config.serverType, dispatch, queryClient]
   );

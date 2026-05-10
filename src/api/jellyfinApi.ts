@@ -505,6 +505,26 @@ export const getSongs = async (options: {
   );
 };
 
+export const getAllSongs = async (options: { offset: number; count: number }) => {
+  const { data } = await jellyfinApi.get(`/users/${auth.username}/items`, {
+    params: {
+      fields: 'Genres, DateCreated, MediaSources, ParentId',
+      includeItemTypes: 'Audio',
+      limit: options.count,
+      startIndex: options.offset,
+      recursive: true,
+      sortBy: 'SortName',
+      sortOrder: 'Ascending',
+      imageTypeLimit: 1,
+      enableImageTypes: 'Primary',
+    },
+  });
+  return {
+    songs: (data.Items || []).map((entry: any) => normalizeSong(entry)),
+    total: (data.TotalRecordCount as number) ?? null,
+  };
+};
+
 export const getTopSongs = async (options: {
   artist: string;
   count: number;

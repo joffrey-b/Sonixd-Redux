@@ -191,6 +191,21 @@ const Sidebar = ({
                   </SidebarNavItem>
                   <SidebarNavItem
                     tabIndex={0}
+                    eventKey="smartplaylists"
+                    icon={<Icon icon="magic" />}
+                    onSelect={handleSidebarSelect}
+                    disabled={disableSidebar}
+                    onKeyDown={(e: any) => {
+                      if (e.key === ' ' || e.key === 'Enter') {
+                        history.push('/smartplaylists');
+                      }
+                    }}
+                    $show={config.lookAndFeel.sidebar.selected.includes('smartplaylists')}
+                  >
+                    {t('Smart Playlists')}
+                  </SidebarNavItem>
+                  <SidebarNavItem
+                    tabIndex={0}
                     eventKey="starred"
                     icon={<Icon icon="heart" />}
                     onSelect={handleSidebarSelect}

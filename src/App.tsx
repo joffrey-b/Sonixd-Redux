@@ -8,6 +8,7 @@ import './styles/App.global.css';
 import Layout from './components/layout/Layout';
 import PlaylistList from './components/playlist/PlaylistList';
 import PlaylistView from './components/playlist/PlaylistView';
+import SmartPlaylistList from './components/smartplaylist/SmartPlaylistList';
 import Config from './components/settings/Config';
 import NowPlayingView from './components/player/NowPlayingView';
 import Login from './components/settings/Login';
@@ -20,7 +21,8 @@ import AlbumList from './components/library/AlbumList';
 import ArtistList from './components/library/ArtistList';
 import GenreList from './components/library/GenreList';
 import { MockFooter } from './components/settings/styled';
-import { useAppSelector } from './redux/hooks';
+import { useAppDispatch, useAppSelector } from './redux/hooks';
+import { setLibrarySyncedAt } from './redux/smartPlaylistSlice';
 import { PageModal } from './components/modal/Modal';
 import NowPlayingMiniView from './components/player/NowPlayingMiniView';
 import { GlobalContextMenu } from './components/shared/ContextMenu';
@@ -33,6 +35,7 @@ import MusicList from './components/library/MusicList';
 import { notifyToast } from './components/shared/toast';
 import { settings } from './components/shared/setDefaultSettings';
 import useCheckForUpdates from './hooks/useCheckForUpdates';
+import useLibraryCache from './hooks/useLibraryCache';
 
 const App = () => {
   const [zoomFactor, setZoomFactor] = useState(Number(localStorage.getItem('zoomFactor')) || 1.0);
@@ -100,6 +103,18 @@ const App = () => {
 
   useCheckForUpdates();
 
+  const dispatch = useAppDispatch();
+  const { syncLibrary } = useLibraryCache();
+
+  // Auto-sync library cache on every launch so play counts from other devices stay current.
+  useEffect(() => {
+    if (!localStorage.getItem('server')) return;
+    syncLibrary()
+      .then(() => dispatch(setLibrarySyncedAt(new Date().toISOString())))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!localStorage.getItem('server') || !localStorage.getItem('serverBase64')) {
     return (
       <ThemeProvider theme={theme}>
@@ -130,6 +145,7 @@ const App = () => {
             <Route exact path="/nowplaying" component={NowPlayingView} />
             <Route exact path="/playlist/:id" component={PlaylistView} />
             <Route exact path="/playlist" component={PlaylistList} />
+            <Route exact path="/smartplaylists" component={SmartPlaylistList} />
             <Route exact path="/starred" component={StarredView} />
             <Route exact path="/config" component={Config} />
             <Route exact path="/search" component={SearchView} />

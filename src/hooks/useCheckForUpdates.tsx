@@ -32,21 +32,38 @@ const useCheckForUpdates = () => {
             description: (
               <div>
                 <p style={{ margin: '4px 0 8px' }}>You are running v{currentVersion}.</p>
-                <button
-                  type="button"
-                  onClick={() => shell.openExternal(RELEASES_URL)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    padding: 0,
-                    color: 'inherit',
-                    textDecoration: 'underline',
-                    cursor: 'pointer',
-                    fontSize: 'inherit',
-                  }}
-                >
-                  View release on GitHub →
-                </button>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => shell.openExternal(RELEASES_URL)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      color: 'inherit',
+                      textDecoration: 'underline',
+                      cursor: 'pointer',
+                      fontSize: 'inherit',
+                    }}
+                  >
+                    View release on GitHub →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => Notification.closeAll()}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      color: 'inherit',
+                      opacity: 0.6,
+                      cursor: 'pointer',
+                      fontSize: 'inherit',
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             ),
             duration: 0,

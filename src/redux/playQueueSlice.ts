@@ -808,11 +808,7 @@ const playQueueSlice = createSlice({
             insertIndex += 1;
           }
         }
-        state.entry = [
-          ...state.entry.slice(0, insertIndex),
-          ...refreshedEntries,
-          ...state.entry.slice(insertIndex),
-        ];
+        state.entry.splice(insertIndex, 0, ...refreshedEntries);
       }
 
       if (state.shuffle) {
@@ -837,11 +833,7 @@ const playQueueSlice = createSlice({
               shuffleInsertIndex += 1;
             }
           }
-          state.shuffledEntry = [
-            ...state.shuffledEntry.slice(0, shuffleInsertIndex),
-            ...shuffledEntries,
-            ...state.shuffledEntry.slice(shuffleInsertIndex),
-          ];
+          state.shuffledEntry.splice(shuffleInsertIndex, 0, ...shuffledEntries);
         }
       } else if (isEmptyQueue) {
         // If shuffle is disabled, add all entries in order
