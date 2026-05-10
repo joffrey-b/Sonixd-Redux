@@ -39,7 +39,7 @@ Sonixd Redux is a fork of [Sonixd](https://github.com/jeffvli/sonixd) by jeffvli
 - **EQ preamp** - preamp control for both the graphic EQ and parametric EQ
 - **Custom EQ/PEQ presets** - save, load, and delete named presets
 - **Spectrogram** - full-track spectrogram with frequency, time, and dB axes
-- **Artist Radio** - one-click similar-artist mix from any artist page, powered by Last.fm (Navidrome) or InstantMix (Jellyfin)
+- **Artist Radio** - one-click similar-artist mix from any artist page, powered by your server's similarity data (Navidrome) or InstantMix (Jellyfin)
 - **Smart Playlists** - rule-based playlists filtered by genre, year, play count, rating, starred status, and duration, with sort and limit controls; save to server as a static playlist snapshot
 - **Library Cache** - sync your full library locally so Smart Playlists filter against every song, not just a random pool; play count, starred status, and rating stay up to date automatically
 - **Scrobble threshold** - configure what percentage of a track must be played before it is scrobbled
