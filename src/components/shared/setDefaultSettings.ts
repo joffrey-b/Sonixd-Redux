@@ -223,6 +223,7 @@ const DEFAULT_SETTINGS: Settings = {
     'playlists',
     'playlistList',
     'smartplaylists',
+    'radio',
   ],
   pagination: {
     music: {
@@ -1952,6 +1953,9 @@ export const setDefaultSettings = (force: boolean) => {
   const sidebarSelected: string[] = settings.get('sidebar.selected') || [];
   if (!sidebarSelected.includes('smartplaylists')) {
     settings.set('sidebar.selected', [...sidebarSelected, 'smartplaylists']);
+  }
+  if (!sidebarSelected.includes('radio')) {
+    settings.set('sidebar.selected', [...(settings.get('sidebar.selected') as string[]), 'radio']);
   }
 
   if (force || !settings.has('cachePath')) {

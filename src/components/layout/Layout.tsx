@@ -74,6 +74,9 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
       case 'smartplaylists':
         route = '/smartplaylists';
         break;
+      case 'radio':
+        route = '/radio';
+        break;
       case 'starred':
         route = '/starred';
         break;

@@ -318,6 +318,16 @@ export const getPlaylists = async () => {
   return (data.playlists?.playlist || []).map((playlist: any) => normalizePlaylist(playlist));
 };
 
+export const getInternetRadioStations = async () => {
+  const { data } = await api.get('/getInternetRadioStations.view');
+  return (data.internetRadioStations?.internetRadioStation || []).map((station: any) => ({
+    id: station.id,
+    title: station.name,
+    streamUrl: station.streamUrl,
+    homePageUrl: station.homePageUrl || null,
+  }));
+};
+
 export const getStarred = async (options: { musicFolderId?: string | number }) => {
   const { data } = await api.get(`/getStarred2.view`, { params: options });
 

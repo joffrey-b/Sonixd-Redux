@@ -4,6 +4,18 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.0.3]
+
+### Added
+
+- **Internet Radio** ([#10](https://github.com/joffrey-b/Sonixd-Redux/issues/10)): Play internet radio stations configured on your Navidrome server directly from a new sidebar entry. Stations appear with a play button and a link to their homepage. While playing, the player bar shows only play/pause and a LIVE indicator - stop, skip, seek, and scrobbling are disabled. Subsonic-based servers only - the entry is hidden for Jellyfin users.
+
+### Fixed
+
+- **Library sync timestamp not persisted**: The "Last synced" timestamp on the Smart Playlists page reset to blank on every app restart. It now persists across launches and appears immediately when the app opens.
+
+---
+
 ## [1.0.2]
 
 ### Added

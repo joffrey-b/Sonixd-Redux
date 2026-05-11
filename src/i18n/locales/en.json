@@ -469,5 +469,7 @@
   "Which cache would you like to clear?": "Which cache would you like to clear?",
   "Windows System Media Transport Controls": "Windows System Media Transport Controls",
   "Years": "Years",
-  "Playlist": "Playlist"
+  "Playlist": "Playlist",
+  "Internet Radio": "Internet Radio",
+  "No internet radio stations configured on your server.": "No internet radio stations configured on your server."
 }

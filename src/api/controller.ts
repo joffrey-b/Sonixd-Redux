@@ -35,6 +35,7 @@ import {
   updatePlaylistSongsLg,
   getLyrics,
   getLyricsBySongId,
+  getInternetRadioStations,
 } from './api';
 import {
   getDownloadUrl as jfGetDownloadUrl,
@@ -115,6 +116,7 @@ const endpoints = [
   { id: 'createPlaylist', endpoint: { subsonic: createPlaylist, jellyfin: jfCreatePlaylist } },
   { id: 'updatePlaylist', endpoint: { subsonic: updatePlaylist, jellyfin: jfUpdatePlaylist } },
   { id: 'clearPlaylist', endpoint: { subsonic: clearPlaylist, jellyfin: undefined } },
+  { id: 'getInternetRadioStations', endpoint: { subsonic: getInternetRadioStations, jellyfin: undefined } },
 ];
 
 export const apiController = async (options: {

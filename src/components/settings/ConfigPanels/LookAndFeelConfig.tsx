@@ -724,6 +724,9 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
                   label: i18n.t('Folders'),
                   value: 'folders',
                 },
+                ...(config.serverType !== Server.Jellyfin
+                  ? [{ label: i18n.t('Internet Radio'), value: 'radio' }]
+                  : []),
                 {
                   label: i18n.t('Config'),
                   value: 'config',

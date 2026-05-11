@@ -1,7 +1,7 @@
 {
   "name": "sonixd-redux",
   "productName": "Sonixd Redux",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Sonixd Redux",
   "main": "./main.prod.js",
   "author": {

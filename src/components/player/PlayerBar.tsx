@@ -70,6 +70,7 @@ const PlayerBar = () => {
   const [sleepTimerCustom, setSleepTimerCustom] = useState('');
   const [isLoadingRandom, setIsLoadingRandom] = useState(false);
   const { handlePlayQueueAdd } = usePlayQueueHandler();
+  const isRadio = Boolean(playQueue.current?.isRadio);
   const songDuration = useMemo(
     () => format(playQueue[currentEntryList][playQueue.currentIndex]?.duration * 1000 || 0),
     [currentEntryList, playQueue]
@@ -392,7 +393,8 @@ const PlayerBar = () => {
 
   // MPV scrobbling — "now playing" notification 5s after playback starts
   useEffect(() => {
-    if (!isMpv || !playQueue.scrobble || player.status !== 'PLAYING') return undefined;
+    if (!isMpv || !playQueue.scrobble || player.status !== 'PLAYING' || playQueue.current?.isRadio)
+      return undefined;
     if (mpvNowPlayingTimerRef.current) clearTimeout(mpvNowPlayingTimerRef.current);
     mpvNowPlayingTimerRef.current = setTimeout(() => {
       mpvNowPlayingTimerRef.current = null;
@@ -633,59 +635,65 @@ const PlayerBar = () => {
             <FlexboxGrid.Item colspan={12} style={{ textAlign: 'center', verticalAlign: 'middle' }}>
               <PlayerColumn center height="45px">
                 {/* Stop Button */}
-                <CustomTooltip text={t('Stop')}>
-                  <PlayerControlIcon
-                    aria-label={t('Seek forward')}
-                    role="button"
-                    tabIndex={0}
-                    icon="stop"
-                    size="lg"
-                    fixedWidth
-                    disabled={playQueue.entry.length === 0}
-                    onClick={handleStopEffective}
-                    onKeyDown={(e: any) => {
-                      if (e.key === ' ' || e.key === 'Enter') {
-                        handleStopEffective();
-                      }
-                    }}
-                  />
-                </CustomTooltip>
+                {!isRadio && (
+                  <CustomTooltip text={t('Stop')}>
+                    <PlayerControlIcon
+                      aria-label={t('Seek forward')}
+                      role="button"
+                      tabIndex={0}
+                      icon="stop"
+                      size="lg"
+                      fixedWidth
+                      disabled={playQueue.entry.length === 0}
+                      onClick={handleStopEffective}
+                      onKeyDown={(e: any) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          handleStopEffective();
+                        }
+                      }}
+                    />
+                  </CustomTooltip>
+                )}
                 {/* Previous Song Button */}
-                <CustomTooltip text={t('Previous Track')}>
-                  <PlayerControlIcon
-                    aria-label={t('Previous Track')}
-                    role="button"
-                    tabIndex={0}
-                    icon="step-backward"
-                    size="lg"
-                    fixedWidth
-                    disabled={playQueue.entry.length === 0}
-                    onClick={handlePrevTrack}
-                    onKeyDown={(e: any) => {
-                      if (e.key === ' ' || e.key === 'Enter') {
-                        handlePrevTrack();
-                      }
-                    }}
-                  />
-                </CustomTooltip>
+                {!isRadio && (
+                  <CustomTooltip text={t('Previous Track')}>
+                    <PlayerControlIcon
+                      aria-label={t('Previous Track')}
+                      role="button"
+                      tabIndex={0}
+                      icon="step-backward"
+                      size="lg"
+                      fixedWidth
+                      disabled={playQueue.entry.length === 0}
+                      onClick={handlePrevTrack}
+                      onKeyDown={(e: any) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          handlePrevTrack();
+                        }
+                      }}
+                    />
+                  </CustomTooltip>
+                )}
                 {/* Seek Backward Button */}
-                <CustomTooltip text={t('Seek backward')}>
-                  <PlayerControlIcon
-                    aria-label={t('Seek backward')}
-                    role="button"
-                    tabIndex={0}
-                    icon="backward"
-                    size="lg"
-                    fixedWidth
-                    disabled={playQueue.entry.length === 0}
-                    onClick={handleSeekBackward}
-                    onKeyDown={(e: any) => {
-                      if (e.key === ' ' || e.key === 'Enter') {
-                        handleSeekBackward();
-                      }
-                    }}
-                  />
-                </CustomTooltip>
+                {!isRadio && (
+                  <CustomTooltip text={t('Seek backward')}>
+                    <PlayerControlIcon
+                      aria-label={t('Seek backward')}
+                      role="button"
+                      tabIndex={0}
+                      icon="backward"
+                      size="lg"
+                      fixedWidth
+                      disabled={playQueue.entry.length === 0}
+                      onClick={handleSeekBackward}
+                      onKeyDown={(e: any) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          handleSeekBackward();
+                        }
+                      }}
+                    />
+                  </CustomTooltip>
+                )}
                 {/* Play/Pause Button */}
                 <CustomTooltip text={t('Play/Pause')}>
                   <PlayerControlIcon
@@ -706,54 +714,60 @@ const PlayerBar = () => {
                 </CustomTooltip>
 
                 {/* Seek Forward Button */}
-                <CustomTooltip text={t('Seek forward')}>
-                  <PlayerControlIcon
-                    aria-label={t('Seek forward')}
-                    role="button"
-                    tabIndex={0}
-                    icon="forward"
-                    size="lg"
-                    fixedWidth
-                    disabled={playQueue.entry.length === 0}
-                    onClick={handleSeekForward}
-                    onKeyDown={(e: any) => {
-                      if (e.key === ' ' || e.key === 'Enter') {
-                        handleSeekForward();
-                      }
-                    }}
-                  />
-                </CustomTooltip>
+                {!isRadio && (
+                  <CustomTooltip text={t('Seek forward')}>
+                    <PlayerControlIcon
+                      aria-label={t('Seek forward')}
+                      role="button"
+                      tabIndex={0}
+                      icon="forward"
+                      size="lg"
+                      fixedWidth
+                      disabled={playQueue.entry.length === 0}
+                      onClick={handleSeekForward}
+                      onKeyDown={(e: any) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          handleSeekForward();
+                        }
+                      }}
+                    />
+                  </CustomTooltip>
+                )}
                 {/* Next Song Button */}
-                <CustomTooltip text={t('Next Track')}>
-                  <PlayerControlIcon
-                    aria-label={t('Next Track')}
-                    role="button"
-                    tabIndex={0}
-                    icon="step-forward"
-                    size="lg"
-                    fixedWidth
-                    disabled={playQueue.entry.length === 0}
-                    onClick={handleNextTrack}
-                    onKeyDown={(e: any) => {
-                      if (e.key === ' ' || e.key === 'Enter') {
-                        handleNextTrack();
-                      }
-                    }}
-                  />
-                </CustomTooltip>
-                <CustomTooltip text={t('Play Random')}>
-                  <PlayerControlIcon
-                    aria-label={t('Play Random')}
-                    role="button"
-                    tabIndex={0}
-                    icon={isLoadingRandom ? 'spinner' : 'plus-square'}
-                    size="lg"
-                    fixedWidth
-                    onClick={handlePlayRandom}
-                    disabled={isLoadingRandom}
-                    spin={isLoadingRandom}
-                  />
-                </CustomTooltip>
+                {!isRadio && (
+                  <CustomTooltip text={t('Next Track')}>
+                    <PlayerControlIcon
+                      aria-label={t('Next Track')}
+                      role="button"
+                      tabIndex={0}
+                      icon="step-forward"
+                      size="lg"
+                      fixedWidth
+                      disabled={playQueue.entry.length === 0}
+                      onClick={handleNextTrack}
+                      onKeyDown={(e: any) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          handleNextTrack();
+                        }
+                      }}
+                    />
+                  </CustomTooltip>
+                )}
+                {!isRadio && (
+                  <CustomTooltip text={t('Play Random')}>
+                    <PlayerControlIcon
+                      aria-label={t('Play Random')}
+                      role="button"
+                      tabIndex={0}
+                      icon={isLoadingRandom ? 'spinner' : 'plus-square'}
+                      size="lg"
+                      fixedWidth
+                      onClick={handlePlayRandom}
+                      disabled={isLoadingRandom}
+                      spin={isLoadingRandom}
+                    />
+                  </CustomTooltip>
+                )}
               </PlayerColumn>
               <PlayerColumn center height="35px">
                 <FlexboxGrid
@@ -773,22 +787,29 @@ const PlayerBar = () => {
                       userSelect: 'none',
                     }}
                   >
-                    <DurationSpan>{songCurrentTime}</DurationSpan>
+                    <DurationSpan>{isRadio ? '' : songCurrentTime}</DurationSpan>
                   </FlexboxGrid.Item>
                   <FlexboxGrid.Item colspan={16}>
                     {/* Seek Slider */}
                     <Slider
                       value={
-                        isMpv
+                        isRadio
+                          ? 0
+                          : isMpv
                           ? currentTime
                           : playQueue.currentPlayer === 1
                           ? playersRef.current?.player1.audioEl.current.currentTime || 0
                           : playersRef.current?.player2.audioEl.current.currentTime || 0
                       }
                       min={0}
-                      max={playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0}
-                      onAfterChange={effectiveHandleSeekSlider}
+                      max={
+                        isRadio
+                          ? 1
+                          : playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0
+                      }
+                      onAfterChange={isRadio ? undefined : effectiveHandleSeekSlider}
                       toolTipType="time"
+                      disabled={isRadio}
                     />
                   </FlexboxGrid.Item>
                   <FlexboxGrid.Item
@@ -799,7 +820,7 @@ const PlayerBar = () => {
                       userSelect: 'none',
                     }}
                   >
-                    <DurationSpan>{songDuration}</DurationSpan>
+                    <DurationSpan>{isRadio ? 'LIVE' : songDuration}</DurationSpan>
                   </FlexboxGrid.Item>
                 </FlexboxGrid>
               </PlayerColumn>

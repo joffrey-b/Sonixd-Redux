@@ -300,6 +300,23 @@ const Sidebar = ({
                       </SidebarNavItem>
                     </>
                   )}
+                  {config.serverType !== Server.Jellyfin && (
+                    <SidebarNavItem
+                      tabIndex={0}
+                      eventKey="radio"
+                      icon={<Icon icon="podcast" />}
+                      onSelect={handleSidebarSelect}
+                      disabled={disableSidebar}
+                      onKeyDown={(e: any) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          history.push('/radio');
+                        }
+                      }}
+                      $show={config.lookAndFeel.sidebar.selected.includes('radio')}
+                    >
+                      {t('Internet Radio')}
+                    </SidebarNavItem>
+                  )}
                   <SidebarNavItem
                     tabIndex={0}
                     eventKey="config"

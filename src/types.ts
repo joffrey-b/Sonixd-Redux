@@ -62,7 +62,8 @@ export type APIEndpoints =
   | 'getTopSongs'
   | 'getSongsByGenre'
   | 'getLyrics'
-  | 'getLyricsBySongId';
+  | 'getLyricsBySongId'
+  | 'getInternetRadioStations';
 
 export interface GenericItem {
   id: string;
@@ -184,6 +185,7 @@ export interface Song {
   userRating?: number;
   type: Item.Music;
   uniqueId: string;
+  isRadio?: boolean;
 }
 
 export interface ScanStatus {

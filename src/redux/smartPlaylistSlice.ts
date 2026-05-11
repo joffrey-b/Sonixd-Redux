@@ -10,7 +10,7 @@ interface SmartPlaylistState {
 
 const initialState: SmartPlaylistState = {
   playlists: (settings.get('smartPlaylists') as SmartPlaylist[]) || [],
-  librarySyncedAt: null,
+  librarySyncedAt: (settings.get('librarySyncedAt') as string) || null,
 };
 
 const smartPlaylistSlice = createSlice({
@@ -35,6 +35,7 @@ const smartPlaylistSlice = createSlice({
     },
     setLibrarySyncedAt: (state, action: PayloadAction<string>) => {
       state.librarySyncedAt = action.payload;
+      settings.set('librarySyncedAt', action.payload);
     },
   },
 });

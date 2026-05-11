@@ -70,10 +70,12 @@ const gaplessListenHandler = (
   // 2. Not already scrobbled
   // 3. Track reached past 4 minutes or past the scrobble threshold percentage
   // 4. Not in the last 2 seconds of the track (gapless player starts second track before first ends)
+  // 5. Not a radio stream (live streams have no meaningful scrobble point)
   // Step 4 sets the scrobbled value to false again which would trigger a second scrobble
   if (
     shouldScrobble &&
     !scrobbled &&
+    !playQueue.current?.isRadio &&
     (currentSeek >= 240 || currentSeek >= duration * (scrobbleThreshold / 100)) &&
     currentSeek <= duration - 2
   ) {
@@ -237,9 +239,11 @@ const listenHandler = (
   // 2. Not already scrobbled
   // 3. Track reached past 4 minutes or past the scrobble threshold percentage
   // 4. The track is not fading
+  // 5. Not a radio stream
   if (
     shouldScrobble &&
     !scrobbled &&
+    !playQueue.current?.isRadio &&
     (currentSeek >= 240 || currentSeek >= duration * (scrobbleThreshold / 100)) &&
     currentSeek <= fadeAtTime
   ) {

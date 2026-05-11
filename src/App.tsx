@@ -9,6 +9,7 @@ import Layout from './components/layout/Layout';
 import PlaylistList from './components/playlist/PlaylistList';
 import PlaylistView from './components/playlist/PlaylistView';
 import SmartPlaylistList from './components/smartplaylist/SmartPlaylistList';
+import InternetRadioList from './components/radio/InternetRadioList';
 import Config from './components/settings/Config';
 import NowPlayingView from './components/player/NowPlayingView';
 import Login from './components/settings/Login';
@@ -146,6 +147,7 @@ const App = () => {
             <Route exact path="/playlist/:id" component={PlaylistView} />
             <Route exact path="/playlist" component={PlaylistList} />
             <Route exact path="/smartplaylists" component={SmartPlaylistList} />
+            <Route exact path="/radio" component={InternetRadioList} />
             <Route exact path="/starred" component={StarredView} />
             <Route exact path="/config" component={Config} />
             <Route exact path="/search" component={SearchView} />

@@ -486,9 +486,9 @@ export const filterPlayQueue = (filters: any[], entries: any) => {
   const enabledFilters = filters.filter((f: any) => f.enabled === true);
   const joinedFilterRegex = enabledFilters.map((f: any) => f.filter).join('|');
 
-  // Remove invalid songs that may break the player (likely due to Airsonic including folders)
+  // Remove invalid entries that may break the player (likely due to Airsonic including folders)
   const validEntries = entries.filter((song: any) => {
-    return song.duration;
+    return song.streamUrl;
   });
 
   if (joinedFilterRegex) {
