@@ -30,12 +30,18 @@ const MpvPlayer = () => {
   const playQueue = useAppSelector((state) => state.playQueue);
   const player = useAppSelector((state) => state.player);
   const config = useAppSelector((state) => state.config);
+  const isJukebox = useAppSelector((state: any) => state.jukebox?.enabled ?? false);
   const eq = useAppSelector((state: any) => state.eq as EqState);
   const peq = useAppSelector((state: any) => state.peq as PeqState);
-  const [mpvReady, setMpvReady] = useState(false);
+  // Counter instead of boolean — increment on each successful init/restart to re-trigger
+  // the play/pause and volume effects that depend on it.
+  const [mpvReady, setMpvReady] = useState(0);
 
   const eqDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const initializedRef = useRef(false);
+  // Prevents the path/gapless/replaygain restart effect from firing on mount
+  // (initial setup is handled by the initialize effect below).
+  const pathEffectMountedRef = useRef(false);
   const currentUrlRef = useRef<string>('');
   const preloadedNextUrlRef = useRef<string | null>(null);
   // Tracks the latest playQueue in event handlers to avoid stale closures
@@ -118,26 +124,19 @@ const MpvPlayer = () => {
         const pq = playQueueRef.current;
         const list = pq[entryListKey(pq)] ?? [];
         const currentUrl = list[pq.currentIndex]?.streamUrl;
-        console.log(
-          '[MPV init] initialized. currentUrl:',
-          currentUrl,
-          'playerStatus:',
-          playerStatusRef.current
-        );
         if (currentUrl) {
           currentUrlRef.current = currentUrl;
           const nextUrl = getNextUrl();
           preloadedNextUrlRef.current = nextUrl;
           const pause = playerStatusRef.current !== 'PLAYING';
-          console.log('[MPV init] sending player-set-queue, pause:', pause);
           ipcRenderer.send('player-set-queue', {
             current: currentUrl,
             next: nextUrl,
             pause,
           });
         }
-        // Trigger a re-render so the play/pause effect re-runs with the correct initialized state
-        setMpvReady(true);
+        // Increment to re-trigger the play/pause and volume effects
+        setMpvReady((v) => v + 1);
         return null;
       })
       .catch(() => {});
@@ -188,30 +187,19 @@ const MpvPlayer = () => {
       ipcRenderer.send('player-auto-next', { url: newNextUrl });
     };
 
-    const onPlay = () => {
-      console.log('[MPV] renderer-player-play received');
-      dispatch(setStatus('PLAYING'));
-    };
-    const onPause = () => {
-      console.log('[MPV] renderer-player-pause received');
-      dispatch(setStatus('PAUSED'));
-    };
-    const onStop = () => {
-      console.log('[MPV] renderer-player-stop received');
-      dispatch(setStatus('PAUSED'));
-    };
+    const onPlay = () => dispatch(setStatus('PLAYING'));
+    const onPause = () => dispatch(setStatus('PAUSED'));
+    const onStop = () => dispatch(setStatus('PAUSED'));
     const onFallback = () => {
       initializedRef.current = false;
       notifyToast('error', t('MPV failed to start. Check the binary path in settings.'));
     };
-    const onDebugLog = (_: any, msg: string) => console.log('[MPV main →]', msg);
 
     ipcRenderer.on('renderer-player-auto-next', onAutoNext);
     ipcRenderer.on('renderer-player-play', onPlay);
     ipcRenderer.on('renderer-player-pause', onPause);
     ipcRenderer.on('renderer-player-stop', onStop);
     ipcRenderer.on('renderer-player-fallback', onFallback);
-    ipcRenderer.on('mpv-debug-log', onDebugLog);
 
     return () => {
       ipcRenderer.removeListener('renderer-player-auto-next', onAutoNext);
@@ -219,7 +207,6 @@ const MpvPlayer = () => {
       ipcRenderer.removeListener('renderer-player-pause', onPause);
       ipcRenderer.removeListener('renderer-player-stop', onStop);
       ipcRenderer.removeListener('renderer-player-fallback', onFallback);
-      ipcRenderer.removeListener('mpv-debug-log', onDebugLog);
       ipcRenderer.send('player-quit');
       initializedRef.current = false;
       if (eqDebounceRef.current) clearTimeout(eqDebounceRef.current);
@@ -229,13 +216,8 @@ const MpvPlayer = () => {
 
   // Load new track when the user changes songs (not when MPV auto-advances)
   useEffect(() => {
-    console.log(
-      '[MPV track-change] fired. initialized:',
-      initializedRef.current,
-      'autoNextPending:',
-      autoNextPendingRef.current
-    );
     if (!initializedRef.current) return;
+    if (isJukebox) return; // jukebox mode: server controls playback
 
     // auto-next already handled the transition — just clear the flag
     if (autoNextPendingRef.current) {
@@ -246,18 +228,10 @@ const MpvPlayer = () => {
     const pq = playQueueRef.current;
     const list = pq[entryListKey(pq)] ?? [];
     const currentUrl = list[pq.currentIndex]?.streamUrl;
-    console.log(
-      '[MPV track-change] currentUrl:',
-      currentUrl,
-      'currentUrlRef:',
-      currentUrlRef.current,
-      'player.status:',
-      player.status
-    );
     if (!currentUrl || currentUrl === currentUrlRef.current) {
-      console.log('[MPV track-change] SKIPPING — url unchanged or missing');
       return;
     }
+
     currentUrlRef.current = currentUrl;
 
     const nextUrl = getNextUrl();
@@ -267,7 +241,6 @@ const MpvPlayer = () => {
     // from the play-effect (separate render due to electron-redux batching) will
     // override the pre-pause and make MPV play correctly.
     const shouldPause = playerStatusRef.current !== 'PLAYING';
-    console.log('[MPV track-change] sending player-set-queue, pause:', shouldPause);
     ipcRenderer.send('player-set-queue', {
       current: currentUrl,
       next: nextUrl,
@@ -293,31 +266,43 @@ const MpvPlayer = () => {
     playQueue.sortedEntry,
   ]);
 
-  // Play / pause — also fires when mpvReady flips so a click during init is not lost
+  // Restart current song from the beginning — fired when next/prev wraps to the same song
   useEffect(() => {
-    console.log(
-      '[MPV play-effect] fired. initialized:',
-      initializedRef.current,
-      'status:',
-      player.status,
-      'mpvReady:',
-      mpvReady
-    );
     if (!initializedRef.current) return;
+    if (isJukebox) return;
+    ipcRenderer.send('player-seek-to', 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playQueue.playerRestartCurrent]);
+
+  // When jukebox is disabled, reset MPV position to 0 so the next local play
+  // starts from the beginning rather than from where it was before jukebox.
+  useEffect(() => {
+    if (isJukebox || !initializedRef.current) return;
+    ipcRenderer.send('player-seek-to', 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJukebox]);
+
+  // Play / pause — also fires when mpvReady flips so a click during init is not lost
+  // When jukebox mode is enabled, always pause local MPV regardless of player status
+  useEffect(() => {
+    if (!initializedRef.current) return;
+    if (isJukebox) {
+      ipcRenderer.send('player-pause');
+      return undefined;
+    }
     if (player.status === 'PLAYING') {
-      console.log('[MPV play-effect] sending player-play');
       ipcRenderer.send('player-play');
     } else {
-      console.log('[MPV play-effect] sending player-pause');
       ipcRenderer.send('player-pause');
     }
-  }, [player.status, mpvReady]);
+  }, [player.status, mpvReady, isJukebox]);
 
   // Volume (0–1 in Redux → 0–100 for MPV)
+  // mpvReady in deps ensures volume is synced after every MPV init/reinit
   useEffect(() => {
     if (!initializedRef.current) return;
     ipcRenderer.send('player-volume', Math.round(playQueue.volume * 100));
-  }, [playQueue.volume]);
+  }, [playQueue.volume, mpvReady]);
 
   // EQ / PEQ — debounced so slider drags don't hammer MPV
   useEffect(() => {
@@ -338,9 +323,15 @@ const MpvPlayer = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.playback.mpvAudioDeviceId]);
 
-  // Path / gapless / replaygain change — requires MPV restart
+  // Path / gapless / replaygain change — requires MPV restart.
+  // Uses pathEffectMountedRef instead of initializedRef so the effect also fires after a
+  // failed start (initializedRef is false after onFallback) — allowing the user to correct
+  // a wrong binary path and have MPV start without needing to switch backends.
   useEffect(() => {
-    if (!initializedRef.current) return;
+    if (!pathEffectMountedRef.current) {
+      pathEffectMountedRef.current = true;
+      return;
+    }
     const { mpvPath, mpvGapless, mpvAudioDeviceId, mpvReplayGain } = config.playback;
     const extraParameters: string[] = [
       `--gapless-audio=${mpvGapless}`,
@@ -363,6 +354,8 @@ const MpvPlayer = () => {
         properties,
       })
       .then(() => {
+        initializedRef.current = true;
+        setMpvReady((v) => v + 1);
         if (currentUrl) {
           preloadedNextUrlRef.current = nextUrl;
           ipcRenderer.send('player-set-queue', {

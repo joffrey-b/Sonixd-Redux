@@ -18,7 +18,11 @@ import {
   LinkButton,
   CoverArtContainer,
 } from './styled';
-import { setVolume, setStopAfterCurrent } from '../../redux/playQueueSlice';
+import {
+  setVolume,
+  setStopAfterCurrent,
+  incrementEntryPlayCount,
+} from '../../redux/playQueueSlice';
 import { setStatus } from '../../redux/playerSlice';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import Player from './Player';
@@ -48,6 +52,7 @@ import Slider from '../slider/Slider';
 import useDiscordRpc from '../../hooks/useDiscordRpc';
 import { settings } from '../shared/setDefaultSettings';
 import { incrementPlayCountInCache } from '../../hooks/useLibraryCache';
+import useJukebox from '../../hooks/useJukebox';
 
 const PlayerBar = () => {
   const { t } = useTranslation();
@@ -64,6 +69,7 @@ const PlayerBar = () => {
   const [localVolume, setLocalVolume] = useState(Number(settings.get('volume')));
   const [muted, setMuted] = useState(false);
   const localVolumeRef = useRef(localVolume);
+  const jukeboxSetGainRef = useRef<((v: number) => void) | null>(null);
   const [showCoverArtModal, setShowCoverArtModal] = useState(false);
   const [showLyricsModal, setShowLyricsModal] = useState(false);
   const [sleepTimerSeconds, setSleepTimerSeconds] = useState<number | null>(null);
@@ -71,11 +77,18 @@ const PlayerBar = () => {
   const [isLoadingRandom, setIsLoadingRandom] = useState(false);
   const { handlePlayQueueAdd } = usePlayQueueHandler();
   const isRadio = Boolean(playQueue.current?.isRadio);
+  const jukebox = useJukebox();
+  const isJukebox = jukebox.enabled;
+  // Updated every render — lets the IPC volume handlers call setGain without stale closure
+  jukeboxSetGainRef.current = isJukebox && !muted ? jukebox.setGain : null;
   const songDuration = useMemo(
     () => format(playQueue[currentEntryList][playQueue.currentIndex]?.duration * 1000 || 0),
     [currentEntryList, playQueue]
   );
-  const songCurrentTime = useMemo(() => format(currentTime * 1000 || 0), [currentTime]);
+  const songCurrentTime = useMemo(
+    () => format((isJukebox ? jukebox.status.position : currentTime) * 1000 || 0),
+    [currentTime, isJukebox, jukebox.status.position]
+  );
 
   const handlePlayRandom = async () => {
     setIsLoadingRandom(true);
@@ -101,14 +114,31 @@ const PlayerBar = () => {
   const history = useHistory();
   useDiscordRpc({ playersRef, currentTimeRef, isMpv });
 
+  const isCurrentPodcastOrRadio = Boolean(
+    playQueue.current?.isPodcast || playQueue.current?.isRadio
+  );
   const { data: lyrics } = useGetLyrics(config, {
-    id: playQueue.current?.id,
-    artist: playQueue.current?.albumArtist,
-    title: playQueue.current?.title,
+    id: isCurrentPodcastOrRadio ? undefined : playQueue.current?.id,
+    artist: isCurrentPodcastOrRadio ? undefined : playQueue.current?.albumArtist,
+    title: isCurrentPodcastOrRadio ? undefined : playQueue.current?.title,
   });
 
   useEffect(() => {
-    if (isMpv) return undefined; // MPV mode: time comes from renderer-player-current-time IPC
+    setCurrentTime(0);
+    if (!isMpv) {
+      // Reset web audio element positions so the next local play starts from 0
+      // even if the same song URL is reused (which would skip the src reload).
+      if (playersRef.current?.player1?.audioEl?.current) {
+        playersRef.current.player1.audioEl.current.currentTime = 0;
+      }
+      if (playersRef.current?.player2?.audioEl?.current) {
+        playersRef.current.player2.audioEl.current.currentTime = 0;
+      }
+    }
+  }, [isJukebox, isMpv]);
+
+  useEffect(() => {
+    if (isMpv || isJukebox) return undefined; // MPV/jukebox: time comes from IPC or polling
     if (player.status === 'PLAYING') {
       const interval = setInterval(() => {
         if (playQueue.currentPlayer === 1) {
@@ -121,7 +151,7 @@ const PlayerBar = () => {
       return () => clearInterval(interval);
     }
     return undefined;
-  }, [isMpv, playQueue.currentPlayer, player.status]);
+  }, [isMpv, isJukebox, playQueue.currentPlayer, player.status]);
 
   useEffect(() => {
     if (config.external.obs.enabled && config.external.obs.pollingInterval >= 100) {
@@ -219,8 +249,55 @@ const PlayerBar = () => {
     isDraggingVolume,
     setIsDraggingVolume,
     setLocalVolume,
-    setCurrentTime
+    setCurrentTime,
+    isMpv ? currentTimeRef : null,
+    isJukebox
+      ? {
+          playPause: jukebox.playPause,
+          next: jukebox.next,
+          prev: jukebox.prev,
+          play: jukebox.play,
+          pause: jukebox.pause,
+          stop: jukebox.stop,
+          seekTo: jukebox.seek,
+          seekBackward: () =>
+            jukebox.seek(
+              Math.max(0, jukebox.status.position - Number(settings.get('seekBackwardInterval')))
+            ),
+          seekForward: () => {
+            const dur = playQueue[currentEntryList][playQueue.currentIndex]?.duration ?? Infinity;
+            jukebox.seek(
+              Math.min(
+                jukebox.status.position + Number(settings.get('seekForwardInterval')),
+                dur - 1
+              )
+            );
+          },
+        }
+      : {}
   );
+
+  // In MPV mode: pause and seek to 0 immediately — handleStop has a 250ms delay
+  // before dispatching setStatus('PAUSED'), which would let MPV play from position 0
+  // for ~250ms before pausing.
+  const handleStopEffective = () => {
+    handleStop();
+    if (isMpv) {
+      // Dispatch PAUSED immediately regardless — handleStop has a 250ms delay
+      dispatch(setStatus('PAUSED'));
+    }
+    if (isMpv) {
+      // Only send IPC commands when MPV is actually playing (not during podcasts)
+      ipcRenderer.send('player-pause');
+      ipcRenderer.send('player-seek-to', 0);
+    }
+  };
+
+  // Jukebox-aware control handlers — defined early so hotkeys can reference them
+  const effectiveHandlePlayPause = isJukebox ? jukebox.playPause : handlePlayPause;
+  const effectiveHandleStop = isJukebox ? jukebox.stop : handleStopEffective;
+  const effectiveHandleNext = isJukebox ? jukebox.next : handleNextTrack;
+  const effectiveHandlePrev = isJukebox ? jukebox.prev : handlePrevTrack;
 
   useEffect(() => {
     setLocalVolume(Number(playQueue.volume.toPrecision(2)));
@@ -231,28 +308,58 @@ const PlayerBar = () => {
     const debounce = setTimeout(() => {
       if (isDraggingVolume) {
         dispatch(setVolume(localVolume));
-        if (playQueue.currentPlayer === 1) {
-          playersRef.current.player1.audioEl.current.volume = localVolume ** 2;
+        if (isJukebox) {
+          if (!muted) jukebox.setGain(localVolume);
         } else {
-          playersRef.current.player2.audioEl.current.volume = localVolume ** 2;
+          if (playQueue.currentPlayer === 1) {
+            playersRef.current.player1.audioEl.current.volume = localVolume ** 2;
+          } else {
+            playersRef.current.player2.audioEl.current.volume = localVolume ** 2;
+          }
         }
-
         settings.set('volume', localVolume);
       }
       setIsDraggingVolume(false);
     }, 100);
 
     return () => clearTimeout(debounce);
-  }, [dispatch, isDraggingVolume, localVolume, playQueue.currentPlayer, playQueue.fadeDuration]);
+    // jukebox.setGain is a stable useCallback — including jukebox (new object each render) would cause loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    dispatch,
+    isDraggingVolume,
+    isJukebox,
+    jukebox.setGain,
+    localVolume,
+    muted,
+    playQueue.currentPlayer,
+    playQueue.fadeDuration,
+  ]);
 
   useEffect(() => {
+    if (isMpv || isJukebox) return;
     // Set the seek back to 0 when the player is incremented/decremented, otherwise the
     // slider bar will temporarily stick to the current time of the previous track before resetting to 0
     playersRef.current.player1.audioEl.current.pause();
     playersRef.current.player2.audioEl.current.pause();
     playersRef.current.player1.audioEl.current.currentTime = 0;
     playersRef.current.player2.audioEl.current.currentTime = 0;
-  }, [playQueue.playerUpdated]);
+  }, [isMpv, isJukebox, playQueue.playerUpdated]);
+
+  useEffect(() => {
+    if (isMpv || isJukebox) return;
+    // Restart the current song from the beginning without pausing — fired when next/prev
+    // wraps back to the same song (single-song queue) or hits the start of the queue.
+    playersRef.current.player1.audioEl.current.currentTime = 0;
+    playersRef.current.player2.audioEl.current.currentTime = 0;
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    if (player.status === 'PLAYING') {
+      playersRef.current.player1.audioEl.current.play().catch(() => {});
+    }
+    // player.status intentionally omitted from deps — this effect should only fire on
+    // playerRestartCurrent, not on every play/pause toggle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMpv, isJukebox, playQueue.playerRestartCurrent]);
 
   const { handleFavorite } = useFavorite();
   const { handleRating } = useRating();
@@ -262,25 +369,25 @@ const PlayerBar = () => {
     hk.playPause,
     (e) => {
       e.preventDefault();
-      handlePlayPause();
+      effectiveHandlePlayPause();
     },
-    [hk.playPause, handlePlayPause]
+    [hk.playPause, effectiveHandlePlayPause]
   );
   useHotkeys(
     hk.nextTrack,
     (e) => {
       e.preventDefault();
-      handleNextTrack();
+      effectiveHandleNext();
     },
-    [hk.nextTrack, handleNextTrack]
+    [hk.nextTrack, effectiveHandleNext]
   );
   useHotkeys(
     hk.prevTrack,
     (e) => {
       e.preventDefault();
-      handlePrevTrack();
+      effectiveHandlePrev();
     },
-    [hk.prevTrack, handlePrevTrack]
+    [hk.prevTrack, effectiveHandlePrev]
   );
   useHotkeys(
     hk.volumeUp,
@@ -289,8 +396,9 @@ const PlayerBar = () => {
       const v = Math.min(1, Math.round((localVolume + 0.05) * 100) / 100);
       setLocalVolume(v);
       dispatch(setVolume(v));
+      if (isJukebox && !muted) jukebox.setGain(v);
     },
-    [hk.volumeUp, localVolume]
+    [hk.volumeUp, localVolume, isJukebox, muted, jukebox.setGain]
   );
   useHotkeys(
     hk.volumeDown,
@@ -299,8 +407,9 @@ const PlayerBar = () => {
       const v = Math.max(0, Math.round((localVolume - 0.05) * 100) / 100);
       setLocalVolume(v);
       dispatch(setVolume(v));
+      if (isJukebox && !muted) jukebox.setGain(v);
     },
-    [hk.volumeDown, localVolume]
+    [hk.volumeDown, localVolume, isJukebox, muted, jukebox.setGain]
   );
   useHotkeys(
     hk.mute,
@@ -320,11 +429,13 @@ const PlayerBar = () => {
       const v = Math.min(1, Math.round((localVolumeRef.current + 0.05) * 100) / 100);
       setLocalVolume(v);
       dispatch(setVolume(v));
+      jukeboxSetGainRef.current?.(v);
     });
     ipcRenderer.on('player-volume-down', () => {
       const v = Math.max(0, Math.round((localVolumeRef.current - 0.05) * 100) / 100);
       setLocalVolume(v);
       dispatch(setVolume(v));
+      jukeboxSetGainRef.current?.(v);
     });
     ipcRenderer.on('player-mute', () => {
       setMuted((m) => !m);
@@ -344,10 +455,17 @@ const PlayerBar = () => {
     }
   }, [config.player.globalShortcuts, config.hotkeys]);
 
+  // Use a ref so jukebox polling (which flips player.status every 1-3s) doesn't reset
+  // the 1-second countdown timeout on every poll cycle.
+  const playerStatusForSleepRef = useRef(player.status);
+  useEffect(() => {
+    playerStatusForSleepRef.current = player.status;
+  }, [player.status]);
+
   useEffect(() => {
     if (sleepTimerSeconds === null) return undefined;
     if (sleepTimerSeconds <= 0) {
-      if (player.status === 'PLAYING') handlePlayPause();
+      if (playerStatusForSleepRef.current === 'PLAYING') effectiveHandlePlayPause();
       setSleepTimerSeconds(null);
       return undefined;
     }
@@ -356,7 +474,7 @@ const PlayerBar = () => {
       1000
     );
     return () => clearTimeout(timeout);
-  }, [sleepTimerSeconds, handlePlayPause, player.status]);
+  }, [sleepTimerSeconds, effectiveHandlePlayPause]);
 
   const formatSleepTimer = (seconds: number) => {
     if (seconds < 60) return `${seconds}s`;
@@ -383,17 +501,41 @@ const PlayerBar = () => {
     ipcRenderer.send('player-mute', muted);
   }, [isMpv, muted]);
 
-  // MPV scrobbling — reset submission flag on each new song
+  // In jukebox mode: mute by setting server gain to 0, unmute by restoring server gain
+  useEffect(() => {
+    if (!isJukebox) return;
+    jukebox.setMuted(muted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJukebox, muted, jukebox.setMuted]);
+
+  // MPV scrobbling — reset submission flag on each new song or track restart (loop)
   const mpvSubmissionScrobbledRef = useRef(false);
+  const mpvPrevTimeRef = useRef(0);
+  const [mpvRestartCount, setMpvRestartCount] = useState(0);
   const mpvNowPlayingTimerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!isMpv) return;
     mpvSubmissionScrobbledRef.current = false;
   }, [isMpv, playQueue.currentSongId]);
+  useEffect(() => {
+    if (!isMpv) return;
+    if (mpvPrevTimeRef.current > 5 && currentTime < 2) {
+      mpvSubmissionScrobbledRef.current = false;
+      setMpvRestartCount((c) => c + 1);
+    }
+    mpvPrevTimeRef.current = currentTime;
+  }, [isMpv, currentTime]);
 
   // MPV scrobbling — "now playing" notification 5s after playback starts
   useEffect(() => {
-    if (!isMpv || !playQueue.scrobble || player.status !== 'PLAYING' || playQueue.current?.isRadio)
+    if (
+      !isMpv ||
+      isJukebox ||
+      !playQueue.scrobble ||
+      player.status !== 'PLAYING' ||
+      playQueue.current?.isRadio ||
+      playQueue.current?.isPodcast
+    )
       return undefined;
     if (mpvNowPlayingTimerRef.current) clearTimeout(mpvNowPlayingTimerRef.current);
     mpvNowPlayingTimerRef.current = setTimeout(() => {
@@ -416,16 +558,32 @@ const PlayerBar = () => {
         mpvNowPlayingTimerRef.current = null;
       }
     };
-  }, [isMpv, playQueue.scrobble, playQueue.currentSongId, player.status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isMpv,
+    isJukebox,
+    playQueue.scrobble,
+    playQueue.currentSongId,
+    player.status,
+    mpvRestartCount,
+  ]);
 
   // MPV scrobbling — submission scrobble when playback position exceeds threshold
   useEffect(() => {
-    if (!isMpv || !playQueue.scrobble || mpvSubmissionScrobbledRef.current) return;
+    if (
+      !isMpv ||
+      isJukebox ||
+      !playQueue.scrobble ||
+      mpvSubmissionScrobbledRef.current ||
+      playQueue.current?.isPodcast
+    )
+      return;
     const duration = playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0;
     if (!duration) return;
     if (currentTime >= 240 || currentTime >= duration * (playQueue.scrobbleThreshold / 100)) {
       mpvSubmissionScrobbledRef.current = true;
       incrementPlayCountInCache(playQueue.current?.id);
+      if (playQueue.current?.id) dispatch(incrementEntryPlayCount(playQueue.current.id));
       apiController({
         serverType: config.serverType,
         endpoint: 'scrobble',
@@ -440,27 +598,109 @@ const PlayerBar = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMpv, currentTime, playQueue.scrobble]);
 
+  // Jukebox scrobbling — reset submission flag on each new song
+  const jukeboxSubmissionScrobbledRef = useRef(false);
+  const jukeboxNowPlayingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (!isJukebox) return;
+    jukeboxSubmissionScrobbledRef.current = false;
+  }, [isJukebox, playQueue.currentSongId, playQueue.entryVersion, jukebox.loopCount]);
+  // Jukebox scrobbling — reset when position jumps backward (manual prev/next/seek to beginning)
+  const jukeboxPrevPositionRef = useRef(0);
+  useEffect(() => {
+    if (!isJukebox) return;
+    const pos = jukebox.status.position ?? 0;
+    if (jukeboxPrevPositionRef.current > 5 && pos < 2) {
+      jukeboxSubmissionScrobbledRef.current = false;
+    }
+    jukeboxPrevPositionRef.current = pos;
+  }, [isJukebox, jukebox.status.position]);
+
+  // Jukebox scrobbling — "now playing" notification 5s after playback starts
+  useEffect(() => {
+    if (
+      !isJukebox ||
+      !playQueue.scrobble ||
+      !jukebox.status.playing ||
+      playQueue.current?.isPodcast
+    )
+      return undefined;
+    if (jukeboxNowPlayingTimerRef.current) clearTimeout(jukeboxNowPlayingTimerRef.current);
+    jukeboxNowPlayingTimerRef.current = setTimeout(() => {
+      jukeboxNowPlayingTimerRef.current = null;
+      apiController({
+        serverType: config.serverType,
+        endpoint: 'scrobble',
+        args: {
+          id: playQueue.current?.id,
+          albumId: playQueue.current?.albumId,
+          submission: false,
+          position: 5 * 1e7,
+          event: 'start',
+        },
+      });
+    }, 5000);
+    return () => {
+      if (jukeboxNowPlayingTimerRef.current) {
+        clearTimeout(jukeboxNowPlayingTimerRef.current);
+        jukeboxNowPlayingTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJukebox, playQueue.scrobble, playQueue.currentSongId, jukebox.status.playing]);
+
+  // Jukebox scrobbling — submission scrobble when playback position exceeds threshold
+  useEffect(() => {
+    if (
+      !isJukebox ||
+      !playQueue.scrobble ||
+      jukeboxSubmissionScrobbledRef.current ||
+      playQueue.current?.isPodcast
+    )
+      return;
+    const duration = playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0;
+    if (!duration) return;
+    const position = jukebox.status.position;
+    if (position >= 240 || position >= duration * (playQueue.scrobbleThreshold / 100)) {
+      jukeboxSubmissionScrobbledRef.current = true;
+      incrementPlayCountInCache(playQueue.current?.id);
+      if (playQueue.current?.id) dispatch(incrementEntryPlayCount(playQueue.current.id));
+      apiController({
+        serverType: config.serverType,
+        endpoint: 'scrobble',
+        args: {
+          id: playQueue.current?.id,
+          albumId: playQueue.current?.albumId,
+          submission: true,
+          position: config.serverType === Server.Jellyfin ? position * 1e7 : undefined,
+        },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJukebox, jukebox.status.position, playQueue.scrobble]);
+
   // In MPV mode: seeking must go through IPC, not audioEl.currentTime
   const handleSeekSliderMpv = (e: number) => {
     setCurrentTime(e);
     ipcRenderer.send('player-seek-to', e);
   };
 
-  // In MPV mode: pause and seek to 0 immediately — handleStop has a 250ms delay
-  // before dispatching setStatus('PAUSED'), which would let MPV play from position 0
-  // for ~250ms before pausing.
-  const handleStopEffective = () => {
-    handleStop();
-    if (isMpv) {
-      // Dispatch PAUSED immediately — handleStop has a 250ms delay which can
-      // race with a subsequent double-click before the timer fires.
-      dispatch(setStatus('PAUSED'));
-      ipcRenderer.send('player-pause');
-      ipcRenderer.send('player-seek-to', 0);
-    }
-  };
-
   const effectiveHandleSeekSlider = isMpv ? handleSeekSliderMpv : handleSeekSlider;
+  const effectiveHandleSeek = isJukebox ? jukebox.seek : effectiveHandleSeekSlider;
+  const effectiveHandleSeekBackward = isJukebox
+    ? () =>
+        jukebox.seek(
+          Math.max(0, jukebox.status.position - Number(settings.get('seekBackwardInterval')))
+        )
+    : handleSeekBackward;
+  const effectiveHandleSeekForward = isJukebox
+    ? () => {
+        const dur = playQueue[currentEntryList][playQueue.currentIndex]?.duration ?? Infinity;
+        jukebox.seek(
+          Math.min(jukebox.status.position + Number(settings.get('seekForwardInterval')), dur - 1)
+        );
+      }
+    : handleSeekForward;
 
   return (
     <>
@@ -645,10 +885,10 @@ const PlayerBar = () => {
                       size="lg"
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
-                      onClick={handleStopEffective}
+                      onClick={effectiveHandleStop}
                       onKeyDown={(e: any) => {
                         if (e.key === ' ' || e.key === 'Enter') {
-                          handleStopEffective();
+                          effectiveHandleStop();
                         }
                       }}
                     />
@@ -665,10 +905,10 @@ const PlayerBar = () => {
                       size="lg"
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
-                      onClick={handlePrevTrack}
+                      onClick={effectiveHandlePrev}
                       onKeyDown={(e: any) => {
                         if (e.key === ' ' || e.key === 'Enter') {
-                          handlePrevTrack();
+                          effectiveHandlePrev();
                         }
                       }}
                     />
@@ -685,10 +925,10 @@ const PlayerBar = () => {
                       size="lg"
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
-                      onClick={handleSeekBackward}
+                      onClick={effectiveHandleSeekBackward}
                       onKeyDown={(e: any) => {
                         if (e.key === ' ' || e.key === 'Enter') {
-                          handleSeekBackward();
+                          effectiveHandleSeekBackward();
                         }
                       }}
                     />
@@ -704,10 +944,10 @@ const PlayerBar = () => {
                     icon={player.status === 'PLAYING' ? 'pause-circle' : 'play-circle'}
                     size="3x"
                     disabled={playQueue.entry.length === 0}
-                    onClick={handlePlayPause}
+                    onClick={effectiveHandlePlayPause}
                     onKeyDown={(e: any) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        handlePlayPause();
+                        effectiveHandlePlayPause();
                       }
                     }}
                   />
@@ -724,10 +964,10 @@ const PlayerBar = () => {
                       size="lg"
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
-                      onClick={handleSeekForward}
+                      onClick={effectiveHandleSeekForward}
                       onKeyDown={(e: any) => {
                         if (e.key === ' ' || e.key === 'Enter') {
-                          handleSeekForward();
+                          effectiveHandleSeekForward();
                         }
                       }}
                     />
@@ -744,10 +984,10 @@ const PlayerBar = () => {
                       size="lg"
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
-                      onClick={handleNextTrack}
+                      onClick={effectiveHandleNext}
                       onKeyDown={(e: any) => {
                         if (e.key === ' ' || e.key === 'Enter') {
-                          handleNextTrack();
+                          effectiveHandleNext();
                         }
                       }}
                     />
@@ -795,6 +1035,8 @@ const PlayerBar = () => {
                       value={
                         isRadio
                           ? 0
+                          : isJukebox
+                          ? jukebox.status.position
                           : isMpv
                           ? currentTime
                           : playQueue.currentPlayer === 1
@@ -807,7 +1049,7 @@ const PlayerBar = () => {
                           ? 1
                           : playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0
                       }
-                      onAfterChange={isRadio ? undefined : effectiveHandleSeekSlider}
+                      onAfterChange={isRadio ? undefined : effectiveHandleSeek}
                       toolTipType="time"
                       disabled={isRadio}
                     />
@@ -998,6 +1240,29 @@ const PlayerBar = () => {
                     />
                   </CustomTooltip>
 
+                  {/* Jukebox Toggle (Subsonic only) */}
+                  {config.serverType === Server.Subsonic && (
+                    <CustomTooltip text={isJukebox ? t('Disable Jukebox') : t('Enable Jukebox')}>
+                      <PlayerControlIcon
+                        aria-label={t('Jukebox')}
+                        aria-pressed={isJukebox ? 'true' : 'false'}
+                        role="button"
+                        tabIndex={0}
+                        icon="music"
+                        size="lg"
+                        fixedWidth
+                        active={isJukebox ? 'true' : 'false'}
+                        onClick={() => (isJukebox ? jukebox.disable() : jukebox.enable())}
+                        onKeyDown={(e: any) => {
+                          if (e.key === ' ') {
+                            if (isJukebox) jukebox.disable();
+                            else jukebox.enable();
+                          }
+                        }}
+                      />
+                    </CustomTooltip>
+                  )}
+
                   {/* Sleep Timer Button */}
                   <Whisper
                     ref={sleepTimerWhisperRef}
@@ -1006,14 +1271,16 @@ const PlayerBar = () => {
                     preventOverflow
                     speaker={
                       <Popup title={t('Sleep Timer')}>
-                        <div style={{ marginBottom: 8 }}>
-                          <span style={{ marginRight: 8 }}>{t('Stop after current song')}</span>
-                          <input
-                            type="checkbox"
-                            checked={playQueue.stopAfterCurrent}
-                            onChange={(e) => dispatch(setStopAfterCurrent(e.target.checked))}
-                          />
-                        </div>
+                        {!isJukebox && (
+                          <div style={{ marginBottom: 8 }}>
+                            <span style={{ marginRight: 8 }}>{t('Stop after current song')}</span>
+                            <input
+                              type="checkbox"
+                              checked={playQueue.stopAfterCurrent}
+                              onChange={(e) => dispatch(setStopAfterCurrent(e.target.checked))}
+                            />
+                          </div>
+                        )}
                         <div>
                           <StyledButton
                             size="xs"
@@ -1081,7 +1348,7 @@ const PlayerBar = () => {
                         size="lg"
                         fixedWidth
                         active={
-                          sleepTimerSeconds !== null || playQueue.stopAfterCurrent
+                          sleepTimerSeconds !== null || (!isJukebox && playQueue.stopAfterCurrent)
                             ? 'true'
                             : 'false'
                         }
@@ -1183,17 +1450,17 @@ const PlayerBar = () => {
           show={showLyricsModal}
           handleHide={() => setShowLyricsModal(false)}
           lyrics={lyrics}
-          currentTime={currentTime}
+          currentTime={isJukebox ? jukebox.status.position : currentTime}
           duration={playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0}
           playerStatus={player.status}
           title={playQueue[currentEntryList][playQueue.currentIndex]?.title}
           artist={playQueue[currentEntryList][playQueue.currentIndex]?.artist
             ?.map((a: any) => a.title)
             .join(', ')}
-          handlePlayPause={handlePlayPause}
-          handlePrevTrack={handlePrevTrack}
-          handleNextTrack={handleNextTrack}
-          handleSeekSlider={effectiveHandleSeekSlider}
+          handlePlayPause={effectiveHandlePlayPause}
+          handlePrevTrack={effectiveHandlePrev}
+          handleNextTrack={effectiveHandleNext}
+          handleSeekSlider={effectiveHandleSeek}
         />
       </Player>
     </>

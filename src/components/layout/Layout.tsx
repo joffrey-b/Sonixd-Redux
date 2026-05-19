@@ -77,6 +77,9 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
       case 'radio':
         route = '/radio';
         break;
+      case 'podcasts':
+        route = '/podcasts';
+        break;
       case 'starred':
         route = '/starred';
         break;

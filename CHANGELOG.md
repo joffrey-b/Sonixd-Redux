@@ -4,11 +4,40 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.0.4]
+
+### Added
+
+- **Podcasts** ([#11](https://github.com/joffrey-b/Sonixd-Redux/issues/11)): Browse podcast channels and play downloaded episodes from your server. Podcast-compatible servers (Subsonic servers that implement the podcast API) only. Episodes not yet downloaded to the server are listed with a disabled play button. Use your server's web interface to subscribe to feeds and download episodes. Podcast episodes are not scrobbled and do not show lyrics. If your server is a subsonic server with no podcast support, the podcast menu entry returns a friendly message.
+  If you use the MPV backend, podcasts will play through MPV just like music. This works fine on most servers, but some servers (notably Airsonic-Advanced which I used during my tests) cannot efficiently handle MPV's connection behaviour and will spike to high CPU usage during playback or when switching episodes, which will cause playback issues. If you experience this, switch to the web backend for podcast playback.
+  For more information, check out the [podcast documentation](https://joffrey-b.github.io/Sonixd-Redux/podcasts).
+
+- **Jukebox mode** ([#12](https://github.com/joffrey-b/Sonixd-Redux/issues/12)): Control your server's audio output directly from Sonixd Redux. Music plays through speakers connected to your server instead of your local device - useful for home servers hooked up to an amplifier or speakers. Enable with the jukebox icon in the player bar (Subsonic-compatible servers only). All controls work remotely: play, pause, stop, next, previous, seek, volume, and shuffle. When active, the playback settings panel shows a notice that backend settings are not applicable - the server handles all audio.
+  Full setup guide in the [jukebox mode documentation](https://joffrey-b.github.io/Sonixd-Redux/jukebox). It is highly recommended to read it as the setup might require specific configuration on your machine.
+
+### Fixed
+
+- **White flash on startup and login**: The app briefly displayed a white window before the interface appeared, both on launch and after logging into a server. The window now shows the correct background colour immediately - dark for dark themes, white for light themes - so there is no visible flash.
+- **MPV previous track ignoring the 5-second rule**: In MPV mode, pressing previous always went to the previous track regardless of playback position. The expected behaviour is to restart the current track if more than 5 seconds have passed, and go to the previous track otherwise (configurable via the "Direct Previous Track" setting). This now works correctly in MPV mode, matching the web backend.
+- **Previous track shortcut with empty queue**: Pressing the previous track keyboard shortcut when no queue was loaded incorrectly flipped the player status to "playing", causing the play/pause button to show a paused icon with no way to interact with it.
+- **Next/previous keyboard shortcuts active during radio**: Pressing the next or previous keyboard shortcut while an internet radio station was playing caused unexpected behaviour. These shortcuts now do nothing during radio playback, matching the hidden state of the skip buttons in the player bar.
+- **Toast notifications showing wrong plural**: Toast notifications showed "Playing 1 tracks" and "Added 1 tracks" instead of the correct singular forms. Toasts now correctly say "Playing 1 track" / "Added 1 track" for a single track and the plural form for more than one. Non-English translations have also been updated.
+- **Shuffle with a single song**: Enabling shuffle when only one song was in the queue caused the song to disappear from the now playing list.
+- **Play queue restored across server switches**: When "Remember play queue" was enabled, the queue from a previous session was restored even after switching to a different server. The queue is now only restored when reconnecting to the same server it was saved from.
+- **Discord rich presence error with internet radio**: Some radio stations have no duration metadata, which caused a Discord RPC validation error and broke rich presence for all subsequent tracks. Discord now correctly shows only a start time for radio stations, with no countdown.
+- **MPV scrobbling broken on repeat**: When a song repeated (repeat one, or repeat all with a single song in the queue), only the first play was scrobbled. Subsequent plays of the same song are now scrobbled correctly. A song will also be scrobbled if you manually reset the player seek bar to the beginning and listen to said song until it reaches the configured scrobble threshold.
+- **Toast notifications truncated**: Long toast messages were cut off with an ellipsis instead of wrapping to a new line.
+- **Missing stylesheet console error**: A reference to an unused stylesheet (animate.min.css, inherited from the original Sonixd) caused a 404 error in the console on every launch. The reference has been removed.
+- **Graphic EQ deprecation warning**: The vertical EQ sliders used a deprecated CSS property that browsers are phasing out. Replaced with the standardized equivalent, which was already present alongside it.
+
+---
+
 ## [1.0.3]
 
 ### Added
 
 - **Internet Radio** ([#10](https://github.com/joffrey-b/Sonixd-Redux/issues/10)): Play internet radio stations configured on your Navidrome server directly from a new sidebar entry. Stations appear with a play button and a link to their homepage. While playing, the player bar shows only play/pause and a LIVE indicator - stop, skip, seek, and scrobbling are disabled. Subsonic-based servers only - the entry is hidden for Jellyfin users.
+  For more information, check out the [internet radio documentation](https://joffrey-b.github.io/Sonixd-Redux/internet-radio).
 
 ### Fixed
 
@@ -21,8 +50,10 @@ All notable changes to Sonixd Redux are documented here.
 ### Added
 
 - **Artist Radio** ([#8](https://github.com/joffrey-b/Sonixd-Redux/issues/8)): One-click similar-artist mix from any artist page. Available as the wand (✦) button in the artist toolbar - replaces the queue with 50 similar songs and starts playback immediately.
+  For more information, check out the [artist radio documentation](https://joffrey-b.github.io/Sonixd-Redux/artist-radio).
 
 - **Smart Playlists** ([#9](https://github.com/joffrey-b/Sonixd-Redux/issues/9)): Rule-based playlists stored locally. Filter by Genre, Year, Play Count, Rating, Starred, and Duration. Set sort order and a song limit. Save the result to your server as a static playlist snapshot. Accessible from the new Smart Playlists entry in the sidebar.
+  For more information, check out the [smart playlists documentation](https://joffrey-b.github.io/Sonixd-Redux/smart-playlists).
 
 - **Library Cache**: Full local index of your library for accurate Smart Playlist filtering. Click **Sync Library** on the Smart Playlists page to index all songs. When active, all rules and sorting run against your entire library. The cache syncs automatically on every launch; play count, starred status, and rating are also kept up to date as you use the app.
 

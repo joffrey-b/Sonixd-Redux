@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { ipcRenderer } from 'electron';
 import { deflate, inflate } from 'zlib';
 import { join } from 'path';
@@ -20,6 +20,18 @@ import { apiController } from '../api/controller';
 import { Server } from '../types';
 import { settings } from '../components/shared/setDefaultSettings';
 
+type PlayerControlOverrides = {
+  playPause?: () => void | Promise<void>;
+  next?: () => void | Promise<void>;
+  prev?: () => void | Promise<void>;
+  play?: () => void | Promise<void>;
+  pause?: () => void | Promise<void>;
+  stop?: () => void | Promise<void>;
+  seekTo?: (t: number) => void | Promise<void>;
+  seekBackward?: () => void | Promise<void>;
+  seekForward?: () => void | Promise<void>;
+};
+
 const usePlayerControls = (
   config: any,
   player: any,
@@ -29,11 +41,16 @@ const usePlayerControls = (
   isDraggingVolume: any,
   setIsDraggingVolume: any,
   setLocalVolume: any,
-  setCurrentTime: any
+  setCurrentTime: any,
+  seekPositionRef: React.MutableRefObject<number> | null = null,
+  overrides: PlayerControlOverrides = {}
 ) => {
   const dispatch = useAppDispatch();
+  const overridesRef = useRef(overrides);
+  overridesRef.current = overrides;
 
   const handleNextTrack = useCallback(() => {
+    if (playQueue.current?.isRadio) return;
     if (playQueue[currentEntryList].length > 0) {
       // If on the last track of the queue without repeat set as all, ignore
       if (
@@ -49,71 +66,85 @@ const usePlayerControls = (
   }, [currentEntryList, dispatch, playQueue]);
 
   const handlePrevTrack = useCallback(() => {
-    if (playQueue[currentEntryList].length > 0) {
-      const { currentPlayer } = playQueue;
-      const currentSeek =
-        currentPlayer === 1
-          ? playersRef.current.player1.audioEl.current.currentTime
-          : playersRef.current.player2.audioEl.current.currentTime;
+    if (playQueue.current?.isRadio) return;
+    if (playQueue[currentEntryList].length === 0) return;
+    const { currentPlayer } = playQueue;
+    // MPV doesn't use the web audio elements — read position from the ref
+    // passed by PlayerBar (kept current via IPC). Fall back to audioEl for web backend.
+    const currentSeek =
+      seekPositionRef?.current ??
+      (currentPlayer === 1
+        ? playersRef.current.player1.audioEl.current.currentTime
+        : playersRef.current.player2.audioEl.current.currentTime);
 
-      const goToPrev =
-        playQueue.directPreviousTrack ||
-        (currentSeek < 5 &&
-          !(
-            (playQueue.repeat === 'none' || playQueue.repeat === 'one') &&
-            playQueue.currentIndex === 0
-          ));
+    const goToPrev =
+      playQueue.directPreviousTrack ||
+      (currentSeek < 5 &&
+        !(
+          (playQueue.repeat === 'none' || playQueue.repeat === 'one') &&
+          playQueue.currentIndex === 0
+        ));
 
-      if (goToPrev) {
-        dispatch(decrementCurrentIndex('usingHotkey'));
-        dispatch(fixPlayer2Index());
-      } else if (currentPlayer === 1) {
-        playersRef.current.player1.audioEl.current.currentTime = 0;
-        playersRef.current.player1.audioEl.current.volume = playQueue.volume ** 2;
+    if (goToPrev) {
+      dispatch(decrementCurrentIndex('usingHotkey'));
+      dispatch(fixPlayer2Index());
+    } else if (config.playback.playerBackend === 'mpv') {
+      // MPV: web audio elements are unused, seek via IPC instead
+      ipcRenderer.send('player-seek-to', 0);
+    } else if (currentPlayer === 1) {
+      playersRef.current.player1.audioEl.current.currentTime = 0;
+      playersRef.current.player1.audioEl.current.volume = playQueue.volume ** 2;
 
-        // Reset the alt player if reset during fade
-        playersRef.current.player2.audioEl.current.currentTime = 0;
-        playersRef.current.player2.audioEl.current.volume = 0;
-        playersRef.current.player2.audioEl.current.pause();
+      // Reset the alt player if reset during fade
+      playersRef.current.player2.audioEl.current.currentTime = 0;
+      playersRef.current.player2.audioEl.current.volume = 0;
+      playersRef.current.player2.audioEl.current.pause();
 
-        if (config.serverType === Server.Jellyfin && playQueue.scrobble) {
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'scrobble',
-            args: {
-              id: playQueue[currentEntryList][playQueue.player1.index]?.id,
-              submission: false,
-              position: 0,
-              event: 'timeupdate',
-            },
-          });
-        }
-      } else {
-        playersRef.current.player2.audioEl.current.currentTime = 0;
-        playersRef.current.player2.audioEl.current.volume = playQueue.volume ** 2;
+      if (config.serverType === Server.Jellyfin && playQueue.scrobble) {
+        apiController({
+          serverType: config.serverType,
+          endpoint: 'scrobble',
+          args: {
+            id: playQueue[currentEntryList][playQueue.player1.index]?.id,
+            submission: false,
+            position: 0,
+            event: 'timeupdate',
+          },
+        });
+      }
+    } else {
+      playersRef.current.player2.audioEl.current.currentTime = 0;
+      playersRef.current.player2.audioEl.current.volume = playQueue.volume ** 2;
 
-        // Reset the alt player if reset during fade
-        playersRef.current.player1.audioEl.current.currentTime = 0;
-        playersRef.current.player1.audioEl.current.volume = 0;
-        playersRef.current.player1.audioEl.current.pause();
+      // Reset the alt player if reset during fade
+      playersRef.current.player1.audioEl.current.currentTime = 0;
+      playersRef.current.player1.audioEl.current.volume = 0;
+      playersRef.current.player1.audioEl.current.pause();
 
-        if (config.serverType === Server.Jellyfin && playQueue.scrobble) {
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'scrobble',
-            args: {
-              id: playQueue[currentEntryList][playQueue.player2.index]?.id,
-              submission: false,
-              position: 0,
-              event: 'timeupdate',
-            },
-          });
-        }
+      if (config.serverType === Server.Jellyfin && playQueue.scrobble) {
+        apiController({
+          serverType: config.serverType,
+          endpoint: 'scrobble',
+          args: {
+            id: playQueue[currentEntryList][playQueue.player2.index]?.id,
+            submission: false,
+            position: 0,
+            event: 'timeupdate',
+          },
+        });
       }
     }
 
     dispatch(setStatus('PLAYING'));
-  }, [config.serverType, currentEntryList, dispatch, playQueue, playersRef]);
+  }, [
+    config.playback.playerBackend,
+    config.serverType,
+    currentEntryList,
+    dispatch,
+    playQueue,
+    playersRef,
+    seekPositionRef,
+  ]);
 
   const handlePlayPause = useCallback(() => {
     if (playQueue[currentEntryList].length > 0) {
@@ -154,6 +185,12 @@ const usePlayerControls = (
   const handleSeekBackward = useCallback(() => {
     const seekBackwardInterval = Number(settings.get('seekBackwardInterval'));
     if (playQueue[currentEntryList].length > 0) {
+      if (seekPositionRef !== null) {
+        const newTime = Math.max(0, seekPositionRef.current - seekBackwardInterval);
+        setCurrentTime(newTime);
+        ipcRenderer.send('player-seek-to', newTime);
+        return;
+      }
       if (playQueue.isFading) {
         if (playQueue.currentPlayer === 1) {
           playersRef.current.player2.audioEl.current.pause();
@@ -176,11 +213,19 @@ const usePlayerControls = (
         setCurrentTime(newTime);
       }
     }
-  }, [currentEntryList, playQueue, playersRef, setCurrentTime]);
+  }, [currentEntryList, playQueue, playersRef, seekPositionRef, setCurrentTime]);
 
   const handleSeekForward = useCallback(() => {
     if (playQueue[currentEntryList].length > 0) {
       const seekForwardInterval = Number(settings.get('seekForwardInterval'));
+
+      if (seekPositionRef !== null) {
+        const duration = playQueue[currentEntryList][playQueue.currentIndex]?.duration ?? Infinity;
+        const newTime = Math.min(seekPositionRef.current + seekForwardInterval, duration - 1);
+        setCurrentTime(newTime);
+        ipcRenderer.send('player-seek-to', newTime);
+        return;
+      }
 
       if (playQueue.isFading) {
         if (playQueue.currentPlayer === 1) {
@@ -206,7 +251,7 @@ const usePlayerControls = (
         setCurrentTime(newTime);
       }
     }
-  }, [currentEntryList, playQueue, playersRef, setCurrentTime]);
+  }, [currentEntryList, playQueue, playersRef, seekPositionRef, setCurrentTime]);
 
   const handleSeekSlider = useCallback(
     (e: number | any) => {
@@ -322,6 +367,9 @@ const usePlayerControls = (
         player1: playQueue.player1,
         player2: playQueue.player2,
         currentPlayer: playQueue.currentPlayer,
+
+        // server the queue belongs to — used to prevent restoring across server switches
+        serverUrl: localStorage.getItem('server') || '',
       };
 
       const dataString = JSON.stringify(data);
@@ -357,7 +405,7 @@ const usePlayerControls = (
       access(queueLocation, constants.F_OK, (accessError) => {
         // If the file doesn't exist or we can't access it, just don't try
         if (accessError) {
-          console.error(accessError);
+          if ((accessError as any).code !== 'ENOENT') console.error(accessError);
           return;
         }
 
@@ -371,7 +419,12 @@ const usePlayerControls = (
             if (decompressError) {
               console.error(decompressError);
             } else {
-              dispatch(restoreState(JSON.parse(data.toString())));
+              const parsed: PlayQueueSaveState = JSON.parse(data.toString());
+              const savedServer = parsed.serverUrl || '';
+              const currentServer = localStorage.getItem('server') || '';
+              // Don't restore a queue that belongs to a different server
+              if (savedServer && savedServer !== currentServer) return;
+              dispatch(restoreState(parsed));
             }
           });
         });
@@ -382,27 +435,27 @@ const usePlayerControls = (
 
   useEffect(() => {
     ipcRenderer.on('player-next-track', () => {
-      handleNextTrack();
+      (overridesRef.current.next ?? handleNextTrack)();
     });
 
     ipcRenderer.on('player-prev-track', () => {
-      handlePrevTrack();
+      (overridesRef.current.prev ?? handlePrevTrack)();
     });
 
     ipcRenderer.on('player-play-pause', () => {
-      handlePlayPause();
+      (overridesRef.current.playPause ?? handlePlayPause)();
     });
 
     ipcRenderer.on('player-play', () => {
-      handlePlay();
+      (overridesRef.current.play ?? handlePlay)();
     });
 
     ipcRenderer.on('player-pause', () => {
-      handlePause();
+      (overridesRef.current.pause ?? handlePause)();
     });
 
     ipcRenderer.on('player-stop', () => {
-      handleStop();
+      (overridesRef.current.stop ?? handleStop)();
     });
 
     ipcRenderer.on('player-shuffle', () => {
@@ -449,36 +502,19 @@ const usePlayerControls = (
   useEffect(() => {
     const media = navigator.mediaSession;
 
-    media.setActionHandler('play', () => {
-      handlePlay();
-    });
-
-    media.setActionHandler('pause', () => {
-      handlePause();
-    });
-
-    media.setActionHandler('stop', () => {
-      handleStop();
-    });
-
-    media.setActionHandler('nexttrack', () => {
-      handleNextTrack();
-    });
-
-    media.setActionHandler('previoustrack', () => {
-      handlePrevTrack();
-    });
-
-    media.setActionHandler('seekbackward', () => {
-      handleSeekBackward();
-    });
-
-    media.setActionHandler('seekforward', () => {
-      handleSeekForward();
-    });
-
+    media.setActionHandler('play', () => (overridesRef.current.play ?? handlePlay)());
+    media.setActionHandler('pause', () => (overridesRef.current.pause ?? handlePause)());
+    media.setActionHandler('stop', () => (overridesRef.current.stop ?? handleStop)());
+    media.setActionHandler('nexttrack', () => (overridesRef.current.next ?? handleNextTrack)());
+    media.setActionHandler('previoustrack', () => (overridesRef.current.prev ?? handlePrevTrack)());
+    media.setActionHandler('seekbackward', () =>
+      (overridesRef.current.seekBackward ?? handleSeekBackward)()
+    );
+    media.setActionHandler('seekforward', () =>
+      (overridesRef.current.seekForward ?? handleSeekForward)()
+    );
     media.setActionHandler('seekto', ({ seekTime }) => {
-      if (seekTime !== undefined) handleSeekTo(seekTime);
+      if (seekTime !== undefined) (overridesRef.current.seekTo ?? handleSeekTo)(seekTime);
     });
   }, [
     handlePlay,

@@ -69,8 +69,8 @@ interface Settings {
     expand: boolean;
     width: string;
     coverArt: boolean;
+    selected: string[];
   };
-  selected: string[];
   pagination: {
     music: {
       recordsPerPage: number;
@@ -208,23 +208,24 @@ const DEFAULT_SETTINGS: Settings = {
     expand: true,
     width: '225px',
     coverArt: false,
+    selected: [
+      'dashboard',
+      'nowplaying',
+      'favorites',
+      'songs',
+      'albums',
+      'artists',
+      'genres',
+      'folders',
+      'config',
+      'collapse',
+      'playlists',
+      'playlistList',
+      'smartplaylists',
+      'radio',
+      'podcasts',
+    ],
   },
-  selected: [
-    'dashboard',
-    'nowplaying',
-    'favorites',
-    'songs',
-    'albums',
-    'artists',
-    'genres',
-    'folders',
-    'config',
-    'collapse',
-    'playlists',
-    'playlistList',
-    'smartplaylists',
-    'radio',
-  ],
   pagination: {
     music: {
       recordsPerPage: 50,
@@ -1956,6 +1957,12 @@ export const setDefaultSettings = (force: boolean) => {
   }
   if (!sidebarSelected.includes('radio')) {
     settings.set('sidebar.selected', [...(settings.get('sidebar.selected') as string[]), 'radio']);
+  }
+  if (!sidebarSelected.includes('podcasts')) {
+    settings.set('sidebar.selected', [
+      ...(settings.get('sidebar.selected') as string[]),
+      'podcasts',
+    ]);
   }
 
   if (force || !settings.has('cachePath')) {

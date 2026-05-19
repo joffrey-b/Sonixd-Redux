@@ -16,6 +16,7 @@ import {
   appendPlayQueue,
   moveUp,
   moveDown,
+  setPlayerIndex,
 } from '../../redux/playQueueSlice';
 import { clearSelected } from '../../redux/multiSelectSlice';
 import GenericPage from '../layout/GenericPage';
@@ -61,6 +62,8 @@ const NowPlayingView = () => {
   const musicFolderPickerContainerRef = useRef(null);
   const autoPlaylistTriggerRef = useRef<any>();
   const dispatch = useAppDispatch();
+  const isJukebox = useAppSelector((state: any) => state.jukebox?.enabled ?? false);
+  const jukeboxPlaying = useAppSelector((state: any) => state.jukebox?.status?.playing ?? false);
   const playQueue = useAppSelector((state) => state.playQueue);
   const multiSelect = useAppSelector((state) => state.multiSelect);
   const config = useAppSelector((state) => state.config);
@@ -137,6 +140,43 @@ const NowPlayingView = () => {
 
   const { handleRowClick, handleRowDoubleClick, handleDragEnd } = useListClickHandler({
     dnd: 'playQueue',
+    doubleClick: isJukebox
+      ? async (rowData: any) => {
+          dispatch(setPlayerIndex(rowData));
+          dispatch(fixPlayer2Index());
+          dispatch(setStatus('PLAYING'));
+          const entryList = getCurrentEntryList(playQueue);
+          const songs = playQueue[entryList] as any[];
+          const index = songs.findIndex((s: any) => s.uniqueId === rowData.uniqueId);
+          if (index < 0) return;
+          if (jukeboxPlaying) {
+            await apiController({
+              serverType: config.serverType,
+              endpoint: 'jukeboxControl',
+              args: { action: 'skip', index, offset: 0 },
+            });
+          } else {
+            const ids = songs.map((s: any) => s.id);
+            await apiController({
+              serverType: config.serverType,
+              endpoint: 'jukeboxControl',
+              args: { action: 'set', id: ids },
+            });
+            await apiController({
+              serverType: config.serverType,
+              endpoint: 'jukeboxControl',
+              args: { action: 'start' },
+            });
+            if (index > 0) {
+              await apiController({
+                serverType: config.serverType,
+                endpoint: 'jukeboxControl',
+                args: { action: 'skip', index, offset: 0 },
+              });
+            }
+          }
+        }
+      : undefined,
   });
 
   const handlePlayRandom = async (action: 'play' | 'addNext' | 'addLater') => {

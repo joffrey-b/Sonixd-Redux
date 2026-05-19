@@ -48,6 +48,7 @@ const PlaybackConfig = ({ bordered }: any) => {
   const mpvReplayGainPickerContainerRef = useRef(null);
 
   const isMpv = config.playback.playerBackend === 'mpv';
+  const isJukebox = useAppSelector((state: any) => state.jukebox?.enabled ?? false);
   // Keep a ref to the latest mpvAudioDeviceId so the 2-second retry timer in
   // refreshMpvDevices doesn't fire the toast again from a stale closure.
   const mpvAudioDeviceIdRef = useRef(config.playback.mpvAudioDeviceId);
@@ -188,36 +189,47 @@ const PlaybackConfig = ({ bordered }: any) => {
 
   return (
     <>
-      <ConfigPanel bordered={bordered} header={t('Player Backend')}>
-        <ConfigOption
-          name={t('Backend')}
-          description={t(
-            'Web uses the built-in Chromium audio engine. MPV requires MPV to be installed on your system and supports gapless playback.'
-          )}
-          option={
-            <StyledInputPickerContainer
-              ref={backendPickerContainerRef}
-              style={{ position: 'relative', height: 30, overflow: 'visible' }}
-            >
-              <StyledInputPicker
-                container={() => backendPickerContainerRef.current}
-                size="sm"
-                searchable={false}
-                cleanable={false}
-                value={config.playback.playerBackend}
-                data={[
-                  { label: t('Web (default)'), value: 'web' },
-                  { label: t('MPV'), value: 'mpv' },
-                ]}
-                onChange={(val: 'web' | 'mpv') => handleSetPlayerBackend(val)}
-                style={{ width: 160 }}
-              />
-            </StyledInputPickerContainer>
-          }
-        />
-      </ConfigPanel>
+      {isJukebox && (
+        <ConfigPanel bordered={bordered}>
+          <div style={{ padding: '8px 4px', opacity: 0.7, fontSize: 13 }}>
+            {t(
+              'Jukebox mode is active — the server controls audio playback. Backend settings are not applicable.'
+            )}
+          </div>
+        </ConfigPanel>
+      )}
+      {!isJukebox && (
+        <ConfigPanel bordered={bordered} header={t('Player Backend')}>
+          <ConfigOption
+            name={t('Backend')}
+            description={t(
+              'Web uses the built-in Chromium audio engine. MPV requires MPV to be installed on your system and supports gapless playback.'
+            )}
+            option={
+              <StyledInputPickerContainer
+                ref={backendPickerContainerRef}
+                style={{ position: 'relative', height: 30, overflow: 'visible' }}
+              >
+                <StyledInputPicker
+                  container={() => backendPickerContainerRef.current}
+                  size="sm"
+                  searchable={false}
+                  cleanable={false}
+                  value={config.playback.playerBackend}
+                  data={[
+                    { label: t('Web (default)'), value: 'web' },
+                    { label: t('MPV'), value: 'mpv' },
+                  ]}
+                  onChange={(val: 'web' | 'mpv') => handleSetPlayerBackend(val)}
+                  style={{ width: 160 }}
+                />
+              </StyledInputPickerContainer>
+            }
+          />
+        </ConfigPanel>
+      )}
 
-      {isMpv && (
+      {!isJukebox && isMpv && (
         <ConfigPanel bordered={bordered} header={t('MPV Settings')}>
           <ConfigOption
             name={t('MPV Binary Path')}
@@ -325,7 +337,7 @@ const PlaybackConfig = ({ bordered }: any) => {
         </ConfigPanel>
       )}
 
-      {!isMpv && (
+      {!isJukebox && !isMpv && (
         <ConfigPanel bordered={bordered} header={t('Playback')}>
           <ConfigOption
             name={t('Crossfade Duration (s)')}

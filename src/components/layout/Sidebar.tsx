@@ -317,6 +317,23 @@ const Sidebar = ({
                       {t('Internet Radio')}
                     </SidebarNavItem>
                   )}
+                  {config.serverType !== Server.Jellyfin && (
+                    <SidebarNavItem
+                      tabIndex={0}
+                      eventKey="podcasts"
+                      icon={<Icon icon="microphone" />}
+                      onSelect={handleSidebarSelect}
+                      disabled={disableSidebar}
+                      onKeyDown={(e: any) => {
+                        if (e.key === ' ' || e.key === 'Enter') {
+                          history.push('/podcasts');
+                        }
+                      }}
+                      $show={config.lookAndFeel.sidebar.selected.includes('podcasts')}
+                    >
+                      {t('Podcasts')}
+                    </SidebarNavItem>
+                  )}
                   <SidebarNavItem
                     tabIndex={0}
                     eventKey="config"

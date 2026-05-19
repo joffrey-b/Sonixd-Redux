@@ -41,6 +41,7 @@ Since internet radio is a live stream:
 
 - The player bar shows only the **play/pause** button - stop, skip, and seek controls are hidden
 - The seek bar shows **LIVE** instead of a duration and cannot be interacted with
+- Next and previous keyboard shortcuts do nothing while a station is playing
 - Scrobbling does not occur
 - Your EQ settings are applied to the stream as normal
 

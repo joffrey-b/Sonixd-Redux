@@ -301,3 +301,11 @@ h6 {
   font-family: 'Work Sans';
   src: url('../fonts/WorkSans-Regular.ttf') format('truetype');
 }
+
+.rs-notification-title,
+.rs-notification-title-with-icon {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  word-break: break-word;
+}

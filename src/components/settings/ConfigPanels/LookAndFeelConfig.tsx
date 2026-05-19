@@ -727,6 +727,9 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
                 ...(config.serverType !== Server.Jellyfin
                   ? [{ label: i18n.t('Internet Radio'), value: 'radio' }]
                   : []),
+                ...(config.serverType !== Server.Jellyfin
+                  ? [{ label: i18n.t('Podcasts'), value: 'podcasts' }]
+                  : []),
                 {
                   label: i18n.t('Config'),
                   value: 'config',

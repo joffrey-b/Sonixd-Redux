@@ -456,7 +456,7 @@ const ArtistView = ({ ...rest }: any) => {
 
                 {!location.pathname.match('/songs|/albums|/compilationalbums|/topsongs') &&
                   data?.info.biography
-                    ?.replace(/<[^>]*>/, '')
+                    ?.replace(/<[^>]*>/g, '')
                     .replace('Read more on Last.fm</a>', '')
                     ?.trim() && (
                     <PageHeaderSubtitleDataLine
@@ -472,11 +472,11 @@ const ArtistView = ({ ...rest }: any) => {
                     >
                       <span>
                         {data?.info.biography
-                          ?.replace(/<[^>]*>/, '')
+                          ?.replace(/<[^>]*>/g, '')
                           .replace('Read more on Last.fm</a>', '')
                           ?.trim()
                           ? `${data?.info.biography
-                              ?.replace(/<[^>]*>/, '')
+                              ?.replace(/<[^>]*>/g, '')
                               .replace('Read more on Last.fm</a>', '')}`
                           : ''}
                       </span>

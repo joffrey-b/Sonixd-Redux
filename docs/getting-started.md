@@ -40,20 +40,23 @@ Once connected, Sonixd Redux loads your library and takes you to the dashboard.
 
 The sidebar on the left gives you access to all sections of your library:
 
-| Section     | Description                        |
-| ----------- | ---------------------------------- |
-| Dashboard   | Recently added and most played     |
-| Now Playing | Current queue                      |
-| Favorites   | Starred albums, artists and tracks |
-| Songs       | Full song library                  |
-| Albums      | Album library with grid/list view  |
-| Artists     | Artist library                     |
-| Genres      | Browse by genre                    |
-| Folders     | Browse by folder structure         |
-| Playlists   | Your playlists                     |
-| Config      | Settings                           |
+| Section         | Description                                             |
+| --------------- | ------------------------------------------------------- |
+| Dashboard       | Recently added and most played                          |
+| Now Playing     | Current queue                                           |
+| Playlists       | Your playlists                                          |
+| Smart Playlists | Rule-based playlists filtered and sorted locally        |
+| Favorites       | Starred albums, artists and tracks                      |
+| Songs           | Full song library                                       |
+| Albums          | Album library with grid/list view                       |
+| Artists         | Artist library                                          |
+| Genres          | Browse by genre                                         |
+| Folders         | Browse by folder structure                              |
+| Internet Radio  | Stream radio stations configured on your server         |
+| Podcasts        | Browse and play podcast episodes managed by your server |
+| Config          | Settings                                                |
 
-You can customize which sections appear in the sidebar in **Settings → Look & Feel → Sidebar**.
+You can customize which sections appear in the sidebar in **Settings → Look & Feel → Sidebar**. Some entries are hidden depending on your server type - Internet Radio and Podcasts are only available on Subsonic-compatible servers, and are hidden for Jellyfin users.
 
 ---
 

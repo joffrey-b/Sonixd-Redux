@@ -13,7 +13,17 @@ import 'regenerator-runtime/runtime';
 import fs from 'fs';
 import https from 'https';
 import path from 'path';
-import { ipcMain, app, BrowserWindow, shell, globalShortcut, Menu, Tray, dialog } from 'electron';
+import {
+  ipcMain,
+  app,
+  BrowserWindow,
+  shell,
+  globalShortcut,
+  Menu,
+  Tray,
+  dialog,
+  nativeTheme,
+} from 'electron';
 import electronLocalshortcut from 'electron-localshortcut';
 import { configureStore } from '@reduxjs/toolkit';
 import { forwardToRenderer, triggerAlias, replayActionMain } from 'electron-redux';
@@ -21,6 +31,7 @@ import playerReducer from './redux/playerSlice';
 import playQueueReducer from './redux/playQueueSlice';
 import multiSelectReducer from './redux/multiSelectSlice';
 import configReducer from './redux/configSlice';
+import jukeboxReducer from './redux/jukeboxSlice';
 import MenuBuilder from './menu';
 import { isWindows, isMacOS, isLinux } from './shared/utils';
 import { settings, setDefaultSettings } from './components/shared/setDefaultSettings';
@@ -64,6 +75,7 @@ export const store = configureStore({
     playQueue: playQueueReducer,
     multiSelect: multiSelectReducer,
     config: configReducer,
+    jukebox: jukeboxReducer,
   },
   middleware: [triggerAlias, forwardToRenderer],
 });
@@ -75,6 +87,7 @@ let tray = null;
 let exitFromTray = false;
 let forceQuit = false;
 let saved = false;
+let jukeboxStopped = false;
 
 if (process.env.NODE_ENV === 'production') {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -241,8 +254,30 @@ const saveQueue = (callback) => {
   mainWindow.webContents.send('save-queue-state', app.getPath('userData'));
 };
 
+const stopJukeboxOnClose = (callback) => {
+  const timeout = setTimeout(() => callback(), 2000);
+  ipcMain.once('jukebox-stopped', () => {
+    clearTimeout(timeout);
+    callback();
+  });
+  mainWindow.webContents.send('stop-jukebox-on-close');
+};
+
 const restoreQueue = () => {
   mainWindow.webContents.send('restore-queue-state', app.getPath('userData'));
+};
+
+const getWindowBackgroundColor = () => {
+  const themeValue = settings.get('theme');
+  const allThemes = [...(settings.get('themesDefault') || []), ...(settings.get('themes') || [])];
+  const currentTheme = allThemes.find((t) => t.value === themeValue);
+  if (currentTheme) {
+    return currentTheme.type === 'light' ? '#ffffff' : '#141518';
+  }
+  if (themeValue === 'followSystem') {
+    return nativeTheme.shouldUseDarkColors ? '#141518' : '#ffffff';
+  }
+  return '#141518'; // default to dark
 };
 
 const createWindow = async () => {
@@ -265,6 +300,7 @@ const createWindow = async () => {
 
   mainWindow = new BrowserWindow({
     show: false,
+    backgroundColor: getWindowBackgroundColor(),
     width: windowDimensions[0],
     height: windowDimensions[1],
     center: isCentered,
@@ -390,9 +426,7 @@ const createWindow = async () => {
 
   mainWindow.loadURL(`file://${__dirname}/index.html#${settings.get('startPage')}`);
 
-  // @TODO: Use 'ready-to-show' event
-  // https://github.com/electron/electron/blob/master/docs/api/browser-window.md#using-ready-to-show-event
-  mainWindow.webContents.on('did-finish-load', () => {
+  mainWindow.once('ready-to-show', () => {
     if (!mainWindow) {
       throw new Error('"mainWindow" is not defined');
     }
@@ -436,6 +470,18 @@ const createWindow = async () => {
     if (settings.get('retainWindowSize')) {
       const curSize = mainWindow.getSize();
       settings.set('savedWindowSize', [curSize[0], curSize[1]]);
+    }
+
+    // Stop the jukebox server before closing so music doesn't keep playing after the app exits.
+    // Skipped when hiding to tray (event.defaultPrevented is true in that case).
+    if (!jukeboxStopped && store.getState().jukebox?.enabled && !event.defaultPrevented) {
+      event.preventDefault();
+      jukeboxStopped = true;
+      saved = true; // jukebox clears the local queue on enable, nothing useful to save
+      stopJukeboxOnClose(() => {
+        mainWindow.close();
+        if (forceQuit) app.exit();
+      });
     }
 
     // If we have enabled saving the queue, we need to defer closing the main window until it has finished saving.
@@ -492,6 +538,9 @@ const createWindow = async () => {
 
   // ─── MPV backend ────────────────────────────────────────────────────────────
   let mpvInstance = null;
+  // Each MPV instance gets a unique socket path so a dying instance doesn't block
+  // the next one from starting when they overlap during a fast quit → reinitialize.
+  let mpvSocketCounter = 0;
   // Guard: only allow auto-next after the queue has been loaded at least once.
   // Prevents spurious playlist-pos events during MPV initialization from firing auto-next.
   let mpvQueueLoaded = false;
@@ -514,7 +563,10 @@ const createWindow = async () => {
 
   const createMpvInstance = async (binaryPath, extraParameters, properties) => {
     const pid = process.pid;
-    const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mpv-${pid}.sock`;
+    mpvSocketCounter += 1;
+    const socketPath = isWindows()
+      ? `\\\\.\\pipe\\mpvserver-${pid}-${mpvSocketCounter}`
+      : `/tmp/node-mpv-${pid}-${mpvSocketCounter}.sock`;
 
     // eslint-disable-next-line global-require
     const MpvAPI = require('node-mpv');
@@ -578,20 +630,28 @@ const createWindow = async () => {
     return mpv;
   };
 
+  const quitAndReplace = async (binaryPath, extraParameters, properties) => {
+    // Capture and immediately null the shared reference so a concurrent player-quit
+    // (which may still be awaiting its own quit()) cannot overwrite our new instance.
+    const old = mpvInstance;
+    mpvInstance = null;
+    mpvQueueLoaded = false;
+    mpvLoadingQueue = false;
+    try {
+      if (old && old.isRunning()) {
+        await old.quit();
+      }
+    } catch {
+      /* ignore */
+    }
+    mpvInstance = await createMpvInstance(binaryPath, extraParameters, properties);
+  };
+
   ipcMain.handle(
     'player-initialize',
     async (_, { binaryPath, extraParameters = [], properties = {} } = {}) => {
-      mpvQueueLoaded = false;
-      mpvLoadingQueue = false;
       try {
-        if (mpvInstance && mpvInstance.isRunning()) {
-          await mpvInstance.quit();
-        }
-      } catch {
-        /* ignore */
-      }
-      try {
-        mpvInstance = await createMpvInstance(binaryPath, extraParameters, properties);
+        await quitAndReplace(binaryPath, extraParameters, properties);
       } catch {
         mpvInstance = null;
         sendToRenderer('renderer-player-fallback', true);
@@ -602,17 +662,8 @@ const createWindow = async () => {
   ipcMain.handle(
     'player-restart',
     async (_, { binaryPath, extraParameters = [], properties = {} } = {}) => {
-      mpvQueueLoaded = false;
-      mpvLoadingQueue = false;
       try {
-        if (mpvInstance && mpvInstance.isRunning()) {
-          await mpvInstance.quit();
-        }
-      } catch {
-        /* ignore */
-      }
-      try {
-        mpvInstance = await createMpvInstance(binaryPath, extraParameters, properties);
+        await quitAndReplace(binaryPath, extraParameters, properties);
       } catch {
         mpvInstance = null;
         sendToRenderer('renderer-player-fallback', true);
@@ -646,14 +697,17 @@ const createWindow = async () => {
   });
 
   ipcMain.on('player-quit', async () => {
-    if (mpvInstance && mpvInstance.isRunning()) {
+    // Null immediately so a concurrent player-initialize doesn't see a stale reference,
+    // and so we don't overwrite a new instance when our await resolves.
+    const instance = mpvInstance;
+    mpvInstance = null;
+    if (instance && instance.isRunning()) {
       try {
-        await mpvInstance.quit();
+        await instance.quit();
       } catch {
         /* ignore */
       }
     }
-    mpvInstance = null;
   });
 
   ipcMain.on('player-play', () => {

@@ -1,5 +1,6 @@
 /* eslint-disable no-await-in-loop */
 import axios from 'axios';
+import qs from 'qs';
 import _ from 'lodash';
 import { nanoid } from 'nanoid/non-secure';
 import axiosRetry from 'axios-retry';
@@ -79,9 +80,11 @@ api.interceptors.response.use(
 
 axiosRetry(api, {
   retries: 3,
-  retryDelay: (retryCount) => {
-    return retryCount * 1000;
-  },
+  retryDelay: (retryCount) => retryCount * 1000,
+  // Only retry on actual network failures (timeout, connection refused, etc.).
+  // HTTP error responses (4xx, 5xx) are definitive — retrying them is pointless
+  // and produces console spam (e.g. 501 on servers that don't support podcasts).
+  retryCondition: axiosRetry.isNetworkError,
 });
 
 const getCoverArtUrl = (item: any, useLegacyAuth: boolean, size?: number) => {
@@ -316,6 +319,104 @@ export const getPlaylist = async (options: { id: string }) => {
 export const getPlaylists = async () => {
   const { data } = await api.get('/getPlaylists.view');
   return (data.playlists?.playlist || []).map((playlist: any) => normalizePlaylist(playlist));
+};
+
+const normalizePodcastEpisode = (episode: any, channelTitle: string, channelCoverArt?: string) => {
+  return {
+    id: episode.streamId || episode.id,
+    episodeId: episode.id,
+    channelId: episode.channelId,
+    title: episode.title,
+    description: episode.description || '',
+    publishDate: episode.publishDate || null,
+    status: episode.status,
+    album: channelTitle,
+    albumArtist: channelTitle,
+    albumArtistId: '',
+    artist: [],
+    duration: episode.duration,
+    size: episode.size || 0,
+    created: episode.publishDate || '',
+    streamUrl:
+      episode.streamId && episode.status === 'completed'
+        ? getStreamUrl(episode.streamId, legacyAuth)
+        : '',
+    image: episode.coverArt
+      ? getCoverArtUrl(episode, legacyAuth, 150)
+      : channelCoverArt || 'img/placeholder.png',
+    type: Item.Music,
+    uniqueId: nanoid(),
+    isPodcast: true,
+  };
+};
+
+const normalizePodcastChannel = (channel: any) => {
+  return {
+    id: channel.id,
+    title: channel.title || channel.url,
+    description: channel.description || '',
+    url: channel.url,
+    status: channel.status,
+    image: channel.coverArt ? getCoverArtUrl(channel, legacyAuth, 350) : 'img/placeholder.png',
+    episodes: (channel.episode || []).map((ep: any) =>
+      normalizePodcastEpisode(
+        ep,
+        channel.title || channel.url,
+        getCoverArtUrl(channel, legacyAuth, 150)
+      )
+    ),
+  };
+};
+
+export const getPodcasts = async () => {
+  const { data } = await api.get('/getPodcasts.view', { params: { includeEpisodes: true } });
+  if (!data || data.status === 'failed') throw new Error('not_supported');
+  return (data.podcasts?.channel || []).map((ch: any) => normalizePodcastChannel(ch));
+};
+
+export const refreshPodcasts = async () => {
+  await api.get('/refreshPodcasts.view');
+};
+
+export const jukeboxControl = async (args: {
+  action:
+    | 'get'
+    | 'status'
+    | 'set'
+    | 'start'
+    | 'stop'
+    | 'skip'
+    | 'add'
+    | 'clear'
+    | 'remove'
+    | 'shuffle'
+    | 'setGain';
+  id?: string | string[];
+  index?: number;
+  offset?: number;
+  gain?: number;
+}) => {
+  const { action, id, index, offset, gain } = args;
+  const params: Record<string, any> = { action };
+  if (index !== undefined) params.index = index;
+  if (offset !== undefined) params.offset = offset;
+  if (gain !== undefined) params.gain = gain;
+  // id can be repeated for multiple songs
+  if (id !== undefined) params.id = id;
+  const { data } = await api.get('/jukeboxControl.view', {
+    params,
+    paramsSerializer: (p) => qs.stringify(p, { arrayFormat: 'repeat' }),
+  });
+  if (data.status === 'failed') throw new Error(data.error?.message || 'jukeboxControl failed');
+  const status = data.jukeboxStatus || data.jukeboxPlaylist;
+  if (!status) return null;
+  return {
+    currentIndex: status.currentIndex ?? -1,
+    playing: Boolean(status.playing),
+    gain: status.gain ?? 1,
+    position: status.position ?? 0,
+    entry: (status.entry || []).map((e: any) => e.id as string),
+  };
 };
 
 export const getInternetRadioStations = async () => {

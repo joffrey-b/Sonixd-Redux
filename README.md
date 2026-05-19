@@ -40,9 +40,11 @@ Sonixd Redux is a fork of [Sonixd](https://github.com/jeffvli/sonixd) by jeffvli
 - **Custom EQ/PEQ presets** - save, load, and delete named presets
 - **Spectrogram** - full-track spectrogram with frequency, time, and dB axes
 - **Internet Radio** - play internet radio stations configured on your server directly from the sidebar (Subsonic / Navidrome only)
+- **Podcasts** - browse and play podcast episodes managed by your server; compatible with Subsonic servers that implement the podcast API
+- **Jukebox mode** - plays audio directly on your server's audio hardware; Sonixd Redux sends the commands and acts like a remote control; useful for setups like a Raspberry Pi with speakers plugged in (Subsonic servers only)
 - **Artist Radio** - one-click similar-artist mix from any artist page, powered by your server's similarity data (Navidrome) or InstantMix (Jellyfin)
 - **Smart Playlists** - rule-based playlists filtered by genre, year, play count, rating, starred status, and duration, with sort and limit controls; save to server as a static playlist snapshot
-- **Library Cache** - sync your full library locally so Smart Playlists filter against every song, not just a random pool; play count, starred status, and rating stay up to date automatically
+- **Library Cache** - sync your full library data locally so Smart Playlists filter against every song, not just a random pool; play count, starred status, and rating stay up to date automatically on each app launch
 - **Scrobble threshold** - configure what percentage of a track must be played before it is scrobbled
 - **Lyrics support** - Synced and unsynced lyrics support with "click on text" and zoom function
 - **Discord RPC** - now shows album images, retrieved from iTunes
@@ -118,6 +120,8 @@ Full documentation is available at **[joffrey-b.github.io/Sonixd-Redux](https://
 - [Equalizer & PEQ](https://joffrey-b.github.io/Sonixd-Redux/equalizer)
 - [Library](https://joffrey-b.github.io/Sonixd-Redux/library)
 - [Internet Radio](https://joffrey-b.github.io/Sonixd-Redux/internet-radio)
+- [Podcasts](https://joffrey-b.github.io/Sonixd-Redux/podcasts)
+- [Jukebox](https://joffrey-b.github.io/Sonixd-Redux/jukebox)
 - [Artist Radio](https://joffrey-b.github.io/Sonixd-Redux/artist-radio)
 - [Smart Playlists](https://joffrey-b.github.io/Sonixd-Redux/smart-playlists)
 - [Lyrics](https://joffrey-b.github.io/Sonixd-Redux/lyrics)

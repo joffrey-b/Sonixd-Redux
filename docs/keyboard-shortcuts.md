@@ -46,3 +46,9 @@ When **Global Shortcuts** is enabled (Settings → Player), the 6 playback short
 ## Media keys
 
 If your keyboard has dedicated media keys (play/pause, next, previous), they work out of the box via the system media transport controls without any configuration needed.
+
+---
+
+## Jukebox mode
+
+All playback shortcuts (including global shortcuts and media keys) work in jukebox mode. Commands are sent to the server instead of controlling local audio.

@@ -47,6 +47,8 @@ export interface PlayQueue {
   current?: any;
   isFading: boolean;
   playerUpdated: number;
+  playerRestartCurrent: number;
+  entryVersion: number;
   autoIncremented: boolean;
   volume: number;
   scrobble: boolean;
@@ -73,11 +75,11 @@ export type PlayQueueSaveState = Pick<
   | 'player1'
   | 'player2'
   | 'currentPlayer'
->;
+> & { serverUrl?: string };
 
 const initialState: PlayQueue = {
   player1: {
-    src: './components/player/dummy.mp3',
+    src: '',
     index: 0,
     fadeData: {
       volumeData: [],
@@ -85,7 +87,7 @@ const initialState: PlayQueue = {
     },
   },
   player2: {
-    src: './components/player/dummy.mp3',
+    src: '',
     index: 1,
     fadeData: {
       volumeData: [],
@@ -107,6 +109,8 @@ const initialState: PlayQueue = {
   currentPlayer: 1,
   isFading: false,
   playerUpdated: 0,
+  playerRestartCurrent: 0,
+  entryVersion: 0,
   autoIncremented: false,
   volume: Number(parsedSettings.volume),
   scrobble: Boolean(parsedSettings.scrobble),
@@ -128,8 +132,8 @@ const resetPlayerDefaults = (state: PlayQueue) => {
   state.currentIndex = 0;
   state.currentSongId = '';
   state.currentPlayer = 1;
-  state.player1.src = './components/player/dummy.mp3';
-  state.player2.src = './components/player/dummy.mp3';
+  state.player1.src = '';
+  state.player2.src = '';
   state.player1.index = 0;
   state.player2.index = 0;
   state.entry = [];
@@ -211,6 +215,7 @@ const playQueueSlice = createSlice({
       state,
       action: PayloadAction<{ columnDataKey: string; sortType: 'asc' | 'desc' }>
     ) => {
+      state.entryVersion += 1;
       if (action.payload.columnDataKey !== '') {
         state.sortedEntry = _.orderBy(
           state.entry,
@@ -334,6 +339,7 @@ const playQueueSlice = createSlice({
       in-place so that the song doesn't change when shuffling */
       if (state.shuffledEntry.length > 1) {
         state.shuffle = true;
+        state.entryVersion += 1;
 
         const shuffledEntriesWithoutCurrent = _.shuffle(
           removeItem(state.shuffledEntry, state.currentIndex)
@@ -350,6 +356,7 @@ const playQueueSlice = createSlice({
     },
 
     toggleShuffle: (state) => {
+      state.entryVersion += 1;
       state.shuffle = !state.shuffle;
 
       if (state.shuffle && state.entry.length > 1) {
@@ -368,6 +375,9 @@ const playQueueSlice = createSlice({
 
         // currentIndex and currentSongId stays the same since we're keeping it in place
         state.shuffledEntry = shuffledEntries;
+      } else if (state.shuffle) {
+        // Single entry: just mirror entry so getCurrentEntryList finds the song
+        state.shuffledEntry = [...state.entry];
       } else if (state.entry.length > 1) {
         /* If toggled to false, the NowPlayingView will reset back to using the regular entry[].
         We want to swap the currentIndex over to the currently playing track since its row index
@@ -520,6 +530,7 @@ const playQueueSlice = createSlice({
 
     incrementCurrentIndex: (state, action: PayloadAction<string>) => {
       const currentEntry = entrySelect(state);
+      const prevIndex = state.currentIndex;
 
       if (state[currentEntry].length >= 1 && state.repeat !== 'one') {
         if (state.currentIndex < state[currentEntry].length - 1) {
@@ -539,8 +550,14 @@ const playQueueSlice = createSlice({
             state.player2.index = state.currentIndex + 1;
           }
 
-          // Use this in conjunction with useEffect to set the audioplayer currentTime back to 0
-          state.playerUpdated += 1;
+          if (state.currentIndex !== prevIndex) {
+            // Different song — reset the seek bar via the playerUpdated effect.
+            state.playerUpdated += 1;
+          } else if (state.repeat === 'all') {
+            // Same song (single-song queue with repeat-all) — restart it from the beginning.
+            state.playerRestartCurrent += 1;
+          }
+          // repeat-none/one at end of queue: do nothing (can't advance).
         }
       } else if (state[currentEntry].length >= 1 && state.repeat === 'one') {
         // If repeating one, then we can just increment to the next track
@@ -625,6 +642,8 @@ const playQueueSlice = createSlice({
         const currentEntry = entrySelect(state);
 
         if (state[currentEntry].length >= 1) {
+          const prevIndex = state.currentIndex;
+
           if (state.currentIndex > 0) {
             state.currentIndex -= 1;
           } else if (state.repeat === 'all') {
@@ -637,8 +656,13 @@ const playQueueSlice = createSlice({
           // Use in conjunction with fixPlayer2Index reducer - see note
           state.player2.index = 0;
 
-          // Use this in conjunction with useEffect to set the audioplayer currentTime back to 0
-          state.playerUpdated += 1;
+          if (state.currentIndex !== prevIndex) {
+            // Different song — reset the seek bar via the playerUpdated effect.
+            state.playerUpdated += 1;
+          } else {
+            // Already at the first song and can't go back — restart it from the beginning.
+            state.playerRestartCurrent += 1;
+          }
         }
 
         state.current = { ...state[currentEntry][state.currentIndex] };
@@ -661,7 +685,7 @@ const playQueueSlice = createSlice({
       // then sets it to its proper index.
 
       if (state.currentPlayer === 1) {
-        state.player2.src = './components/player/dummy.mp3';
+        state.player2.src = '';
 
         state.player2.index = getNextPlayerIndex(
           state.entry.length,
@@ -689,6 +713,7 @@ const playQueueSlice = createSlice({
       }>
     ) => {
       // Used with gridview where you just want to set the entry queue directly
+      state.entryVersion += 1;
       resetPlayerDefaults(state);
 
       state.player1.src = action.payload.entries[0].streamUrl;
@@ -722,6 +747,7 @@ const playQueueSlice = createSlice({
       // Used with listview where you want to set the entry queue by double clicking on a row
       // Setting the entry queue by row will add all entries, but set the current index to
       // the row that was double clicked
+      state.entryVersion += 1;
       resetPlayerDefaults(state);
 
       state.player1.src = action.payload.entries[action.payload.currentIndex].streamUrl;
@@ -783,6 +809,7 @@ const playQueueSlice = createSlice({
       state,
       action: PayloadAction<{ entries: Song[]; type: 'next' | 'later' }>
     ) => {
+      state.entryVersion += 1;
       const isEmptyQueue = state.entry.length < 1;
       // We'll need to update the uniqueId otherwise selecting a song with duplicates
       // will select them all at once
@@ -844,6 +871,7 @@ const playQueueSlice = createSlice({
     },
 
     removeFromPlayQueue: (state, action: PayloadAction<{ entries: Song[] }>) => {
+      state.entryVersion += 1;
       const uniqueIds = _.map(action.payload.entries, 'uniqueId');
 
       state.entry = state.entry.filter((entry) => !uniqueIds.includes(entry.uniqueId));
@@ -902,6 +930,7 @@ const playQueueSlice = createSlice({
     },
 
     clearPlayQueue: (state) => {
+      state.entryVersion += 1;
       state.entry = [];
       state.shuffledEntry = [];
       state.current = undefined;
@@ -921,6 +950,7 @@ const playQueueSlice = createSlice({
     },
 
     moveToIndex: (state, action: PayloadAction<Song[]>) => {
+      state.entryVersion += 1;
       const currentEntry = entrySelect(state);
 
       // Set the modified entries into the redux state
@@ -943,6 +973,7 @@ const playQueueSlice = createSlice({
     },
 
     moveToTop: (state, action: PayloadAction<{ selectedEntries: Song[] }>) => {
+      state.entryVersion += 1;
       const currentEntry = entrySelect(state);
       const newQueue = moveSelectedToTop(state[currentEntry], action.payload.selectedEntries);
       state[currentEntry] = newQueue;
@@ -961,6 +992,7 @@ const playQueueSlice = createSlice({
     },
 
     moveToBottom: (state, action: PayloadAction<{ selectedEntries: Song[] }>) => {
+      state.entryVersion += 1;
       const currentEntry = entrySelect(state);
       const newQueue = moveSelectedToBottom(state[currentEntry], action.payload.selectedEntries);
       state[currentEntry] = newQueue;
@@ -979,6 +1011,7 @@ const playQueueSlice = createSlice({
     },
 
     moveUp: (state, action: PayloadAction<{ selectedEntries: Song[] }>) => {
+      state.entryVersion += 1;
       const currentEntry = entrySelect(state);
       state[currentEntry] = moveSelectedUp(state[currentEntry], action.payload.selectedEntries);
 
@@ -999,6 +1032,7 @@ const playQueueSlice = createSlice({
     },
 
     moveDown: (state, action: PayloadAction<{ selectedEntries: Song[] }>) => {
+      state.entryVersion += 1;
       const currentEntry = entrySelect(state);
       state[currentEntry] = moveSelectedDown(state[currentEntry], action.payload.selectedEntries);
 
@@ -1020,6 +1054,21 @@ const playQueueSlice = createSlice({
 
     setStopAfterCurrent: (state, action: PayloadAction<boolean>) => {
       state.stopAfterCurrent = action.payload;
+    },
+
+    incrementEntryPlayCount: (state, action: PayloadAction<string>) => {
+      const id = action.payload;
+      const increment = (list: any[]) => {
+        list.forEach((song) => {
+          if (song.id === id) song.playCount = (song.playCount || 0) + 1;
+        });
+      };
+      increment(state.entry);
+      increment(state.shuffledEntry);
+      increment(state.sortedEntry);
+      if (state.current?.id === id) {
+        state.current = { ...state.current, playCount: (state.current.playCount || 0) + 1 };
+      }
     },
 
     restoreState: (state, action: PayloadAction<PlayQueueSaveState>) => {
@@ -1077,6 +1126,7 @@ export const {
   setFadeData,
   setPlaybackSetting,
   setStopAfterCurrent,
+  incrementEntryPlayCount,
   restoreState,
 } = playQueueSlice.actions;
 export default playQueueSlice.reducer;

@@ -80,7 +80,6 @@ const DbLabel = styled.div`
 const VerticalSlider = styled.input.attrs({ type: 'range' })`
   writing-mode: vertical-lr;
   direction: rtl;
-  -webkit-appearance: slider-vertical;
   width: 24px;
   height: 120px;
   cursor: pointer;

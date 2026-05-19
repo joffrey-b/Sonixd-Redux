@@ -63,7 +63,10 @@ export type APIEndpoints =
   | 'getSongsByGenre'
   | 'getLyrics'
   | 'getLyricsBySongId'
-  | 'getInternetRadioStations';
+  | 'getInternetRadioStations'
+  | 'getPodcasts'
+  | 'refreshPodcasts'
+  | 'jukeboxControl';
 
 export interface GenericItem {
   id: string;
@@ -186,6 +189,7 @@ export interface Song {
   type: Item.Music;
   uniqueId: string;
   isRadio?: boolean;
+  isPodcast?: boolean;
 }
 
 export interface ScanStatus {

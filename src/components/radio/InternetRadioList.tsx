@@ -10,6 +10,7 @@ import GenericPage from '../layout/GenericPage';
 import GenericPageHeader from '../layout/GenericPageHeader';
 import CenterLoader from '../loader/CenterLoader';
 import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
+import { notifyToast } from '../shared/toast';
 import { Play } from '../../types';
 
 interface RadioStation {
@@ -22,6 +23,7 @@ interface RadioStation {
 const InternetRadioList = () => {
   const { t } = useTranslation();
   const config = useAppSelector((state) => state.config);
+  const isJukebox = useAppSelector((state: any) => state.jukebox?.enabled ?? false);
   const { handlePlayQueueAdd } = usePlayQueueHandler();
 
   const { isLoading, data: stations } = useQuery(['internetRadioStations'], () =>
@@ -29,6 +31,10 @@ const InternetRadioList = () => {
   );
 
   const handlePlay = (station: RadioStation) => {
+    if (isJukebox) {
+      notifyToast('info', t('Internet radio is not supported in jukebox mode.'));
+      return;
+    }
     handlePlayQueueAdd({
       byData: [
         {

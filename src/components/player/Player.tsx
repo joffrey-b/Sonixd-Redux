@@ -23,6 +23,7 @@ import {
   setPlayerSrc,
   setStopAfterCurrent,
   getNextPlayerIndex,
+  incrementEntryPlayCount,
 } from '../../redux/playQueueSlice';
 import cacheSong from '../shared/cacheSong';
 import { isCached } from '../../shared/utils';
@@ -49,7 +50,8 @@ const gaplessListenHandler = (
   setScrobbled: any,
   serverType: Server,
   duration: number,
-  scrobbleThreshold: number
+  scrobbleThreshold: number,
+  dispatch: any
 ) => {
   const currentSeek = currentPlayerRef.current?.audioEl.current?.currentTime || 0;
 
@@ -76,11 +78,13 @@ const gaplessListenHandler = (
     shouldScrobble &&
     !scrobbled &&
     !playQueue.current?.isRadio &&
+    !playQueue.current?.isPodcast &&
     (currentSeek >= 240 || currentSeek >= duration * (scrobbleThreshold / 100)) &&
     currentSeek <= duration - 2
   ) {
     setScrobbled(true);
     incrementPlayCountInCache(playQueue.currentSongId);
+    dispatch(incrementEntryPlayCount(playQueue.currentSongId));
     apiController({
       serverType,
       endpoint: 'scrobble',
@@ -244,11 +248,13 @@ const listenHandler = (
     shouldScrobble &&
     !scrobbled &&
     !playQueue.current?.isRadio &&
+    !playQueue.current?.isPodcast &&
     (currentSeek >= 240 || currentSeek >= duration * (scrobbleThreshold / 100)) &&
     currentSeek <= fadeAtTime
   ) {
     setScrobbled(true);
     incrementPlayCountInCache(playQueue.currentSongId);
+    dispatch(incrementEntryPlayCount(playQueue.currentSongId));
     apiController({
       serverType,
       endpoint: 'scrobble',
@@ -271,9 +277,12 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
   const misc = useAppSelector((state) => state.misc);
   const config = useAppSelector((state) => state.config);
   const isMpv = config.playback.playerBackend === 'mpv';
+  const isJukebox = useAppSelector((state: any) => state.jukebox?.enabled ?? false);
   const cacheSongs = settings.get('cacheSongs');
   const [title] = useState('');
   const [scrobbled, setScrobbled] = useState(false);
+  const prevSeekPlayer1Ref = useRef(0);
+  const prevSeekPlayer2Ref = useRef(0);
   const eq = useAppSelector((state: any) => state.eq as EqState);
   const peq = useAppSelector((state: any) => state.peq as PeqState);
 
@@ -484,7 +493,20 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
   }, [muted]);
 
   useEffect(() => {
-    if (isMpv) return; // MPV handles its own playback; don't drive the web audio elements
+    if (isMpv) return;
+    if (isJukebox) {
+      setTimeout(() => {
+        for (let i = 0; i <= 100; i += 1) {
+          player1Ref.current.audioEl.current?.pause();
+        }
+      }, 100);
+      setTimeout(() => {
+        for (let i = 0; i <= 100; i += 1) {
+          player2Ref.current.audioEl.current?.pause();
+        }
+      }, 100);
+      return;
+    }
     if (player.status === 'PLAYING') {
       setTimeout(() => {
         if (playQueue.currentPlayer === 1) {
@@ -515,13 +537,17 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
         }
       }, 100);
     }
-  }, [isMpv, playQueue.currentPlayer, player.status]);
+  }, [isMpv, isJukebox, playQueue.currentPlayer, player.status]);
+
+  // Web scrobbling — reset submission flag on each new song or player switch (handles repeat-one)
+  useEffect(() => {
+    if (isMpv || isJukebox) return;
+    setScrobbled(false);
+  }, [isMpv, isJukebox, playQueue.currentSongId, playQueue.currentPlayer]);
 
   useEffect(() => {
-    if (isMpv) return undefined; // MPV scrobbling is handled in PlayerBar.tsx
+    if (isMpv || isJukebox) return undefined; // MPV/jukebox scrobbling handled elsewhere
     if (playQueue.scrobble && player.status === 'PLAYING') {
-      setScrobbled(false); // Only scrobble a single time per song change
-
       const currentSeek =
         playQueue.currentPlayer === 1
           ? player1Ref.current.audioEl.current?.currentTime
@@ -577,6 +603,7 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
     return undefined;
   }, [
     isMpv,
+    isJukebox,
     config.serverType,
     currentEntryList,
     playQueue,
@@ -617,6 +644,9 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
   }, [currentEntryList, dispatch, getSrc1, getSrc2, playQueue]);
 
   const handleListenPlayer1 = useCallback(() => {
+    const currentSeek = player1Ref.current?.audioEl.current?.currentTime || 0;
+    if (prevSeekPlayer1Ref.current > 5 && currentSeek < 2) setScrobbled(false);
+    prevSeekPlayer1Ref.current = currentSeek;
     listenHandler(
       player1Ref,
       player2Ref,
@@ -638,6 +668,9 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
   }, [config.serverType, currentEntryList, dispatch, playQueue, scrobbled]);
 
   const handleListenPlayer2 = useCallback(() => {
+    const currentSeek = player2Ref.current?.audioEl.current?.currentTime || 0;
+    if (prevSeekPlayer2Ref.current > 5 && currentSeek < 2) setScrobbled(false);
+    prevSeekPlayer2Ref.current = currentSeek;
     listenHandler(
       player2Ref,
       player1Ref,
@@ -792,6 +825,9 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
   }, [cacheSongs, currentEntryList, dispatch, playQueue]);
 
   const handleGaplessPlayer1 = useCallback(() => {
+    const currentSeek = player1Ref.current?.audioEl.current?.currentTime || 0;
+    if (prevSeekPlayer1Ref.current > 5 && currentSeek < 2) setScrobbled(false);
+    prevSeekPlayer1Ref.current = currentSeek;
     gaplessListenHandler(
       player1Ref,
       player2Ref,
@@ -804,11 +840,15 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
       config.serverType === Server.Subsonic
         ? player1Ref.current?.audioEl.current.duration
         : playQueue[currentEntryList][playQueue.player1.index]?.duration,
-      playQueue.scrobbleThreshold
+      playQueue.scrobbleThreshold,
+      dispatch
     );
-  }, [config.serverType, currentEntryList, playQueue, scrobbled]);
+  }, [config.serverType, currentEntryList, dispatch, playQueue, scrobbled]);
 
   const handleGaplessPlayer2 = useCallback(() => {
+    const currentSeek = player2Ref.current?.audioEl.current?.currentTime || 0;
+    if (prevSeekPlayer2Ref.current > 5 && currentSeek < 2) setScrobbled(false);
+    prevSeekPlayer2Ref.current = currentSeek;
     gaplessListenHandler(
       player2Ref,
       player1Ref,
@@ -821,9 +861,10 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
       config.serverType === Server.Subsonic
         ? player2Ref.current?.audioEl.current.duration
         : playQueue[currentEntryList][playQueue.player2.index]?.duration,
-      playQueue.scrobbleThreshold
+      playQueue.scrobbleThreshold,
+      dispatch
     );
-  }, [config.serverType, currentEntryList, playQueue, scrobbled]);
+  }, [config.serverType, currentEntryList, dispatch, playQueue, scrobbled]);
 
   const handleOnPlay = useCallback(
     (playerNumber: 1 | 2) => {
@@ -982,6 +1023,7 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
         volume={player1Ref.current?.audioEl?.current?.volume || 0}
         autoPlay={
           !isMpv &&
+          !isJukebox &&
           playQueue.player1.index === playQueue.currentIndex &&
           playQueue.currentPlayer === 1 &&
           player.status === 'PLAYING'
@@ -1007,6 +1049,7 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
         volume={player2Ref.current?.audioEl?.current?.volume || 0}
         autoPlay={
           !isMpv &&
+          !isJukebox &&
           playQueue.player2.index === playQueue.currentIndex &&
           playQueue.currentPlayer === 2 &&
           player.status === 'PLAYING'

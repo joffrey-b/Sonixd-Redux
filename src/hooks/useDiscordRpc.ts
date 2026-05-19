@@ -79,14 +79,16 @@ const useDiscordRpc = ({ playersRef, currentTimeRef, isMpv }: any) => {
               : playersRef.current?.player2.audioEl.current?.currentTime) ?? 0;
 
         const now = Date.now();
-        const start = Math.round(now - effectiveCurrentTime * 1000) || 0;
-        const end = Math.round(start + playQueue?.current?.duration * 1000) || 0;
+        const isRadio = playQueue.current?.isRadio;
+        const start = isRadio ? now : Math.round(now - effectiveCurrentTime * 1000) || 0;
+        const duration = playQueue?.current?.duration;
+        const end = duration ? Math.round(start + duration * 1000) : 0;
 
         const artists = playQueue.current?.artist.map((artist: Artist) => artist.title).join(', ');
 
         const activity: Presence = {
           details: playQueue.current?.title.padEnd(2, ' ') || 'Not playing',
-          state: artists && `By ${artists}`,
+          state: artists ? `By ${artists}` : undefined,
           largeImageKey: undefined,
           largeImageText: playQueue.current?.album || 'Unknown album',
           smallImageKey: undefined,
@@ -96,7 +98,7 @@ const useDiscordRpc = ({ playersRef, currentTimeRef, isMpv }: any) => {
 
         if (player.status === 'PLAYING') {
           activity.startTimestamp = start;
-          activity.endTimestamp = end;
+          if (end > 0) activity.endTimestamp = end;
           activity.smallImageKey = 'playing';
         } else {
           activity.smallImageKey = 'paused';

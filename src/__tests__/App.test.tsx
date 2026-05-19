@@ -70,6 +70,8 @@ const playQueueState: PlayQueue = {
   currentPlayer: 1,
   isFading: false,
   playerUpdated: 0,
+  playerRestartCurrent: 0,
+  entryVersion: 0,
   autoIncremented: false,
   volume: 0.5,
   scrobble: false,

@@ -513,21 +513,21 @@ export const getPlayedSongsNotification = (options: {
 }) => {
   if (options.type === 'play') {
     if (options.original === options.filtered) {
-      return i18n.t('Playing {{n}} songs', { n: options.original });
+      return i18n.t('Playing {{count}} track', { count: options.original });
     }
 
-    return i18n.t('Playing {{n}} songs [{{i}} filtered]', {
-      n: options.filtered,
+    return i18n.t('Playing {{count}} track [{{i}} filtered]', {
+      count: options.filtered,
       i: options.original - options.filtered,
     });
   }
 
   if (options.original === options.filtered) {
-    return i18n.t('Added {{n}} songs', { n: options.original });
+    return i18n.t('Added {{count}} track', { count: options.original });
   }
 
-  return i18n.t('Added {{n}} songs [{{i}} filtered]', {
-    n: options.filtered,
+  return i18n.t('Added {{count}} track [{{i}} filtered]', {
+    count: options.filtered,
     i: options.original - options.filtered,
   });
 };

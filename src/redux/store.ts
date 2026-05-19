@@ -13,6 +13,7 @@ import viewReducer from './viewSlice';
 import eqReducer from './eqSlice';
 import peqReducer from './peqSlice';
 import smartPlaylistReducer from './smartPlaylistSlice';
+import jukeboxReducer from './jukeboxSlice';
 
 export const store: EnhancedStore<
   any,
@@ -33,6 +34,7 @@ export const store: EnhancedStore<
     eq: eqReducer,
     peq: peqReducer,
     smartPlaylist: smartPlaylistReducer,
+    jukebox: jukeboxReducer,
   },
   middleware: [forwardToMain],
 });
