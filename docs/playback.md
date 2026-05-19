@@ -6,24 +6,25 @@ The player bar sits at the bottom of the window at all times.
 
 ![📷 Screenshot: Player bar](screenshots/player-bar.png)
 
-| Control             | Description                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------ |
-| Stop                | Stop playback and return to the beginning of the track                                           |
-| Previous            | Go to previous track (restarts current if >5s in, or go directly to previous song, configurable) |
-| Seek back arrows    | Seek back (custom time can be defined in settings)                                               |
-| Play / Pause        | Toggle playback                                                                                  |
-| Seek forward arrows | Seek forward (custom time can be defined in settings)                                            |
-| Next                | Skip to next track                                                                               |
-| Play random         | Replaces the queue with random songs                                                             |
-| Seek bar            | Click or drag the progress bar to seek                                                           |
-| Favorite            | Click on the ❤ icon to add the current playing song to favorites                                 |
-| Repeat              | Cycle through Off → Repeat All → Repeat One                                                      |
-| Shuffle             | Randomize the queue                                                                              |
-| Sleep timer         | Opens the sleep timer menu where you can set a duration after which playback stops               |
-| Mini player         | Shows the current playing queue from anywhere                                                    |
-| Volume              | Drag the volume slider or scroll with the mouse wheel                                            |
-| Mute                | Toggle mute                                                                                      |
-| Star rating         | Lets you rate the current song from 1-star to 5-star                                             |
+| Control             | Description                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------- |
+| Stop                | Stops playback and return to the beginning of the track                                            |
+| Previous            | Goes to previous track (restarts current if >5s in, or go directly to previous song, configurable) |
+| Seek back arrows    | Seeks back (custom time can be defined in settings)                                                |
+| Play / Pause        | Toggles playback                                                                                   |
+| Seek forward arrows | Seeks forward (custom time can be defined in settings)                                             |
+| Next                | Skips to next track                                                                                |
+| Play random         | Replaces the queue with random songs                                                               |
+| Seek bar            | Click or drag the progress bar to seek                                                             |
+| Favorite            | Click on the ❤ icon to add the current playing song to favorites                                   |
+| Repeat              | Cycles through Off → Repeat All → Repeat One                                                       |
+| Shuffle             | Randomizes the queue                                                                               |
+| Jukebox mode        | Enables jukebox mode for servers that support it                                                   |
+| Sleep timer         | Opens the sleep timer menu where you can set a duration after which playback stops                 |
+| Mini player         | Shows the current playing queue from anywhere                                                      |
+| Volume              | Drags the volume slider or scroll with the mouse wheel                                             |
+| Mute                | Toggles mute                                                                                       |
+| Star rating         | Lets you rate the current song from 1-star to 5-star                                               |
 
 ---
 
