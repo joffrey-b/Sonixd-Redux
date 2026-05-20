@@ -495,5 +495,6 @@
   "Playing {{count}} track_one": "ගීත {{count}}ක් වාදනය කරමින්",
   "Playing {{count}} track_other": "ගීත {{count}}ක් වාදනය කරමින්",
   "Playing {{count}} track [{{i}} filtered]_one": "ගීත {{count}}ක් වාදනය කරමින් [{{i}} පෙරහන]",
-  "Playing {{count}} track [{{i}} filtered]_other": "ගීත {{count}}ක් වාදනය කරමින් [{{i}} පෙරහන]"
+  "Playing {{count}} track [{{i}} filtered]_other": "ගීත {{count}}ක් වාදනය කරමින් [{{i}} පෙරහන]",
+  "Resuming from {{time}}": "{{time}} සිට නැවත ආරම්භ කිරීම"
 }

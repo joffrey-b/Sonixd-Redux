@@ -495,5 +495,6 @@
   "Disable Jukebox": "Disable Jukebox",
   "Jukebox": "Jukebox",
   "Jukebox mode is active — the server controls audio playback. Backend settings are not applicable.": "Jukebox mode is active — the server controls audio playback. Backend settings are not applicable.",
-  "Jukebox not available. Check that it is enabled on your server and that your account has permission.": "Jukebox not available. Check that it is enabled on your server and that your account has permission."
+  "Jukebox not available. Check that it is enabled on your server and that your account has permission.": "Jukebox not available. Check that it is enabled on your server and that your account has permission.",
+  "Resuming from {{time}}": "Resuming from {{time}}"
 }

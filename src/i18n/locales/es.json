@@ -495,5 +495,6 @@
   "Playing {{count}} track_one": "Reproduciendo {{count}} canción",
   "Playing {{count}} track_other": "Reproduciendo {{count}} canciones",
   "Playing {{count}} track [{{i}} filtered]_one": "Reproduciendo {{count}} canción [Filtro aplicado a {{i}} canciones]",
-  "Playing {{count}} track [{{i}} filtered]_other": "Reproduciendo {{count}} canciones [Filtro aplicado a {{i}} canciones]"
+  "Playing {{count}} track [{{i}} filtered]_other": "Reproduciendo {{count}} canciones [Filtro aplicado a {{i}} canciones]",
+  "Resuming from {{time}}": "Reanudando desde {{time}}"
 }

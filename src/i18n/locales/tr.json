@@ -495,5 +495,6 @@
   "Playing {{count}} track_one": "{{count}} şarkı oynatılıyor",
   "Playing {{count}} track_other": "{{count}} şarkı oynatılıyor",
   "Playing {{count}} track [{{i}} filtered]_one": "{{count}} şarkı oynatılıyor [{{i}} filtreli]",
-  "Playing {{count}} track [{{i}} filtered]_other": "{{count}} şarkı oynatılıyor [{{i}} filtreli]"
+  "Playing {{count}} track [{{i}} filtered]_other": "{{count}} şarkı oynatılıyor [{{i}} filtreli]",
+  "Resuming from {{time}}": "{{time}} konumundan devam ediliyor"
 }

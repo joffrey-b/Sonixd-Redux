@@ -495,5 +495,6 @@
   "Playing {{count}} track_one": "正在播放{{count}}首歌曲",
   "Playing {{count}} track_other": "正在播放{{count}}首歌曲",
   "Playing {{count}} track [{{i}} filtered]_one": "正在播放{{count}}首歌曲 [{{i}}已过滤]",
-  "Playing {{count}} track [{{i}} filtered]_other": "正在播放{{count}}首歌曲 [{{i}}已过滤]"
+  "Playing {{count}} track [{{i}} filtered]_other": "正在播放{{count}}首歌曲 [{{i}}已过滤]",
+  "Resuming from {{time}}": "从{{time}}继续播放"
 }

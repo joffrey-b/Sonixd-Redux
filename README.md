@@ -133,6 +133,18 @@ Full documentation is available at **[joffrey-b.github.io/Sonixd-Redux](https://
 
 ---
 
+## Privacy
+
+Sonixd Redux collects no analytics, telemetry, or usage data and <ins>never will</ins>. The only outbound connections it makes are:
+
+- **Your music server** - all playback and library data
+- **GitHub** - checking for updates on launch (version number only, no user data)
+- **iTunes** - fetching album art for Discord Rich Presence (only when "Display Album Art" is enabled in Discord integration settings)
+
+No crash reports, no tracking, no third-party analytics of any kind.
+
+---
+
 ## License
 
 Sonixd Redux is licensed under the [GNU General Public License v3.0](LICENSE).

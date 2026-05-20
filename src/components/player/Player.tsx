@@ -432,7 +432,9 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
     if (!isMpv) {
       const deviceId = config.playback.audioDeviceId || '';
       if (deviceId) {
+        // eslint-disable-next-line promise/no-nesting
         (h1 as any).setSinkId(deviceId).catch(() => (h1 as any).setSinkId('').catch(() => {}));
+        // eslint-disable-next-line promise/no-nesting
         (h2 as any).setSinkId(deviceId).catch(() => (h2 as any).setSinkId('').catch(() => {}));
       }
     }
@@ -712,6 +714,14 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
   }
 
   const handleOnEndedPlayer1 = useCallback(() => {
+    const endedSong1 = playQueue[currentEntryList][playQueue.player1.index];
+    if (endedSong1?.isPodcast && config.serverType === Server.Subsonic) {
+      apiController({
+        serverType: config.serverType,
+        endpoint: 'deleteBookmark',
+        args: { id: endedSong1.id },
+      }).catch(() => {});
+    }
     player1Ref.current.audioEl.current.currentTime = 0;
     if (cacheSongs) {
       cacheSong(
@@ -766,9 +776,17 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
         dispatch(setAutoIncremented(false));
       }
     }
-  }, [cacheSongs, currentEntryList, dispatch, playQueue]);
+  }, [cacheSongs, config.serverType, currentEntryList, dispatch, playQueue]);
 
   const handleOnEndedPlayer2 = useCallback(() => {
+    const endedSong2 = playQueue[currentEntryList][playQueue.player2.index];
+    if (endedSong2?.isPodcast && config.serverType === Server.Subsonic) {
+      apiController({
+        serverType: config.serverType,
+        endpoint: 'deleteBookmark',
+        args: { id: endedSong2.id },
+      }).catch(() => {});
+    }
     player2Ref.current.audioEl.current.currentTime = 0;
     if (cacheSongs) {
       cacheSong(
@@ -822,7 +840,7 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
         dispatch(setAutoIncremented(false));
       }
     }
-  }, [cacheSongs, currentEntryList, dispatch, playQueue]);
+  }, [cacheSongs, config.serverType, currentEntryList, dispatch, playQueue]);
 
   const handleGaplessPlayer1 = useCallback(() => {
     const currentSeek = player1Ref.current?.audioEl.current?.currentTime || 0;
@@ -915,6 +933,29 @@ const Player = ({ currentEntryList, muted, children }: any, ref: any) => {
 
   const handleOnPause = useCallback(
     async (playerNumber: 1 | 2) => {
+      const pausedSong =
+        playerNumber === 1
+          ? playQueue[currentEntryList][playQueue.player1.index]
+          : playQueue[currentEntryList][playQueue.player2.index];
+      const pauseSeek =
+        playerNumber === 1
+          ? player1Ref.current.audioEl.current.currentTime
+          : player2Ref.current.audioEl.current.currentTime;
+      const episodeDuration = pausedSong?.duration || 0;
+      const nearEnd = episodeDuration > 0 && pauseSeek >= episodeDuration - 10;
+      if (
+        pausedSong?.isPodcast &&
+        config.serverType === Server.Subsonic &&
+        pauseSeek > 5 &&
+        !nearEnd
+      ) {
+        apiController({
+          serverType: config.serverType,
+          endpoint: 'createBookmark',
+          args: { id: pausedSong.id, position: Math.floor(pauseSeek * 1000) },
+        }).catch(() => {});
+      }
+
       if (config.serverType === Server.Jellyfin && playQueue.scrobble) {
         // Handle gapless pause
         const currentSeek =

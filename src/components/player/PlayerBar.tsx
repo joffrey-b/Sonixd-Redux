@@ -53,6 +53,7 @@ import useDiscordRpc from '../../hooks/useDiscordRpc';
 import { settings } from '../shared/setDefaultSettings';
 import { incrementPlayCountInCache } from '../../hooks/useLibraryCache';
 import useJukebox from '../../hooks/useJukebox';
+import { notifyToast } from '../shared/toast';
 
 const PlayerBar = () => {
   const { t } = useTranslation();
@@ -107,6 +108,7 @@ const PlayerBar = () => {
 
   const playersRef = useRef<any>();
   const currentTimeRef = useRef(currentTime);
+  const podcastStopPressedRef = useRef(false);
   useEffect(() => {
     currentTimeRef.current = currentTime;
   }, [currentTime]);
@@ -281,6 +283,27 @@ const PlayerBar = () => {
   // before dispatching setStatus('PAUSED'), which would let MPV play from position 0
   // for ~250ms before pausing.
   const handleStopEffective = () => {
+    if (playQueue.current?.isPodcast && config.serverType === Server.Subsonic) {
+      // Delete any saved bookmark so next play starts from the beginning
+      apiController({
+        serverType: config.serverType,
+        endpoint: 'deleteBookmark',
+        args: { id: playQueue.current.id },
+      }).catch(() => {});
+      if (isMpv) {
+        // For MPV: flag to suppress the next pause-triggered bookmark save
+        podcastStopPressedRef.current = true;
+      } else {
+        // For web: reset currentTime to 0 synchronously before handleStop triggers the
+        // pause event, so handleOnPause sees position 0 and does not save a bookmark
+        if (playersRef.current?.player1?.audioEl?.current) {
+          playersRef.current.player1.audioEl.current.currentTime = 0;
+        }
+        if (playersRef.current?.player2?.audioEl?.current) {
+          playersRef.current.player2.audioEl.current.currentTime = 0;
+        }
+      }
+    }
     handleStop();
     if (isMpv) {
       // Dispatch PAUSED immediately regardless — handleStop has a 250ms delay
@@ -678,6 +701,75 @@ const PlayerBar = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isJukebox, jukebox.status.position, playQueue.scrobble]);
+
+  // Podcast bookmarks — restore position when a podcast episode starts
+  useEffect(() => {
+    if (isJukebox || config.serverType !== Server.Subsonic) return undefined;
+    if (!playQueue.current?.isPodcast) return undefined;
+
+    let cancelled = false;
+    const songId = playQueue.current.id;
+
+    const restore = async () => {
+      let bookmarks: any[];
+      try {
+        bookmarks = await apiController({
+          serverType: config.serverType,
+          endpoint: 'getBookmarks',
+        });
+      } catch {
+        return;
+      }
+      if (cancelled) return;
+      const list = Array.isArray(bookmarks) ? bookmarks : [];
+      const bookmark = list.find((bm: any) => bm.entry?.id === songId);
+      if (!bookmark?.position || bookmark.position < 5000) return;
+      const positionSeconds = Math.floor(bookmark.position / 1000);
+      if (isMpv) {
+        // MPV needs a small delay for the file to be opened before seeking
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 200);
+        });
+        if (cancelled) return;
+        ipcRenderer.send('player-seek-to', positionSeconds);
+      } else {
+        const activePlayer =
+          playQueue.currentPlayer === 1
+            ? playersRef.current?.player1?.audioEl?.current
+            : playersRef.current?.player2?.audioEl?.current;
+        if (activePlayer) activePlayer.currentTime = positionSeconds;
+      }
+      setCurrentTime(positionSeconds);
+      notifyToast('info', t('Resuming from {{time}}', { time: format(bookmark.position) }));
+    };
+
+    restore();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playQueue.currentSongId]);
+
+  // Podcast bookmarks — save position when MPV pauses on a podcast episode
+  useEffect(() => {
+    if (!isMpv || isJukebox || config.serverType !== Server.Subsonic) return;
+    if (player.status !== 'PAUSED') return;
+    if (!playQueue.current?.isPodcast) return;
+    if (podcastStopPressedRef.current) {
+      podcastStopPressedRef.current = false;
+      return;
+    }
+    const pos = currentTimeRef.current;
+    const duration = playQueue.current?.duration || Infinity;
+    if (pos <= 5 || pos >= duration - 10) return;
+    apiController({
+      serverType: config.serverType,
+      endpoint: 'createBookmark',
+      args: { id: playQueue.current.id, position: Math.floor(pos * 1000) },
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [player.status]);
 
   // In MPV mode: seeking must go through IPC, not audioEl.currentTime
   const handleSeekSliderMpv = (e: number) => {

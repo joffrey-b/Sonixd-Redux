@@ -495,5 +495,6 @@
   "Playing {{count}} track_one": "Lecture de {{count}} morceau",
   "Playing {{count}} track_other": "Lecture de {{count}} morceaux",
   "Playing {{count}} track [{{i}} filtered]_one": "Lecture de {{count}} morceau [{{i}} filtrés]",
-  "Playing {{count}} track [{{i}} filtered]_other": "Lecture de {{count}} morceaux [{{i}} filtrés]"
+  "Playing {{count}} track [{{i}} filtered]_other": "Lecture de {{count}} morceaux [{{i}} filtrés]",
+  "Resuming from {{time}}": "Reprise à partir de {{time}}"
 }

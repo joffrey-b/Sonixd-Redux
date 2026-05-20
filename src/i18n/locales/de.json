@@ -495,5 +495,6 @@
   "Playing {{count}} track_one": "Wiedergabe von {{count}} Song",
   "Playing {{count}} track_other": "Wiedergabe von {{count}} Songs",
   "Playing {{count}} track [{{i}} filtered]_one": "Wiedergabe von {{count}} Song [{{i}} gefiltert]",
-  "Playing {{count}} track [{{i}} filtered]_other": "Wiedergabe von {{count}} songs [{{i}} gefiltert]"
+  "Playing {{count}} track [{{i}} filtered]_other": "Wiedergabe von {{count}} songs [{{i}} gefiltert]",
+  "Resuming from {{time}}": "Fortfahren ab {{time}}"
 }

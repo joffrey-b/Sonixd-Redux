@@ -495,5 +495,6 @@
   "Playing {{count}} track_one": "{{count}}曲再生中",
   "Playing {{count}} track_other": "{{count}}曲再生中",
   "Playing {{count}} track [{{i}} filtered]_one": "{{count}}曲再生中 [{{i}}件フィルタリング済み]",
-  "Playing {{count}} track [{{i}} filtered]_other": "{{count}}曲再生中 [{{i}}件フィルタリング済み]"
+  "Playing {{count}} track [{{i}} filtered]_other": "{{count}}曲再生中 [{{i}}件フィルタリング済み]",
+  "Resuming from {{time}}": "{{time}}から再開"
 }

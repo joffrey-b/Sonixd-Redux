@@ -39,6 +39,9 @@ import {
   getPodcasts,
   refreshPodcasts,
   jukeboxControl,
+  getBookmarks,
+  createBookmark,
+  deleteBookmark,
 } from './api';
 import {
   getDownloadUrl as jfGetDownloadUrl,
@@ -123,6 +126,9 @@ const endpoints = [
   { id: 'getPodcasts', endpoint: { subsonic: getPodcasts, jellyfin: undefined } },
   { id: 'refreshPodcasts', endpoint: { subsonic: refreshPodcasts, jellyfin: undefined } },
   { id: 'jukeboxControl', endpoint: { subsonic: jukeboxControl, jellyfin: undefined } },
+  { id: 'getBookmarks', endpoint: { subsonic: getBookmarks, jellyfin: undefined } },
+  { id: 'createBookmark', endpoint: { subsonic: createBookmark, jellyfin: undefined } },
+  { id: 'deleteBookmark', endpoint: { subsonic: deleteBookmark, jellyfin: undefined } },
 ];
 
 export const apiController = async (options: {

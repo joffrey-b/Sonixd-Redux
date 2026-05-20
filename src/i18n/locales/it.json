@@ -495,5 +495,6 @@
   "Playing {{count}} track_one": "Riproducendo {{count}} brano",
   "Playing {{count}} track_other": "Riproducendo {{count}} brani",
   "Playing {{count}} track [{{i}} filtered]_one": "Riproducendo {{count}} brano [{{i}} filtered]",
-  "Playing {{count}} track [{{i}} filtered]_other": "Riproducendo {{count}} brani [{{i}} filtered]"
+  "Playing {{count}} track [{{i}} filtered]_other": "Riproducendo {{count}} brani [{{i}} filtered]",
+  "Resuming from {{time}}": "Riprendendo da {{time}}"
 }

@@ -419,6 +419,22 @@ export const jukeboxControl = async (args: {
   };
 };
 
+export const getBookmarks = async () => {
+  const { data } = await api.get('/getBookmarks.view');
+  if (!data || data.status === 'failed') return [];
+  const bookmarks = data.bookmarks?.bookmark;
+  if (!bookmarks) return [];
+  return Array.isArray(bookmarks) ? bookmarks : [bookmarks];
+};
+
+export const createBookmark = async (options: { id: string; position: number }) => {
+  await api.get('/createBookmark.view', { params: options });
+};
+
+export const deleteBookmark = async (options: { id: string }) => {
+  await api.get('/deleteBookmark.view', { params: options });
+};
+
 export const getInternetRadioStations = async () => {
   const { data } = await api.get('/getInternetRadioStations.view');
   return (data.internetRadioStations?.internetRadioStation || []).map((station: any) => ({

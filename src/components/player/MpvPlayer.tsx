@@ -15,6 +15,8 @@ import { PeqState } from '../../redux/peqSlice';
 import { buildMpvAfChain } from '../../shared/mpvEqFilter';
 import { settings } from '../shared/setDefaultSettings';
 import { notifyToast } from '../shared/toast';
+import { apiController } from '../../api/controller';
+import { Server } from '../../types';
 
 const EQ_DEBOUNCE_MS = 150;
 
@@ -46,6 +48,7 @@ const MpvPlayer = () => {
   const preloadedNextUrlRef = useRef<string | null>(null);
   // Tracks the latest playQueue in event handlers to avoid stale closures
   const playQueueRef = useRef(playQueue);
+  const configRef = useRef(config);
   // Tracks the latest player status so the init callback reads the live value
   const playerStatusRef = useRef(player.status);
   // Set before dispatching auto-next to suppress the queue-reload effect
@@ -54,6 +57,10 @@ const MpvPlayer = () => {
   useEffect(() => {
     playQueueRef.current = playQueue;
   }, [playQueue]);
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
 
   useEffect(() => {
     playerStatusRef.current = player.status;
@@ -145,6 +152,15 @@ const MpvPlayer = () => {
       const pq = playQueueRef.current;
       const list = getEntryList();
       if (list.length === 0) return;
+
+      const endedSong = list[pq.currentIndex];
+      if (endedSong?.isPodcast && configRef.current.serverType === Server.Subsonic) {
+        apiController({
+          serverType: configRef.current.serverType,
+          endpoint: 'deleteBookmark',
+          args: { id: endedSong.id },
+        }).catch(() => {});
+      }
 
       // At end of queue with no repeat — MPV stopped, just sync Redux status
       if (pq.repeat === 'none' && pq.currentIndex >= list.length - 1) {

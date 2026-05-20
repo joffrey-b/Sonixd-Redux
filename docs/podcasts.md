@@ -86,6 +86,20 @@ If you use the MPV backend, podcasts will play through MPV just like music. This
 
 ---
 
+## Bookmarks
+
+Sonixd Redux automatically saves your position in a podcast episode when you pause. When you return to the same episode later, playback resumes from where you left off and a toast notification confirms the resume position.
+
+- **Pausing** saves the current position to the server
+- **Pressing stop** clears the bookmark - next play starts from the beginning
+- **Finishing an episode** clears the bookmark - next play starts from the beginning
+- **Switching to another episode** without pausing first preserves the bookmark from a previous pause (if existing), but doesn't create a new one on switch
+- **Positions** within the last minute of an episode are not bookmarked, since the episode is effectively complete
+
+Bookmarks are stored server-side via the Subsonic bookmark API, so they persist across app restarts and are shared with any other Subsonic client that supports bookmarks.
+
+---
+
 ## Scrobbling
 
 Podcast episodes are **not scrobbled** to Last.fm. Scrobbling is for music playback only.

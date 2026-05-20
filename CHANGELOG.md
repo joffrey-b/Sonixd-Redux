@@ -4,6 +4,18 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.0.5]
+
+### Added
+
+- **Podcast bookmarks**: Sonixd Redux now remembers where you left off in a podcast episode. When you pause and later return to the same episode, playback resumes from the saved position and a toast shows the time it is resuming from. Pressing stop or finishing an episode clears the bookmark so the next play starts from the beginning. Switching to another episode without pausing first preserves the bookmark from a previous pause (if existing), but doesn't create a new one on switch. Works with both the web and MPV backends. Subsonic-compatible servers only.
+
+### Fixed
+
+- **Sidebar entries missing after upgrading from an older version**: Upgrading from versions 1.0.0 through 1.0.3 to 1.0.4 caused most sidebar entries to disappear, leaving only the entries introduced in the version being upgraded to (Smart Playlists, Internet Radio, Podcasts). This affected fresh installs of 1.0.2 and 1.0.3 as well. The root cause was a migration that appended new entries to whatever list was on disk - but on installs where the sidebar had never been customised, the list was never written to disk, so the migration started from an empty list and only wrote the new entries. The sidebar settings page was one of the entries lost, making the issue difficult to resolve without editing the settings file manually. A versioned migration system now tracks which entries have been introduced to each install, and a one-time repair detects and corrects the corrupted state automatically on first launch of 1.0.5. User customisations (deliberately hidden entries) are preserved from 1.0.5 onwards.
+
+---
+
 ## [1.0.4]
 
 ### Added

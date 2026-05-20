@@ -66,7 +66,10 @@ export type APIEndpoints =
   | 'getInternetRadioStations'
   | 'getPodcasts'
   | 'refreshPodcasts'
-  | 'jukeboxControl';
+  | 'jukeboxControl'
+  | 'getBookmarks'
+  | 'createBookmark'
+  | 'deleteBookmark';
 
 export interface GenericItem {
   id: string;

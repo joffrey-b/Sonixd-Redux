@@ -1950,20 +1950,49 @@ export const setDefaultSettings = (force: boolean) => {
   // Always overwrite built-in themes so updates reach existing installs automatically.
   settings.set('themesDefault', DEFAULT_SETTINGS.themesDefault);
 
-  // Add new sidebar items to existing installs if missing.
-  const sidebarSelected: string[] = settings.get('sidebar.selected') || [];
-  if (!sidebarSelected.includes('smartplaylists')) {
-    settings.set('sidebar.selected', [...sidebarSelected, 'smartplaylists']);
+  // Sidebar migration: add new entries to existing installs without clobbering user
+  // customizations. Each version block runs only once — user-removed entries stay removed
+  // on subsequent launches because the version check prevents re-adding them.
+  // To add a new sidebar entry in a future release: add a new version block below,
+  // add the entry to DEFAULT_SETTINGS.sidebar.selected, and increment SIDEBAR_MIGRATION_VERSION.
+  const SIDEBAR_MIGRATION_VERSION = 3;
+  const sidebarVersion: number = (settings.get('sidebar.version') as number) || 0;
+
+  if (sidebarVersion === 0) {
+    // One-time fix: an older migration bug could produce a list containing only the
+    // newly-added entries with all original entries absent. Detect the signature
+    // (new entry present, 'dashboard' absent) and reset to the full default list.
+    const sel: string[] = (settings.get('sidebar.selected') as string[]) || [];
+    if (sel.length > 0 && sel.includes('smartplaylists') && !sel.includes('dashboard')) {
+      settings.set('sidebar.selected', DEFAULT_SETTINGS.sidebar.selected);
+    }
   }
-  if (!sidebarSelected.includes('radio')) {
-    settings.set('sidebar.selected', [...(settings.get('sidebar.selected') as string[]), 'radio']);
+
+  // Version 1 — smartplaylists (introduced in 1.0.2)
+  if (sidebarVersion < 1) {
+    const sel: string[] = (settings.get('sidebar.selected') as string[]) || [];
+    if (sel.length > 0 && !sel.includes('smartplaylists')) {
+      settings.set('sidebar.selected', [...sel, 'smartplaylists']);
+    }
   }
-  if (!sidebarSelected.includes('podcasts')) {
-    settings.set('sidebar.selected', [
-      ...(settings.get('sidebar.selected') as string[]),
-      'podcasts',
-    ]);
+
+  // Version 2 — radio (introduced in 1.0.3)
+  if (sidebarVersion < 2) {
+    const sel: string[] = (settings.get('sidebar.selected') as string[]) || [];
+    if (sel.length > 0 && !sel.includes('radio')) {
+      settings.set('sidebar.selected', [...sel, 'radio']);
+    }
   }
+
+  // Version 3 — podcasts (introduced in 1.0.4)
+  if (sidebarVersion < 3) {
+    const sel: string[] = (settings.get('sidebar.selected') as string[]) || [];
+    if (sel.length > 0 && !sel.includes('podcasts')) {
+      settings.set('sidebar.selected', [...sel, 'podcasts']);
+    }
+  }
+
+  settings.set('sidebar.version', SIDEBAR_MIGRATION_VERSION);
 
   if (force || !settings.has('cachePath')) {
     settings.set('cachePath', path.join(path.dirname(settings.path)));
