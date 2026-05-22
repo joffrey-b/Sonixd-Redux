@@ -496,5 +496,7 @@
   "Playing {{count}} track_other": "正在播放{{count}}首歌曲",
   "Playing {{count}} track [{{i}} filtered]_one": "正在播放{{count}}首歌曲 [{{i}}已过滤]",
   "Playing {{count}} track [{{i}} filtered]_other": "正在播放{{count}}首歌曲 [{{i}}已过滤]",
-  "Resuming from {{time}}": "从{{time}}继续播放"
+  "Resuming from {{time}}": "从{{time}}继续播放",
+  "Accept self-signed certificates": "接受自签名证书",
+  "Security risk: self-signed certificates lack any type of external validation, so as long as a certificate is configured on the server, any connection will work. Only enable this if you are certain you signed the certificate that the server is using.": "安全风险：自签名证书缺乏任何外部验证，因此只要服务器上配置了证书，任何连接都将有效。仅在您确定自己签署了服务器所使用的证书时才启用此选项。"
 }

@@ -496,5 +496,7 @@
   "Playing {{count}} track_other": "ගීත {{count}}ක් වාදනය කරමින්",
   "Playing {{count}} track [{{i}} filtered]_one": "ගීත {{count}}ක් වාදනය කරමින් [{{i}} පෙරහන]",
   "Playing {{count}} track [{{i}} filtered]_other": "ගීත {{count}}ක් වාදනය කරමින් [{{i}} පෙරහන]",
-  "Resuming from {{time}}": "{{time}} සිට නැවත ආරම්භ කිරීම"
+  "Resuming from {{time}}": "{{time}} සිට නැවත ආරම්භ කිරීම",
+  "Accept self-signed certificates": "ස්වයං-අත්සන් කළ සහතික පිළිගන්න",
+  "Security risk: self-signed certificates lack any type of external validation, so as long as a certificate is configured on the server, any connection will work. Only enable this if you are certain you signed the certificate that the server is using.": "ආරක්ෂක අවදානම: ස්වයං-අත්සන් කළ සහතිකවලට බාහිර සත්‍යාපනයක් නොමැත. සේවාදායකයේ සහතිකයක් වින්‍යාස කර ඇති තාක් කල්, ඕනෑම සම්බන්ධතාවයක් ක්‍රියා කරනු ඇත. ඔබ සේවාදායකය භාවිතා කරන සහතිකයට අත්සන් කළ බව ඔබට සහතිකව ඇත්නම් පමණක් මෙය සක්‍රීය කරන්න."
 }

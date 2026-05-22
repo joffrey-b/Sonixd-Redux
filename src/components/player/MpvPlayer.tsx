@@ -14,6 +14,7 @@ import { EqState } from '../../redux/eqSlice';
 import { PeqState } from '../../redux/peqSlice';
 import { buildMpvAfChain } from '../../shared/mpvEqFilter';
 import { settings } from '../shared/setDefaultSettings';
+import cacheSong from '../shared/cacheSong';
 import { notifyToast } from '../shared/toast';
 import { apiController } from '../../api/controller';
 import { Server } from '../../types';
@@ -160,6 +161,13 @@ const MpvPlayer = () => {
           endpoint: 'deleteBookmark',
           args: { id: endedSong.id },
         }).catch(() => {});
+      }
+
+      if (settings.get('cacheSongs') && endedSong && !endedSong.isPodcast) {
+        cacheSong(
+          `${endedSong.id}.${endedSong.suffix || 'mp3'}`,
+          endedSong.streamUrl.replace(/stream/, 'download')
+        );
       }
 
       // At end of queue with no repeat — MPV stopped, just sync Redux status

@@ -496,5 +496,7 @@
   "Jukebox": "Jukebox",
   "Jukebox mode is active — the server controls audio playback. Backend settings are not applicable.": "Jukebox mode is active — the server controls audio playback. Backend settings are not applicable.",
   "Jukebox not available. Check that it is enabled on your server and that your account has permission.": "Jukebox not available. Check that it is enabled on your server and that your account has permission.",
-  "Resuming from {{time}}": "Resuming from {{time}}"
+  "Resuming from {{time}}": "Resuming from {{time}}",
+  "Accept self-signed certificates": "Accept self-signed certificates",
+  "Security risk: self-signed certificates lack any type of external validation, so as long as a certificate is configured on the server, any connection will work. Only enable this if you are certain you signed the certificate that the server is using.": "Security risk: self-signed certificates lack any type of external validation, so as long as a certificate is configured on the server, any connection will work. Only enable this if you are certain you signed the certificate that the server is using."
 }

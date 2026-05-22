@@ -21,7 +21,20 @@ import { useAppDispatch } from '../../../redux/hooks';
 import Popup from '../../shared/Popup';
 import { settings } from '../../shared/setDefaultSettings';
 
-import fsUtils from 'nodejs-fs-utils';
+const getDirSize = (dirPath: string): number => {
+  try {
+    return fs.readdirSync(dirPath).reduce((total, file) => {
+      try {
+        const stats = fs.statSync(path.join(dirPath, file));
+        return total + (stats.isFile() ? stats.size : 0);
+      } catch {
+        return total;
+      }
+    }, 0);
+  } catch {
+    return 0;
+  }
+};
 
 const CacheConfig = ({ bordered }: any) => {
   const { t } = useTranslation();
@@ -35,17 +48,11 @@ const CacheConfig = ({ bordered }: any) => {
   const [cacheImages, setCacheImages] = useState(Boolean(settings.get('cacheImages')));
 
   useEffect(() => {
-    // Retrieve cache sizes on render
-    try {
-      setImgCacheSize(Number((fsUtils.fsizeSync(getImageCachePath()) / 1000 / 1000).toFixed(0)));
-
-      setSongCacheSize(Number((fsUtils.fsizeSync(getSongCachePath()) / 1000 / 1000).toFixed(0)));
-    } catch {
-      setImgCacheSize(0);
-      setSongCacheSize(0);
-      fs.mkdirSync(getSongCachePath(), { recursive: true });
-      fs.mkdirSync(getImageCachePath(), { recursive: true });
-    }
+    if (!settings.get('serverBase64')) return;
+    fs.mkdirSync(getSongCachePath(), { recursive: true });
+    fs.mkdirSync(getImageCachePath(), { recursive: true });
+    setImgCacheSize(Number((getDirSize(getImageCachePath()) / 1000 / 1000).toFixed(0)));
+    setSongCacheSize(Number((getDirSize(getSongCachePath()) / 1000 / 1000).toFixed(0)));
   }, []);
 
   const handleClearSongCache = async () => {
@@ -80,7 +87,7 @@ const CacheConfig = ({ bordered }: any) => {
           )
           .map((file) => fs.promises.unlink(path.join(imageCachePath, file)))
       );
-      setImgCacheSize(Number((fsUtils.fsizeSync(imageCachePath) / 1000 / 1000).toFixed(0)));
+      setImgCacheSize(Number((getDirSize(imageCachePath) / 1000 / 1000).toFixed(0)));
       notifyToast('success', t('Cleared {{type}} image cache', { type }));
     } catch (err) {
       notifyToast('error', t('Unable to clear cache: {{err}}', { err }));

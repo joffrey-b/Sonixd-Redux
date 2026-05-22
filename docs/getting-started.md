@@ -30,6 +30,8 @@ Sonixd Redux supports two server types:
 
 > **Subsonic users:** if your server uses plaintext authentication (older setups), enable **Legacy auth (plaintext)** before connecting.
 
+> **Self-signed certificate users:** if your server uses a self-signed certificate that is not in your system trust store, enable **Accept self-signed certificates** before connecting. Read the [self-signed certificates documentation](self-signed-certificates.md) for the security implications before doing so.
+
 Once connected, Sonixd Redux loads your library and takes you to the dashboard.
 
 ![📷 Screenshot: Dashboard after login](screenshots/dashboard.png)

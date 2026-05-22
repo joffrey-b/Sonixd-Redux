@@ -52,6 +52,7 @@ Sonixd Redux is a fork of [Sonixd](https://github.com/jeffvli/sonixd) by jeffvli
 - **Customizable keyboard shortcuts** - rebind any shortcut, with optional global (unfocused window) support
 - **Settings backup/restore** - export and import your settings as JSON
 - **Non-intrusive update notifications** - notified on launch when a new version is available
+- **Self-signed certificate support** - optional toggle on the login screen to connect to servers using self-signed certificates, with a clear security warning
 
 ### From Sonixd
 
@@ -130,6 +131,7 @@ Full documentation is available at **[joffrey-b.github.io/Sonixd-Redux](https://
 - [Spectrogram](https://joffrey-b.github.io/Sonixd-Redux/spectrogram)
 - [Keyboard Shortcuts](https://joffrey-b.github.io/Sonixd-Redux/keyboard-shortcuts)
 - [Settings Reference](https://joffrey-b.github.io/Sonixd-Redux/settings)
+- [Self-Signed Certificates](https://joffrey-b.github.io/Sonixd-Redux/self-signed-certificates)
 
 ---
 

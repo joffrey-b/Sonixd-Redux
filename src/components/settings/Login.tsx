@@ -26,6 +26,9 @@ const Login = () => {
   const [userName, setUserName] = useState('');
   const [password, setPassword] = useState('');
   const [legacyAuth, setLegacyAuth] = useState(false);
+  const [acceptSelfSigned, setAcceptSelfSigned] = useState(
+    Boolean(settings.get('acceptSelfSigned'))
+  );
   const [message, setMessage] = useState('');
   const serverTypePickerRef = useRef(null);
 
@@ -201,6 +204,27 @@ const Login = () => {
               <br />
             </>
           )}
+          <StyledCheckbox
+            checked={acceptSelfSigned}
+            onChange={(_v: any, e: boolean) => {
+              settings.set('acceptSelfSigned', e);
+              setAcceptSelfSigned(e);
+            }}
+          >
+            {t('Accept self-signed certificates')}
+          </StyledCheckbox>
+          {acceptSelfSigned && (
+            <>
+              <br />
+              <Message
+                type="warning"
+                description={t(
+                  'Security risk: self-signed certificates lack any type of external validation, so as long as a certificate is configured on the server, any connection will work. Only enable this if you are certain you signed the certificate that the server is using.'
+                )}
+              />
+            </>
+          )}
+          <br />
           <StyledButton
             id="login-button"
             appearance="primary"

@@ -22,5 +22,6 @@ Welcome to the Sonixd Redux documentation. Use the links below to navigate to a 
 14. [Spectrogram](spectrogram.md) - Viewing the frequency content of a track
 15. [Keyboard Shortcuts](keyboard-shortcuts.md) - Default shortcuts and how to customize them
 16. [Settings](settings.md) - Full settings reference
+17. [Self-Signed Certificates](self-signed-certificates.md) - Connecting to servers with self-signed certificates
 
 ---

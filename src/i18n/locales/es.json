@@ -496,5 +496,7 @@
   "Playing {{count}} track_other": "Reproduciendo {{count}} canciones",
   "Playing {{count}} track [{{i}} filtered]_one": "Reproduciendo {{count}} canción [Filtro aplicado a {{i}} canciones]",
   "Playing {{count}} track [{{i}} filtered]_other": "Reproduciendo {{count}} canciones [Filtro aplicado a {{i}} canciones]",
-  "Resuming from {{time}}": "Reanudando desde {{time}}"
+  "Resuming from {{time}}": "Reanudando desde {{time}}",
+  "Accept self-signed certificates": "Aceptar certificados autofirmados",
+  "Security risk: self-signed certificates lack any type of external validation, so as long as a certificate is configured on the server, any connection will work. Only enable this if you are certain you signed the certificate that the server is using.": "Riesgo de seguridad: los certificados autofirmados carecen de validación externa. Mientras haya un certificado configurado en el servidor, cualquier conexión funcionará. Actívelo solo si está seguro de que firmó el certificado que usa el servidor."
 }

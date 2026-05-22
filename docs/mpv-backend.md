@@ -12,6 +12,7 @@ By default Sonixd Redux uses the built-in Chromium audio engine (Web backend). T
 | ReplayGain             | ✗                 | ✓              |
 | Audio device selection | ✓                 | ✓              |
 | EQ / PEQ               | ✓                 | ✓              |
+| Song caching           | ✓                 | ✓              |
 | Format support         | Limited (browser) | Broad (ffmpeg) |
 
 ---

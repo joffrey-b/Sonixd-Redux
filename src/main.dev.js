@@ -40,16 +40,10 @@ setDefaultSettings(false);
 
 let systemCaCerts = null;
 
-// On Linux, Electron uses neither the system CA trust store nor the NSS database
-// for certificate verification — neither the Node.js/axios network stack nor
-// Chromium's audio-streaming stack will trust user-added CAs by default.
-// We fix this by:
-//   1. Setting NODE_EXTRA_CA_CERTS so the renderer's Node.js picks up the system
-//      bundle before the renderer process is spawned (inherited via env).
-//   2. Patching https.globalAgent for the main process, in case TLS was already
-//      loaded by an import before NODE_EXTRA_CA_CERTS could take effect.
-//   3. Storing the bundle for the certificate-error handler below, which covers
-//      Chromium's network stack (audio streaming, cover art, etc.).
+// On Linux, Chromium may not automatically trust user-added CAs depending on the
+// distribution and how the CA was imported. We load the system CA bundle here so
+// the certificate-error handler below can re-verify rejected certificates against
+// it, acting as a safety net for user-trusted CAs (e.g. a private CA or OPNsense).
 if (isLinux()) {
   const caBundlePaths = [
     '/etc/ssl/certs/ca-certificates.crt', // Debian / Ubuntu / Mint
@@ -59,12 +53,10 @@ if (isLinux()) {
   ];
   const bundlePath = caBundlePaths.find((p) => fs.existsSync(p));
   if (bundlePath) {
-    process.env.NODE_EXTRA_CA_CERTS = bundlePath;
     try {
       systemCaCerts = fs.readFileSync(bundlePath);
-      https.globalAgent.options.ca = systemCaCerts;
     } catch {
-      // Bundle found but unreadable — NODE_EXTRA_CA_CERTS still covers the renderer
+      // ignore — certificate-error handler will fall back to rejecting unknown certs
     }
   }
 }
@@ -833,6 +825,7 @@ const createWindow = async () => {
       const store = { ...settings.store };
       CREDENTIAL_KEYS.forEach((k) => delete store[k]);
       delete store.themesDefault;
+      delete store.acceptSelfSigned;
       fs.writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf-8');
       return { success: true };
     } catch {
@@ -852,7 +845,8 @@ const createWindow = async () => {
       if (typeof parsed !== 'object' || Array.isArray(parsed))
         return { success: false, error: true };
       Object.entries(parsed).forEach(([key, value]) => {
-        if (!CREDENTIAL_KEYS.has(key) && key !== 'themesDefault') settings.set(key, value);
+        if (!CREDENTIAL_KEYS.has(key) && key !== 'themesDefault' && key !== 'acceptSelfSigned')
+          settings.set(key, value);
       });
       return { success: true };
     } catch {
@@ -982,6 +976,12 @@ app.on('window-all-closed', () => {
 // Node.js and Chromium use independent TLS stacks, so this request will not
 // re-trigger the certificate-error event.
 app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
+  if (settings.get('acceptSelfSigned')) {
+    event.preventDefault();
+    callback(true);
+    return;
+  }
+
   if (!systemCaCerts) {
     callback(false);
     return;

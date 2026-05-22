@@ -4,6 +4,21 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.0.6]
+
+### Added
+
+- **Self-signed certificate support**: A new **Accept self-signed certificates** toggle on the login screen allows connecting to servers that use self-signed certificates not present in the system trust store. When enabled, certificate verification is disabled for API calls and audio streaming. A warning is shown when the toggle is active. This setting is intentionally excluded from settings exports and imports - it must be configured manually on each machine - to prevent it from silently carrying over to machines where certificate verification should remain enabled. For full details and security implications, see the [self-signed certificates documentation](https://joffrey-b.github.io/Sonixd-Redux/self-signed-certificates). Note: if your server uses a certificate signed by a private CA, the recommended approach is to import the CA into your system trust store instead - Sonixd Redux will then trust it automatically without needing this toggle.
+- **Song caching for the MPV backend**: Song caching now works with the MPV backend. Songs are cached after they finish playing naturally, matching the behaviour of the web backend. Skipping a track before it ends does not cache it.
+
+### Fixed
+
+- **Cover art and song caching ignoring the OS certificate store**: Cover art and song caching previously used Node.js's HTTPS stack which does not use the OS certificate store on Windows and macOS, requiring certificate verification to be skipped entirely. Both now use Electron's Chromium-based network module, which uses the OS certificate store on all platforms and also respects the Accept self-signed certificates toggle.
+- **Cache size sometimes showing 0 MB**: The cache size display in settings sometimes showed 0 MB regardless of how much was actually cached. The underlying library used to calculate directory sizes would abort on certain path formats, causing the entire calculation to fail silently. Replaced with a simpler implementation using Node.js built-ins that handles errors per file and is consistent across all platforms.
+- **Empty cache directories created before login**: Empty `image` and `song` subdirectories were created under a spurious `undefined` folder in the cache root on fresh installs, before any server was configured. These directories were harmless but cluttered the cache folder. They are no longer created until a server is connected.
+
+---
+
 ## [1.0.5]
 
 ### Added

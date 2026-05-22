@@ -496,5 +496,7 @@
   "Playing {{count}} track_other": "{{count}}曲再生中",
   "Playing {{count}} track [{{i}} filtered]_one": "{{count}}曲再生中 [{{i}}件フィルタリング済み]",
   "Playing {{count}} track [{{i}} filtered]_other": "{{count}}曲再生中 [{{i}}件フィルタリング済み]",
-  "Resuming from {{time}}": "{{time}}から再開"
+  "Resuming from {{time}}": "{{time}}から再開",
+  "Accept self-signed certificates": "自己署名証明書を受け入れる",
+  "Security risk: self-signed certificates lack any type of external validation, so as long as a certificate is configured on the server, any connection will work. Only enable this if you are certain you signed the certificate that the server is using.": "セキュリティリスク：自己署名証明書は外部検証がありません。サーバーに証明書が設定されている限り、どの接続も機能します。サーバーが使用している証明書に自分で署名したことが確実な場合のみ有効にしてください。"
 }

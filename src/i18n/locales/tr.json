@@ -496,5 +496,7 @@
   "Playing {{count}} track_other": "{{count}} şarkı oynatılıyor",
   "Playing {{count}} track [{{i}} filtered]_one": "{{count}} şarkı oynatılıyor [{{i}} filtreli]",
   "Playing {{count}} track [{{i}} filtered]_other": "{{count}} şarkı oynatılıyor [{{i}} filtreli]",
-  "Resuming from {{time}}": "{{time}} konumundan devam ediliyor"
+  "Resuming from {{time}}": "{{time}} konumundan devam ediliyor",
+  "Accept self-signed certificates": "Kendinden imzalı sertifikaları kabul et",
+  "Security risk: self-signed certificates lack any type of external validation, so as long as a certificate is configured on the server, any connection will work. Only enable this if you are certain you signed the certificate that the server is using.": "Güvenlik riski: kendinden imzalı sertifikaların harici doğrulaması yoktur. Sunucuda bir sertifika yapılandırıldığı sürece her bağlantı çalışır. Bunu yalnızca sunucunun kullandığı sertifikayı kendinizin imzaladığından emin olduğunuzda etkinleştirin."
 }

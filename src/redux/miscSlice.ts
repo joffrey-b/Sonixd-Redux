@@ -89,10 +89,11 @@ const initialState: General = {
   highlightOnRowHover: Boolean(parsedSettings.highlightOnRowHover),
   imageCachePath: getImageCachePath(),
   songCachePath: getSongCachePath(),
-  // Ensure cache directories exist on every startup so downloads never fail with ENOENT
-  // before the user has opened Settings → Cache for the first time.
+  // Ensure cache directories exist on startup so downloads never fail with ENOENT.
+  // Only runs when a server is configured — skipped before login and after disconnect
+  // to prevent spurious directories being created with 'undefined' or empty paths.
   ...(() => {
-    if (process.env.NODE_ENV !== 'test') {
+    if (process.env.NODE_ENV !== 'test' && settings.get('serverBase64')) {
       try {
         fs.mkdirSync(getImageCachePath(), { recursive: true });
       } catch {

@@ -38,6 +38,7 @@ interface Settings {
   resume: boolean;
   serverType: string;
   legacyAuth: boolean;
+  acceptSelfSigned: boolean;
   language: string;
   theme: string;
   font: string;
@@ -180,6 +181,7 @@ const DEFAULT_SETTINGS: Settings = {
   resume: false,
   serverType: 'subsonic',
   legacyAuth: false,
+  acceptSelfSigned: false,
   language: 'en',
   theme: 'followSystem',
   font: 'Poppins',
@@ -300,9 +302,9 @@ const DEFAULT_SETTINGS: Settings = {
   genreListFontSize: '14',
   genreListRowHeight: '50',
   retainWindowSize: true,
-  defaultWindowWidth: 1280,
-  defaultWindowHeight: 720,
-  savedWindowSize: [1280, 720],
+  defaultWindowWidth: 1600,
+  defaultWindowHeight: 900,
+  savedWindowSize: [1600, 900],
   savedWindowPos: [50, 50],
   eqEnabled: false,
   eqGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -2011,15 +2013,15 @@ export const setDefaultSettings = (force: boolean) => {
   }
 
   if (force || !settings.has('defaultWindowWidth')) {
-    settings.set('defaultWindowWidth', 1280);
+    settings.set('defaultWindowWidth', 1600);
   }
 
   if (force || !settings.has('defaultWindowHeight')) {
-    settings.set('defaultWindowHeight', 720);
+    settings.set('defaultWindowHeight', 900);
   }
 
   if (force || !settings.has('savedWindowSize')) {
-    settings.set('savedWindowSize', [1280, 720]);
+    settings.set('savedWindowSize', [1600, 900]);
   }
 
   if (force || !settings.has('savedWindowPos')) {
