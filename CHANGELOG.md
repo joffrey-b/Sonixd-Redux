@@ -15,7 +15,7 @@ All notable changes to Sonixd Redux are documented here.
 
 - **Cover art and song caching ignoring the OS certificate store**: Cover art and song caching previously used Node.js's HTTPS stack which does not use the OS certificate store on Windows and macOS, requiring certificate verification to be skipped entirely. Both now use Electron's Chromium-based network module, which uses the OS certificate store on all platforms and also respects the Accept self-signed certificates toggle.
 - **Cache size sometimes showing 0 MB**: The cache size display in settings sometimes showed 0 MB regardless of how much was actually cached. The underlying library used to calculate directory sizes would abort on certain path formats, causing the entire calculation to fail silently. Replaced with a simpler implementation using Node.js built-ins that handles errors per file and is consistent across all platforms.
-- **Empty cache directories created before login**: Empty `image` and `song` subdirectories were created under a spurious `undefined` folder in the cache root on fresh installs, before any server was configured. These directories were harmless but cluttered the cache folder. They are no longer created until a server is connected.
+- **Empty cache directories created before login**: Empty `undefined` folder was created in the cache root on fresh installs, before any server was configured. When disconnecting from a server, empty `image` and `song` directories were created created in the cache root. These directories were harmless but cluttered the cache folder. They are no longer created.
 
 ---
 
