@@ -4,6 +4,14 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.0.7]
+
+### Fixed
+
+- **MPV double scrobble on manual song switch**: Switching to a new song by double-clicking while the current song had already passed the scrobble threshold caused the new song to be scrobbled immediately, and then again when it legitimately reached the threshold.
+
+---
+
 ## [1.0.6]
 
 ### Added

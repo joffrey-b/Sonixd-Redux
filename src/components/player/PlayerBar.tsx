@@ -538,13 +538,19 @@ const PlayerBar = () => {
   const mpvNowPlayingTimerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
     if (!isMpv) return;
-    mpvSubmissionScrobbledRef.current = false;
+    // Block scrobbling until the new song's time arrives — prevents a stale currentTime
+    // from the previous song triggering an immediate scrobble on the new song.
+    mpvSubmissionScrobbledRef.current = true;
   }, [isMpv, playQueue.currentSongId]);
   useEffect(() => {
     if (!isMpv) return;
     if (mpvPrevTimeRef.current > 5 && currentTime < 2) {
+      // Time jumped back — loop or new song after a long track
       mpvSubmissionScrobbledRef.current = false;
       setMpvRestartCount((c) => c + 1);
+    } else if (currentTime < 2) {
+      // New song starting from the beginning (first ticks confirm time is fresh)
+      mpvSubmissionScrobbledRef.current = false;
     }
     mpvPrevTimeRef.current = currentTime;
   }, [isMpv, currentTime]);
