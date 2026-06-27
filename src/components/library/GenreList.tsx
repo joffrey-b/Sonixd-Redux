@@ -1,7 +1,8 @@
+import { useNavigate } from 'react-router-dom';
 import React from 'react';
 import _ from 'lodash';
-import { useQuery } from 'react-query';
-import { useHistory } from 'react-router';
+import { useQuery } from '@tanstack/react-query';
+
 import { useTranslation } from 'react-i18next';
 import useSearchQuery from '../../hooks/useSearchQuery';
 import GenericPage from '../layout/GenericPage';
@@ -18,7 +19,7 @@ import useListClickHandler from '../../hooks/useListClickHandler';
 const GenreList = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const history = useHistory();
+  const navigate = useNavigate();
   const config = useAppSelector((state) => state.config);
   const misc = useAppSelector((state) => state.misc);
   const folder = useAppSelector((state) => state.folder);
@@ -27,26 +28,30 @@ const GenreList = () => {
     isError,
     data: genres,
     error,
-  }: any = useQuery(['genrePageList'], async () => {
-    const res = await apiController({
-      serverType: config.serverType,
-      endpoint: 'getGenres',
-      args: { musicFolderId: folder.musicFolder },
-    });
-    return _.orderBy(res, 'songCount', 'desc');
+  } = useQuery({
+    queryKey: ['genrePageList'],
+    queryFn: async () => {
+      const res = await apiController({
+        serverType: config.serverType,
+        endpoint: 'getGenres',
+        args: { musicFolderId: folder.musicFolder },
+      });
+      return _.orderBy(res, 'songCount', 'desc');
+    },
   });
-  const filteredData = useSearchQuery(misc.searchQuery, genres, ['title']);
+  const filteredData = useSearchQuery(misc.searchQuery, genres ?? [], ['title']);
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
-    doubleClick: (rowData: any) => {
+    doubleClick: (rowData: { title: string; uniqueId: string }) => {
       dispatch(setFilter({ listType: Item.Album, data: rowData.title }));
       dispatch(setPagination({ listType: Item.Album, data: { activePage: 1 } }));
       localStorage.setItem('scroll_list_albumList', '0');
       localStorage.setItem('scroll_grid_albumList', '0');
 
-      // Needs a small delay or the filter won't set properly when navigating to the album list
+      // Small delay lets localStorage writes above flush before AlbumList reads them on mount.
+      // Without it, AlbumList initialises its scroll position from the previous (non-zero) value.
       setTimeout(() => {
-        history.push(`/library/album?sortType=${rowData.title}`);
+        navigate(`/library/album?sortType=${rowData.title}`);
       }, 50);
     },
   });

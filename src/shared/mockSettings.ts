@@ -1,11 +1,17 @@
-export const mockSettings = {
+import type { Settings } from '../components/shared/setDefaultSettings';
+
+// os is a Node built-in unavailable in the renderer bundle; derive tmpdir from
+// env vars so this module stays importable in both Jest and the renderer.
+const tmpDir = process.env.TMPDIR || process.env.TEMP || '/tmp';
+
+export const mockSettings: Partial<Settings> = {
   serverType: 'subsonic',
   language: 'en',
   theme: 'defaultDark',
   showDebugWindow: false,
   globalMediaHotkeys: true,
   systemMediaTransportControls: false,
-  cachePath: 'C:\\Users\\jli\\AppData\\Roaming\\Electron',
+  cachePath: tmpDir,
   legacyAuth: false,
   artistPageLegacy: false,
   volume: 0.93,
@@ -41,6 +47,8 @@ export const mockSettings = {
   sidebar: {
     expand: false,
     width: '165px',
+    coverArt: false,
+    selected: [],
   },
   pagination: {
     music: {
@@ -66,6 +74,7 @@ export const mockSettings = {
     dashboard: false,
     search: false,
     starred: false,
+    music: true,
   },
   gridCardSize: 200,
   gridGapSize: 20,
@@ -180,7 +189,7 @@ export const mockSettings = {
       resizable: true,
       width: 50,
       label: '#',
-      uniqueId: 'bOCYMfNieUHtjl1XhM-GT',
+      rowIndex: 0,
     },
     {
       id: 'Art',
@@ -189,7 +198,7 @@ export const mockSettings = {
       resizable: true,
       width: 74,
       label: 'CoverArt',
-      uniqueId: '2Z8rUZi47VnlQSBfZzRk8',
+      rowIndex: 1,
     },
     {
       id: 'Name',
@@ -197,7 +206,7 @@ export const mockSettings = {
       alignment: 'left',
       flexGrow: 5,
       label: 'Name',
-      uniqueId: 'Vv_luiyR3rp5b07Szd0zd',
+      rowIndex: 2,
     },
     {
       id: 'Album Count',
@@ -205,7 +214,7 @@ export const mockSettings = {
       alignment: 'left',
       flexGrow: 1,
       label: 'Album Count',
-      uniqueId: 'IScD9714XLFrQYSAFkmoL',
+      rowIndex: 3,
     },
     {
       id: 'Fav',
@@ -213,7 +222,7 @@ export const mockSettings = {
       alignment: 'center',
       flexGrow: 1,
       label: 'Favorite',
-      uniqueId: 'eFrudHQBTnBXNuD3mL-c1',
+      rowIndex: 4,
     },
   ],
   genreListFontSize: 14,
@@ -226,7 +235,7 @@ export const mockSettings = {
       resizable: true,
       width: 66,
       label: '#',
-      uniqueId: 'ZXNE6gsaLm0kVRyueOBHS',
+      rowIndex: 0,
     },
     {
       id: 'Name',
@@ -234,7 +243,7 @@ export const mockSettings = {
       alignment: 'left',
       flexGrow: 5,
       label: 'Name',
-      uniqueId: 'FTY1gWAjc0i6NVjim_8aZ',
+      rowIndex: 1,
     },
     {
       id: 'Album Count',
@@ -242,7 +251,7 @@ export const mockSettings = {
       alignment: 'left',
       flexGrow: 1,
       label: 'Album Count',
-      uniqueId: 'oHqG0mGN_E7iLairZGnZL',
+      rowIndex: 2,
     },
     {
       id: 'Tracks',
@@ -250,7 +259,7 @@ export const mockSettings = {
       alignment: 'center',
       flexGrow: 1,
       label: 'Track Count',
-      uniqueId: 'c1qxv4S5YC7YUvbOG_WJF',
+      rowIndex: 3,
     },
   ],
   playlistListFontSize: 14,
@@ -352,14 +361,11 @@ export const mockSettings = {
   defaultWindowHeight: 728,
   minimizeToTray: true,
   exitToTray: true,
-  windowPosition: { x: 0, y: 0, width: 960, height: 1560 },
-  windowMaximize: false,
   highlightOnRowHover: false,
   titleBarStyle: 'windows',
   startPage: '/',
   discord: {
     enabled: true,
-    applicationId: '',
     clientId: '923372440934055968',
     showAlbumArt: false,
   },
@@ -367,332 +373,9 @@ export const mockSettings = {
     enabled: true,
     url: '',
     type: 'local',
-    path: 'C:\\Temp',
-    pollingInterval: '2000',
+    path: tmpDir,
+    pollingInterval: 2000,
   },
-  themesDefault: [
-    {
-      label: 'Default Dark',
-      value: 'defaultDark',
-      fonts: {
-        size: {
-          page: '14px',
-          pageTitle: '40px',
-          panelTitle: '20px',
-        },
-      },
-      colors: {
-        primary: '#2196F3',
-        layout: {
-          page: {
-            color: '#D8D8D8',
-            colorSecondary: '#888e94',
-            background: '#181A1F',
-          },
-          playerBar: {
-            color: '#D8D8D8',
-            colorSecondary: '#888e94',
-            background: '#101010',
-            button: {
-              color: 'rgba(240, 240, 240, 0.8)',
-              colorHover: '#FFFFFF',
-            },
-          },
-          sideBar: {
-            background: '#101010',
-            button: {
-              color: '#D8D8D8',
-              colorHover: '#FFFFFF',
-            },
-          },
-          titleBar: {
-            color: '#FFFFFF',
-            background: '#101010',
-          },
-        },
-        button: {
-          default: {
-            color: '#D8D8D8',
-            colorHover: '#FFFFFF',
-            background: '#292D33',
-            backgroundHover: '#3C3F43',
-          },
-          primary: {
-            color: '#FFFFFF',
-            colorHover: '#FFFFFF',
-            backgroundHover: '#3B89EC',
-          },
-          subtle: {
-            color: '#D8D8D8',
-            colorHover: '#D8D8D8',
-            backgroundHover: 'transparent',
-          },
-          link: {
-            color: '#2196F3',
-            colorHover: '#3B89EC',
-          },
-        },
-        card: {
-          overlayButton: {
-            color: '#FFFFFF',
-            background: '#000000',
-            opacity: 0.8,
-          },
-        },
-        contextMenu: {
-          color: '#D8D8D8',
-          colorDisabled: '#6A6F76',
-          background: '#1E2125',
-          backgroundHover: '#292D33',
-        },
-        input: {
-          color: '#D8D8D8',
-          background: '#25292E',
-          backgroundHover: '#353A45',
-          backgroundActive: 'rgba(240, 240, 240, .2)',
-        },
-        nav: {
-          color: '#D8D8D8',
-        },
-        popover: {
-          color: '#D8D8D8',
-          background: '#1E2125',
-        },
-        slider: {
-          background: '#3C3F43',
-          progressBar: '#888E94',
-        },
-        spinner: {
-          background: 'rgba(233, 235, 240, 0.3)',
-          foreground: '#2196F3',
-        },
-        table: {
-          selectedRow: '#4D5156',
-        },
-        tag: {
-          background: '#3C3F43',
-          text: '#E2E4E9',
-        },
-        tooltip: {
-          color: '#D8D8D8',
-          background: '#1E2125',
-        },
-      },
-      other: {
-        button: {
-          borderRadius: '0px',
-        },
-        coverArtFilter: 'drop-shadow(0px 3px 5px #000000)',
-        card: {
-          border: '1px #3c3f43 solid',
-          hover: {
-            transform: 'scale(1.03)',
-            transition: '0.07s ease-in-out',
-            filter: 'none',
-          },
-          image: {
-            borderTop: 'none',
-            borderRight: 'none',
-            borderBottom: 'none',
-            borderLeft: 'none',
-            borderRadius: '0px',
-          },
-          info: {
-            borderTop: 'none',
-            borderRight: 'none',
-            borderBottom: 'none',
-            borderLeft: 'none',
-            borderRadius: '0px',
-          },
-        },
-        input: {
-          borderRadius: '0px',
-        },
-        miniPlayer: {
-          height: '450px',
-          opacity: 0.95,
-        },
-        panel: {
-          borderRadius: '0px',
-        },
-        playerBar: {
-          borderTop: '1px solid rgba(240, 240, 240, .15)',
-          borderRight: 'none',
-          borderBottom: 'none',
-          borderLeft: 'none',
-          filter: 'none',
-        },
-        tag: {
-          borderRadius: '0px',
-        },
-        tooltip: {
-          border: '1px #3c3f43 solid',
-          borderRadius: '0px',
-        },
-      },
-    },
-    {
-      label: 'Default Light',
-      value: 'defaultLight',
-      fonts: {
-        size: {
-          page: '14px',
-          pageTitle: '30px',
-          panelTitle: '20px',
-        },
-      },
-      colors: {
-        primary: '#285DA0',
-        layout: {
-          page: {
-            color: '#000000',
-            colorSecondary: '#888e94',
-            background: '#FFFFFF',
-          },
-          playerBar: {
-            color: '#FFFFFF',
-            colorSecondary: '#888e94',
-            background: '#212121',
-            button: {
-              color: 'rgba(240, 240, 240, 0.8)',
-              colorHover: '#FFFFFF',
-            },
-          },
-          sideBar: {
-            background: '#212121',
-            button: {
-              color: '#D8D8D8',
-              colorHover: '#FFFFFF',
-            },
-          },
-          titleBar: {
-            color: '#FFFFFF',
-            background: '#212121',
-          },
-        },
-        button: {
-          default: {
-            color: '#575757',
-            colorHover: '#000000',
-            background: '#DFDFE2',
-            backgroundHover: '#D2D2D6',
-          },
-          primary: {
-            color: '#FFFFFF',
-            colorHover: '#FFFFFF',
-            backgroundHover: '#347AD3',
-          },
-          subtle: {
-            color: '#575757',
-            colorHover: '#575757',
-            backgroundHover: 'transparent',
-          },
-          link: {
-            color: '#575757',
-            colorHover: '#575757',
-          },
-        },
-        card: {
-          overlayButton: {
-            color: '#FFFFFF',
-            colorHover: '#FFFFFF',
-            background: '#000000',
-            backgroundHover: '#285DA0',
-            opacity: 0.8,
-          },
-        },
-        contextMenu: {
-          color: '#575757',
-          colorDisabled: '#BABABA',
-          background: '#FFFFFF',
-          backgroundHover: '#D2D2D6',
-        },
-        input: {
-          color: '#000000',
-          background: '#FFFFFF',
-          backgroundHover: '#E5E5EA',
-          backgroundActive: 'rgba(0, 0, 0, .2)',
-        },
-        nav: {
-          color: '#000000',
-        },
-        popover: {
-          color: '#000000',
-          background: '#FFFFFF',
-        },
-        slider: {
-          background: '#3C3F43',
-          progressBar: '#888E94',
-        },
-        spinner: {
-          background: 'rgba(0, 0, 0, 0.3)',
-          foreground: '#285DA0',
-        },
-        table: {
-          selectedRow: '#CCCCCC',
-        },
-        tag: {
-          background: '#DFDFE2',
-          text: '#000000',
-        },
-        tooltip: {
-          color: '#000000',
-          background: '#FFFFFF',
-        },
-      },
-      other: {
-        button: {
-          borderRadius: '0px',
-        },
-        coverArtFilter: 'drop-shadow(0px 3px 5px #000000)',
-        card: {
-          border: '1px #3c3f43 solid',
-          hover: {
-            transform: 'scale(1.03)',
-            transition: '0.07s ease-in-out',
-            filter: 'none',
-          },
-          image: {
-            borderTop: 'none',
-            borderRight: 'none',
-            borderBottom: 'none',
-            borderLeft: 'none',
-            borderRadius: '0px',
-          },
-          info: {
-            borderTop: 'none',
-            borderRight: 'none',
-            borderBottom: 'none',
-            borderLeft: 'none',
-            borderRadius: '0px',
-          },
-        },
-        input: {
-          borderRadius: '0px',
-        },
-        miniPlayer: {
-          height: '450px',
-          opacity: 0.95,
-        },
-        panel: {
-          borderRadius: '0px',
-        },
-        playerBar: {
-          borderTop: '1px solid rgba(240, 240, 240, .15)',
-          borderRight: 'none',
-          borderBottom: 'none',
-          borderLeft: 'none',
-          filter: 'none',
-        },
-        tag: {
-          borderRadius: '0px',
-        },
-        tooltip: {
-          border: '1px #3c3f43 solid',
-          borderRadius: '0px',
-        },
-      },
-    },
-  ],
+  themesDefault: [],
   themes: [],
 };

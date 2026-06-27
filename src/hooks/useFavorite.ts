@@ -1,11 +1,29 @@
-import _ from 'lodash';
 import { useCallback } from 'react';
-import { useQueryClient } from 'react-query';
+import { useQueryClient } from '@tanstack/react-query';
+import type { RowDataType } from 'rsuite-table';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
 import { apiController } from '../api/controller';
 import { setStar } from '../redux/playQueueSlice';
 import { setPlaylistStar } from '../redux/playlistSlice';
 import { updateStarredInCache } from './useLibraryCache';
+
+interface StarrableItem {
+  id: string;
+  starred?: number;
+  [key: string]: unknown;
+}
+
+const starItem = (item: StarrableItem, id: string, favorite: boolean) =>
+  item.id === id ? { ...item, starred: favorite ? Date.now() : undefined } : item;
+
+interface FavoriteOptions {
+  queryKey?: readonly unknown[];
+  custom?: () => void;
+}
+
+type StarrableCacheData =
+  | { data?: StarrableItem[]; album?: StarrableItem[]; song?: StarrableItem[] }
+  | StarrableItem[];
 
 const useFavorite = () => {
   const dispatch = useAppDispatch();
@@ -13,7 +31,7 @@ const useFavorite = () => {
   const queryClient = useQueryClient();
 
   const handleFavorite = useCallback(
-    async (rowData: any, options?: { queryKey?: any; custom?: any }) => {
+    async (rowData: RowDataType, options?: FavoriteOptions) => {
       const favorite = !rowData.starred;
 
       await apiController({
@@ -23,38 +41,32 @@ const useFavorite = () => {
       });
 
       if (options?.queryKey) {
-        queryClient.setQueryData(options.queryKey, (oldData: any) => {
-          if (oldData?.data) {
-            const starredIndices = _.keys(_.pickBy(oldData.data, { id: rowData.id }));
-            starredIndices.forEach((index) => {
-              oldData.data[index].starred = favorite ? Date.now() : undefined;
-            });
+        // Return new object references so TanStack Query v5 detects the change
+        queryClient.setQueryData(options.queryKey, (oldData: StarrableCacheData | undefined) => {
+          if (!oldData) return oldData;
 
-            return oldData;
+          if (!Array.isArray(oldData)) {
+            if (oldData.data) {
+              return {
+                ...oldData,
+                data: oldData.data.map((item) => starItem(item, rowData.id, favorite)),
+              };
+            }
+            if (oldData.album) {
+              return {
+                ...oldData,
+                album: oldData.album.map((item) => starItem(item, rowData.id, favorite)),
+              };
+            }
+            if (oldData.song) {
+              return {
+                ...oldData,
+                song: oldData.song.map((item) => starItem(item, rowData.id, favorite)),
+              };
+            }
+          } else {
+            return oldData.map((item) => starItem(item, rowData.id, favorite));
           }
-
-          if (oldData?.album) {
-            const starredIndices = _.keys(_.pickBy(oldData.album, { id: rowData.id }));
-            starredIndices.forEach((index) => {
-              oldData.album[index].starred = favorite ? Date.now() : undefined;
-            });
-
-            return oldData;
-          }
-
-          if (oldData?.song) {
-            const starredIndices = _.keys(_.pickBy(oldData.song, { id: rowData.id }));
-            starredIndices.forEach((index) => {
-              oldData.song[index].starred = favorite ? Date.now() : undefined;
-            });
-
-            return oldData;
-          }
-
-          const starredIndices = _.keys(_.pickBy(oldData, { id: rowData.id }));
-          starredIndices.forEach((index) => {
-            oldData[index].starred = favorite ? Date.now() : undefined;
-          });
 
           return oldData;
         });

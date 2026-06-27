@@ -2,7 +2,15 @@ import React from 'react';
 import { Divider } from 'rsuite';
 import { PageContainer, PageHeader, PageContent } from './styled';
 
-const GenericPage = ({ header, children, hideDivider, ...rest }: any) => {
+interface GenericPageProps {
+  header?: React.ReactNode;
+  children?: React.ReactNode;
+  hideDivider?: boolean;
+  padding?: string;
+  contentZIndex?: number;
+}
+
+const GenericPage = ({ header, children, hideDivider, ...rest }: GenericPageProps) => {
   return (
     <PageContainer id="page-container">
       <PageHeader

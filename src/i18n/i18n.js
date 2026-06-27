@@ -1,8 +1,28 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { mockSettings } from '../shared/mockSettings';
-// eslint-disable-next-line import/no-cycle
-import { settings } from '../components/shared/setDefaultSettings';
+import { getMainProcessLanguage } from '../components/shared/settingsAccess';
+
+// Read the persisted `language` setting directly (rather than through
+// setDefaultSettings.ts's `settings`) to break the circular dependency with
+// that module, which imports this one for column label translations — by the
+// time it constructs its `settings` instance, this module has already finished
+// evaluating. In the renderer, read it through the `window.bridge` proxy (this
+// module — like a direct `electron-store` import — cannot be evaluated with
+// `nodeIntegration: false`); in the main process, read the value that
+// registerMainLanguage.ts registered as a side effect (main.dev.mjs imports it
+// before setDefaultSettings, for exactly this ordering reason).
+const resolveLanguage = () => {
+  if (process.env.NODE_ENV === 'test') {
+    return mockSettings.language;
+  }
+
+  if (typeof window !== 'undefined' && window.bridge) {
+    return window.bridge.settings.get('language') || 'en';
+  }
+
+  return getMainProcessLanguage() || 'en';
+};
 
 // the translations
 // (tip move them in a JSON file and import them,
@@ -33,7 +53,7 @@ i18n
   .use(initReactI18next) // passes i18n down to react-i18next
   .init({
     resources,
-    lng: process.env.NODE_ENV === 'test' ? mockSettings.language : settings.get('language'),
+    lng: resolveLanguage(),
     fallbackLng: 'en', // language to use, more information here: https://www.i18next.com/overview/configuration-options#languages-namespaces-resources
     // you can use the i18n.changeLanguage function to change the language manually: https://www.i18next.com/overview/api#changelanguage
     // if you're using a language detector, do not define the lng option

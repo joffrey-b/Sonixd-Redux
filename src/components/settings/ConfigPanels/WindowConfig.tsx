@@ -5,9 +5,9 @@ import { StyledToggle } from '../../shared/styled';
 import ConfigOption from '../ConfigOption';
 import { setPlayer, setWindow } from '../../../redux/configSlice';
 import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
-import { settings } from '../../shared/setDefaultSettings';
+import { settings } from '../../shared/bridge';
 
-const WindowConfig = ({ bordered }: any) => {
+const WindowConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -19,7 +19,6 @@ const WindowConfig = ({ bordered }: any) => {
         description={t('Show a system notification whenever the song changes.')}
         option={
           <StyledToggle
-            defaultChecked={config.player.systemNotifications}
             checked={config.player.systemNotifications}
             onChange={(e: boolean) => {
               settings.set('systemNotifications', e);
@@ -34,7 +33,7 @@ const WindowConfig = ({ bordered }: any) => {
         description={t('Allows pressing F12 to open the developer console.')}
         option={
           <StyledToggle
-            defaultChecked={config.window.allowDevConsole}
+            data-testid="allow-dev-console-toggle"
             checked={config.window.allowDevConsole}
             onChange={(e: boolean) => {
               settings.set('allowDevConsole', e);
@@ -51,7 +50,6 @@ const WindowConfig = ({ bordered }: any) => {
             description={t('Minimizes to the system tray.')}
             option={
               <StyledToggle
-                defaultChecked={config.window.minimizeToTray}
                 checked={config.window.minimizeToTray}
                 onChange={(e: boolean) => {
                   settings.set('minimizeToTray', e);
@@ -66,7 +64,6 @@ const WindowConfig = ({ bordered }: any) => {
             description={t('Exits to the system tray.')}
             option={
               <StyledToggle
-                defaultChecked={config.window.exitToTray}
                 checked={config.window.exitToTray}
                 onChange={(e: boolean) => {
                   settings.set('exitToTray', e);

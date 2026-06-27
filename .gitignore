@@ -1,3 +1,6 @@
+# Claude Code local settings
+.claude/
+
 # Logs
 logs
 *.log
@@ -34,6 +37,12 @@ node_modules
 release
 src/main.prod.js
 src/main.prod.js.map
+src/main.prod.js.LICENSE.txt
+src/*.main.prod.js
+src/*.main.prod.js.map
+src/preload.prod.js
+src/preload.prod.js.map
+src/preload.prod.js.LICENSE.txt
 src/renderer.prod.js
 src/renderer.prod.js.map
 src/style.css
@@ -51,3 +60,21 @@ npm-debug.log.*
 
 # My test checklists
 release-checklist-*
+
+# Claude audit files
+CLAUDE.md
+AUDIT-*.md
+SESSIONS.md
+
+# Dev files
+src/main.dev.built.js
+src/main.dev.built.js.map
+src/preload.dev.built.js
+src/preload.dev.built.js.map
+src/*.main.dev.built.js
+src/*.main.dev.built.js.map
+
+# E2E test data
+e2e/playwright-report
+test-results
+e2e/certs/

@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ButtonToolbar } from 'rsuite';
-import { useQuery, useQueryClient } from 'react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import i18n from '../../i18n/i18n';
-import ListViewType from '../viewtypes/ListViewType';
+import type { TFunction } from 'i18next';
+import type { RowDataType } from 'rsuite-table';
+import ListViewType, { ListViewHandle } from '../viewtypes/ListViewType';
 import useSearchQuery from '../../hooks/useSearchQuery';
 import GenericPageHeader from '../layout/GenericPageHeader';
 import GenericPage from '../layout/GenericPage';
@@ -21,19 +22,19 @@ import useListScroll from '../../hooks/useListScroll';
 import useListClickHandler from '../../hooks/useListClickHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
 
 // prettier-ignore
-export const MUSIC_SORT_TYPES = [
-  { label: i18n.t('A-Z (Name)'), value: 'alphabeticalByName', role: i18n.t('Default') },
-  { label: i18n.t('A-Z (Album)'), value: 'alphabeticalByAlbum', role: i18n.t('Default') },
-  { label: i18n.t('A-Z (Album Artist)'), value: 'alphabeticalByArtist', role: i18n.t('Default') },
-  { label: i18n.t('A-Z (Artist)'), value: 'alphabeticalByTrackArtist', replacement: 'Artist' },
-  { label: i18n.t('Most Played'), value: 'frequent', role: i18n.t('Default') },
-  { label: i18n.t('Random'), value: 'random', role: i18n.t('Default') },
-  { label: i18n.t('Recently Added'), value: 'newest', role: i18n.t('Default') },
-  { label: i18n.t('Recently Played'), value: 'recent', role: i18n.t('Default') },
-  { label: i18n.t('Release Date'), value: 'year', role: i18n.t('Default') },
+export const getMusicSortTypes = (t: TFunction) => [
+  { label: t('A-Z (Name)'), value: 'alphabeticalByName', role: t('Default') },
+  { label: t('A-Z (Album)'), value: 'alphabeticalByAlbum', role: t('Default') },
+  { label: t('A-Z (Album Artist)'), value: 'alphabeticalByArtist', role: t('Default') },
+  { label: t('A-Z (Artist)'), value: 'alphabeticalByTrackArtist', replacement: 'Artist' },
+  { label: t('Most Played'), value: 'frequent', role: t('Default') },
+  { label: t('Random'), value: 'random', role: t('Default') },
+  { label: t('Recently Added'), value: 'newest', role: t('Default') },
+  { label: t('Recently Played'), value: 'recent', role: t('Default') },
+  { label: t('Release Date'), value: 'year', role: t('Default') },
 ];
 
 const MusicList = () => {
@@ -45,12 +46,15 @@ const MusicList = () => {
   const misc = useAppSelector((state) => state.misc);
   const view = useAppSelector((state) => state.view);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [sortTypes, setSortTypes] = useState<any[]>([]);
-  const [musicFolder, setMusicFolder] = useState({ loaded: false, id: undefined });
+  const [sortTypes, setSortTypes] = useState<ReturnType<typeof getMusicSortTypes>>([]);
+  const [musicFolder, setMusicFolder] = useState<{ loaded: boolean; id: string | undefined }>({
+    loaded: false,
+    id: undefined,
+  });
   const musicFilterPickerContainerRef = useRef(null);
-  const [currentQueryKey, setCurrentQueryKey] = useState<any>(['musicList']);
+  const [currentQueryKey, setCurrentQueryKey] = useState<unknown[]>(['musicList']);
 
-  const listRef = useRef<any>();
+  const listRef = useRef<ListViewHandle | null>(null);
   const { listScroll } = useListScroll(listRef);
 
   useEffect(() => {
@@ -75,9 +79,9 @@ const MusicList = () => {
     isError,
     data: songs,
     error,
-  }: any = useQuery(
-    currentQueryKey,
-    () =>
+  } = useQuery({
+    queryKey: currentQueryKey,
+    queryFn: () =>
       view.music.filter === 'random' ||
       (view.music.pagination.recordsPerPage !== 0 && view.music.pagination.serverSide)
         ? apiController({
@@ -112,13 +116,11 @@ const MusicList = () => {
               musicFolderId: musicFolder.id,
             },
           }),
-    {
-      // Due to extensive fetch times without pagination, we want to cache for the entire session
-      cacheTime: view.music.pagination.recordsPerPage !== 0 ? 600000 : Infinity,
-      staleTime: view.music.pagination.recordsPerPage !== 0 ? 600000 : Infinity,
-      enabled: musicFolder.loaded,
-    }
-  );
+    // Due to extensive fetch times without pagination, we want to cache for the entire session
+    gcTime: view.music.pagination.recordsPerPage !== 0 ? 600000 : Infinity,
+    staleTime: view.music.pagination.recordsPerPage !== 0 ? 600000 : Infinity,
+    enabled: musicFolder.loaded,
+  });
 
   const searchedData = useSearchQuery(misc.searchQuery, songs?.data, [
     'title',
@@ -130,8 +132,8 @@ const MusicList = () => {
   const { sortedData } = useColumnSort(songs?.data, Item.Album, view.music.sort);
 
   useEffect(() => {
-    setSortTypes(MUSIC_SORT_TYPES);
-  }, []);
+    setSortTypes(getMusicSortTypes(t));
+  }, [t]);
 
   useEffect(() => {
     if (songs?.data && sortedData?.length) {
@@ -164,7 +166,7 @@ const MusicList = () => {
   ]);
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
-    doubleClick: (rowData: any) => {
+    doubleClick: (rowData: RowDataType) => {
       dispatch(
         setPlayQueueByRowClick({
           entries: rowData.tableData,
@@ -181,7 +183,7 @@ const MusicList = () => {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await queryClient.removeQueries(['musicList'], { exact: false });
+    await queryClient.removeQueries({ queryKey: ['musicList'], exact: false });
     setIsRefreshing(false);
   };
 
@@ -211,16 +213,14 @@ const MusicList = () => {
                     width={180}
                     defaultValue={view.music.filter}
                     value={view.music.filter}
-                    data={sortTypes || MUSIC_SORT_TYPES}
+                    data={sortTypes || getMusicSortTypes(t)}
                     cleanable={false}
                     placeholder={t('Sort Type')}
                     onChange={async (value: string) => {
                       setIsRefreshing(true);
-                      await queryClient.cancelQueries([
-                        'musicList',
-                        view.music.filter,
-                        musicFolder.id,
-                      ]);
+                      await queryClient.cancelQueries({
+                        queryKey: ['musicList', view.music.filter, musicFolder.id],
+                      });
                       dispatch(setSearchQuery(''));
                       dispatch(setFilter({ listType: Item.Music, data: value }));
                       dispatch(setPagination({ listType: Item.Music, data: { activePage: 1 } }));
@@ -236,7 +236,7 @@ const MusicList = () => {
         />
       }
     >
-      {isError && <div>{(error as any)?.message || 'Failed to load.'}</div>}
+      {isError && <div>{(error as Error)?.message || 'Failed to load.'}</div>}
       {!isError && (
         <ListViewType
           ref={listRef}
@@ -244,18 +244,18 @@ const MusicList = () => {
             misc.searchQuery !== ''
               ? searchedData
               : view.music.pagination.recordsPerPage !== 0 && !view.music.pagination.serverSide
-              ? sortedData?.slice(
-                  (view.music.pagination.activePage - 1) * view.music.pagination.recordsPerPage,
-                  view.music.pagination.activePage * view.music.pagination.recordsPerPage
-                )
-              : sortedData
+                ? sortedData?.slice(
+                    (view.music.pagination.activePage - 1) * view.music.pagination.recordsPerPage,
+                    view.music.pagination.activePage * view.music.pagination.recordsPerPage
+                  )
+                : sortedData
           }
           tableColumns={config.lookAndFeel.listView.music.columns}
           rowHeight={config.lookAndFeel.listView.music.rowHeight}
           fontSize={config.lookAndFeel.listView.music.fontSize}
           handleRowClick={handleRowClick}
           handleRowDoubleClick={handleRowDoubleClick}
-          handleRating={(rowData: any, rating: number) =>
+          handleRating={(rowData: RowDataType, rating: number) =>
             handleRating(rowData, { queryKey: currentQueryKey, rating })
           }
           cacheImages={{
@@ -274,7 +274,9 @@ const MusicList = () => {
             'viewInFolder',
           ]}
           loading={isLoading}
-          handleFavorite={(rowData: any) => handleFavorite(rowData, { queryKey: currentQueryKey })}
+          handleFavorite={(rowData: RowDataType) =>
+            handleFavorite(rowData, { queryKey: currentQueryKey })
+          }
           initialScrollOffset={Number(localStorage.getItem('scroll_list_musicList'))}
           onScroll={(scrollIndex: number) => {
             localStorage.setItem('scroll_list_musicList', String(Math.abs(scrollIndex)));
@@ -304,7 +306,7 @@ const MusicList = () => {
               },
               onSelect: async (e: number) => {
                 localStorage.setItem('scroll_list_musicList', '0');
-                await queryClient.cancelQueries(['musicList'], { active: true });
+                await queryClient.cancelQueries({ queryKey: ['musicList'], type: 'active' });
                 dispatch(
                   setPagination({
                     listType: Item.Music,

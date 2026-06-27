@@ -157,8 +157,8 @@ const DebugWindow = ({ ...rest }) => {
             </tr>
             <tr>
               <td style={{ width: '80px', textAlign: 'left' }}>volume</td>
-              <td style={{ width: '65px' }}>{Number(playQueue.player1.volume).toFixed(2)}</td>
-              <td style={{ width: '65px' }}>{Number(playQueue.player2.volume).toFixed(2)}</td>
+              <td style={{ width: '65px' }}>{Number(playQueue.volume).toFixed(2)}</td>
+              <td style={{ width: '65px' }}>{Number(playQueue.volume).toFixed(2)}</td>
             </tr>
           </tbody>
         </table>
@@ -179,7 +179,7 @@ const DebugWindow = ({ ...rest }) => {
           data={fadeChartData}
           options={{
             scales: {
-              yAxes: {
+              y: {
                 min: 0,
               },
             },
@@ -225,9 +225,9 @@ const DebugWindow = ({ ...rest }) => {
           }}
         >
           <li>selected: {multiSelect.selected.length} rows</li>
-          <li>lastSelected: {multiSelect.lastSelected.title}</li>
-          <li>range (start): {multiSelect.lastRangeSelected.lastSelected.title}</li>
-          <li>range (end): {multiSelect.lastRangeSelected.lastRangeSelected.title}</li>
+          <li>lastSelected: {String(multiSelect.lastSelected.title)}</li>
+          <li>range (start): {String(multiSelect.lastRangeSelected.lastSelected.title)}</li>
+          <li>range (end): {String(multiSelect.lastRangeSelected.lastRangeSelected.title)}</li>
           <li>
             currentMouseOverId (drop): [{multiSelect.currentMouseOverIndex}]{' '}
             {multiSelect.currentMouseOverId}

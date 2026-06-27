@@ -68,7 +68,7 @@ export default class MenuBuilder {
           label: 'Quit',
           accelerator: 'Command+Q',
           click: () => {
-            app.exit();
+            app.quit();
           },
         },
       ],
@@ -146,25 +146,25 @@ export default class MenuBuilder {
         {
           label: 'Learn More',
           click() {
-            shell.openExternal('https://electronjs.org');
+            shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux');
           },
         },
         {
           label: 'Documentation',
           click() {
-            shell.openExternal('https://github.com/electron/electron/tree/master/docs#readme');
+            shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux#readme');
           },
         },
         {
           label: 'Community Discussions',
           click() {
-            shell.openExternal('https://www.electronjs.org/community');
+            shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux/discussions');
           },
         },
         {
           label: 'Search Issues',
           click() {
-            shell.openExternal('https://github.com/electron/electron/issues');
+            shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux/issues');
           },
         },
       ],
@@ -183,10 +183,6 @@ export default class MenuBuilder {
       {
         label: '&File',
         submenu: [
-          {
-            label: '&Open',
-            accelerator: 'Ctrl+O',
-          },
           {
             label: '&Close',
             accelerator: 'Ctrl+W',
@@ -239,25 +235,25 @@ export default class MenuBuilder {
           {
             label: 'Learn More',
             click() {
-              shell.openExternal('https://electronjs.org');
+              shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux');
             },
           },
           {
             label: 'Documentation',
             click() {
-              shell.openExternal('https://github.com/electron/electron/tree/master/docs#readme');
+              shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux#readme');
             },
           },
           {
             label: 'Community Discussions',
             click() {
-              shell.openExternal('https://www.electronjs.org/community');
+              shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux/discussions');
             },
           },
           {
             label: 'Search Issues',
             click() {
-              shell.openExternal('https://github.com/electron/electron/issues');
+              shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux/issues');
             },
           },
         ],

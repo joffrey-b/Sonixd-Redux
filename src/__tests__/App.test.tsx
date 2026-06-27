@@ -1,23 +1,34 @@
-jest.mock('electron', () => {
-  const originalModule = jest.requireActual('electron');
+jest.mock('electron', () => ({
+  ipcRenderer: {
+    on: jest.fn(),
+    once: jest.fn(),
+    off: jest.fn(),
+    send: jest.fn(),
+    sendSync: jest.fn(),
+    removeAllListeners: jest.fn(),
+    removeListener: jest.fn(),
+  },
+  webFrame: {
+    setZoomFactor: jest.fn(),
+    setZoomLevel: jest.fn(),
+    getZoomFactor: jest.fn(),
+    getZoomLevel: jest.fn(),
+  },
+  shell: {
+    openExternal: jest.fn(),
+    showItemInFolder: jest.fn(),
+    openPath: jest.fn(),
+  },
+  clipboard: {
+    writeText: jest.fn(),
+    readText: jest.fn(),
+  },
+}));
 
-  return {
-    __esModule: true,
-    ...originalModule,
-    ipcRenderer: {
-      on: jest.fn(),
-      sendSync: jest.fn(),
-      removeAllListeners: jest.fn(),
-    },
-  };
-});
-
-/* eslint-disable import/first */
 import React from 'react';
 import '@testing-library/jest-dom';
 import { Provider } from 'react-redux';
-import { Middleware, Dispatch, AnyAction } from 'redux';
-import { QueryClient, QueryClientProvider } from 'react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import configureMockStore from 'redux-mock-store';
 import { render } from '@testing-library/react';
 import { PlayQueue } from '../redux/playQueueSlice';
@@ -31,16 +42,15 @@ import App from '../App';
 import { Server } from '../types';
 import { ArtistPage } from '../redux/artistSlice';
 import { View } from '../redux/viewSlice';
-/* eslint-enable import/first */
 
-const middlewares: Middleware<Record<string, unknown>, any, Dispatch<AnyAction>>[] | undefined = [];
+const middlewares: Parameters<typeof configureMockStore>[0] = [];
 const mockStore = configureMockStore(middlewares);
 
 const queryClient = new QueryClient();
 
 const playQueueState: PlayQueue = {
   player1: {
-    src: './components/player/dummy.mp3',
+    src: 'http://example.com/test-song.mp3',
     index: 0,
     fadeData: {
       volumeData: [],
@@ -48,7 +58,7 @@ const playQueueState: PlayQueue = {
     },
   },
   player2: {
-    src: './components/player/dummy.mp3',
+    src: 'http://example.com/test-song.mp3',
     index: 1,
     fadeData: {
       volumeData: [],
@@ -89,7 +99,6 @@ const playQueueState: PlayQueue = {
 
 const playerState: Player = {
   status: 'PAUSED',
-  scrobbled: false,
 };
 
 const miscState: General = {

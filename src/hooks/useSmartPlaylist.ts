@@ -8,12 +8,15 @@ import useLibraryCache from './useLibraryCache';
 
 // Applies a single rule to a song array. Works for both Song and LibraryCacheSong
 // since they share all the filtered fields.
-const applyRule = (songs: any[], rule: SmartPlaylistRule): any[] => {
+const applyRule = (
+  songs: (Song | LibraryCacheSong)[],
+  rule: SmartPlaylistRule
+): (Song | LibraryCacheSong)[] => {
   const { field, operator, value, value2 } = rule;
   return songs.filter((song) => {
     switch (field) {
       case 'genre': {
-        const genres = (song.genre || []).map((g: any) =>
+        const genres = (song.genre || []).map((g: string | { title: string }) =>
           typeof g === 'string' ? g.toLowerCase() : g.title.toLowerCase()
         );
         const v = String(value).toLowerCase();
@@ -70,7 +73,7 @@ const applyRule = (songs: any[], rule: SmartPlaylistRule): any[] => {
 };
 
 const sortSongs = <
-  T extends { playCount?: number; year?: number; userRating?: number; duration?: number }
+  T extends { playCount?: number; year?: number; userRating?: number; duration?: number },
 >(
   songs: T[],
   sort: SmartPlaylistSortField,
@@ -98,7 +101,7 @@ const toPlayableSong = (cached: LibraryCacheSong): Song =>
     ...cached,
     uniqueId: nanoid(),
     starred: cached.starred ? 'starred' : undefined,
-  } as unknown as Song);
+  }) as unknown as Song;
 
 const useSmartPlaylist = () => {
   const config = useAppSelector((state) => state.config);
@@ -150,7 +153,7 @@ const useSmartPlaylist = () => {
         });
         serverSongs = Array.isArray(data) ? data : [];
       } else {
-        const args: Record<string, any> = { size: fetchSize };
+        const args: Record<string, unknown> = { size: fetchSize };
         if (yearBetweenRule) {
           args.fromYear = Number(yearBetweenRule.value);
           args.toYear = Number(yearBetweenRule.value2);

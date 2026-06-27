@@ -12,11 +12,13 @@ const TextCell = ({
   onMouseEnter,
   onMouseUp,
   ...rest
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table cell receives heterogeneous row data; full typing belongs in ListViewTable
 }: any) => {
   return (
     <TableCellWrapper
-      height={rowHeight}
-      onClick={(e: any) => {
+      $height={rowHeight}
+      $alignment={column.alignment}
+      onClick={(e: React.MouseEvent<HTMLElement>) => {
         if (!column.dataKey?.match(/starred|userRating|genre|columnResizable|columnDefaultSort/)) {
           handleRowClick(e, {
             ...rowData,

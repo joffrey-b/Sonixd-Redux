@@ -1,6 +1,8 @@
 import React from 'react';
-import { ipcRenderer, shell } from 'electron';
-import { Icon, RadioGroup } from 'rsuite';
+import { ipcRenderer, settings, shell } from '../../shared/bridge';
+import { notifyToast } from '../../shared/toast';
+import { RadioGroup } from 'rsuite';
+import FolderOpenIcon from '@rsuite/icons/legacy/FolderOpen';
 import { Trans, useTranslation } from 'react-i18next';
 import { ConfigOptionDescription, ConfigPanel } from '../styled';
 import {
@@ -15,9 +17,8 @@ import {
 import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
 import { setDiscord, setOBS } from '../../../redux/configSlice';
 import ConfigOption from '../ConfigOption';
-import { settings } from '../../shared/setDefaultSettings';
 
-const ExternalConfig = ({ bordered }: any) => {
+const ExternalConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -35,7 +36,6 @@ const ExternalConfig = ({ bordered }: any) => {
           )}
           option={
             <StyledToggle
-              defaultChecked={config.external.discord.enabled}
               checked={config.external.discord.enabled}
               onChange={(e: boolean) => {
                 settings.set('discord.enabled', e);
@@ -51,7 +51,7 @@ const ExternalConfig = ({ bordered }: any) => {
               The client/application Id of the Sonixd Redux discord application. To use your own,
               create one on the{' '}
               <StyledLink
-                onClick={() => shell.openPath('https://discord.com/developers/applications')}
+                onClick={() => shell.openExternal('https://discord.com/developers/applications')}
               >
                 developer application portal
               </StyledLink>
@@ -63,7 +63,7 @@ const ExternalConfig = ({ bordered }: any) => {
               placeholder={t('Client/Application Id')}
               value={config.external.discord.clientId}
               disabled={config.external.discord.enabled}
-              onChange={(e: boolean) => {
+              onChange={(e: string) => {
                 settings.set('discord.clientId', e);
                 dispatch(setDiscord({ ...config.external.discord, clientId: e }));
               }}
@@ -77,7 +77,6 @@ const ExternalConfig = ({ bordered }: any) => {
           )}
           option={
             <StyledToggle
-              defaultChecked={config.external.discord.showAlbumArt}
               checked={config.external.discord.showAlbumArt}
               onChange={(e: boolean) => {
                 settings.set('discord.showAlbumArt', e);
@@ -96,9 +95,9 @@ const ExternalConfig = ({ bordered }: any) => {
                 inline
                 defaultValue={config.external.obs.type}
                 value={config.external.obs.type}
-                onChange={(e: string) => {
-                  settings.set('obs.type', e);
-                  dispatch(setOBS({ ...config.external.obs, type: e }));
+                onChange={(e) => {
+                  settings.set('obs.type', e as string);
+                  dispatch(setOBS({ ...config.external.obs, type: e as 'local' | 'web' }));
                 }}
               >
                 <StyledRadio value="local">{t('Local')}</StyledRadio>
@@ -112,7 +111,6 @@ const ExternalConfig = ({ bordered }: any) => {
           option={
             <>
               <StyledToggle
-                defaultChecked={config.external.obs.enabled}
                 checked={config.external.obs.enabled}
                 onChange={(e: boolean) => {
                   settings.set('obs.enabled', e);
@@ -153,6 +151,7 @@ const ExternalConfig = ({ bordered }: any) => {
                 placeholder="http://localhost:1608"
                 value={config.external.obs.url}
                 onChange={(e: string) => {
+                  if (e && !/^https?:\/\//i.test(e)) return;
                   settings.set('obs.url', e);
                   dispatch(setOBS({ ...config.external.obs, url: e }));
                 }}
@@ -165,7 +164,7 @@ const ExternalConfig = ({ bordered }: any) => {
             description={t('The full path to the directory where song metadata will be created.')}
             option={
               <StyledInputGroup>
-                <StyledInput disabled width={200} value={config.external.obs.path} />
+                <StyledInput disabled $width={200} value={config.external.obs.path} />
                 <StyledInputGroupButton
                   onClick={() => {
                     ipcRenderer
@@ -178,10 +177,10 @@ const ExternalConfig = ({ bordered }: any) => {
 
                         return null;
                       })
-                      .catch((err) => console.log(err));
+                      .catch((err: Error) => notifyToast('error', err.message));
                   }}
                 >
-                  <Icon icon="folder-open" />
+                  <FolderOpenIcon />
                 </StyledInputGroupButton>
               </StyledInputGroup>
             }

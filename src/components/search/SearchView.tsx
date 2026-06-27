@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import _ from 'lodash';
-import { Icon, Nav } from 'rsuite';
-import { useHistory } from 'react-router-dom';
-import { useInfiniteQuery, useQueryClient } from 'react-query';
+import { Nav } from 'rsuite';
+import CloseIcon from '@rsuite/icons/legacy/Close';
+import { useNavigate } from 'react-router-dom';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import useRouterQuery from '../../hooks/useRouterQuery';
 import GenericPage from '../layout/GenericPage';
@@ -19,26 +20,34 @@ import {
 } from '../shared/styled';
 import { apiController } from '../../api/controller';
 import { Album, Artist, Item, Song } from '../../types';
+import type { RowDataType } from 'rsuite-table';
+
+interface SearchPage {
+  song: { data: Song[]; nextCursor: number | undefined };
+  album: { data: Album[]; nextCursor: number | undefined };
+  artist: { data: Artist[]; nextCursor: number | undefined };
+}
 import useListClickHandler from '../../hooks/useListClickHandler';
 import ListViewType from '../viewtypes/ListViewType';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
 
 const SearchView = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const queryClient = useQueryClient();
-  const history = useHistory();
+  const navigate = useNavigate();
   const query = useRouterQuery();
   const urlQuery = query.get('query') || '';
-  const multiSelect = useAppSelector((state) => state.multiSelect);
-  const playQueue = useAppSelector((state) => state.playQueue);
   const folder = useAppSelector((state) => state.folder);
   const config = useAppSelector((state) => state.config);
   const [search, setSearch] = useState(urlQuery);
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(urlQuery);
-  const [musicFolder, setMusicFolder] = useState({ loaded: false, id: undefined });
+  const [musicFolder, setMusicFolder] = useState<{ loaded: boolean; id: string | undefined }>({
+    loaded: false,
+    id: undefined,
+  });
   const [nav, setNav] = useState<'songs' | 'albums' | 'artists'>('songs');
   const [artistData, setArtistData] = useState<Artist[]>([]);
   const [albumData, setAlbumData] = useState<Album[]>([]);
@@ -56,9 +65,9 @@ const SearchView = () => {
     () =>
       _.debounce((e) => {
         setDebouncedSearchQuery(e);
-        history.replace(`/search?query=${e}`);
+        navigate(`/search?query=${e}`, { replace: true });
       }, 300),
-    [history]
+    [navigate]
   );
 
   const {
@@ -67,9 +76,9 @@ const SearchView = () => {
     fetchNextPage: fetchNextSongPage,
     isFetchingNextPage: isFetchingNextSongPage,
     hasNextPage: hasNextSongPage,
-  }: any = useInfiniteQuery(
-    ['searchpage', debouncedSearchQuery, { type: Item.Music, count: 50 }, musicFolder.id],
-    ({ pageParam = 0 }) =>
+  } = useInfiniteQuery<SearchPage, Error>({
+    queryKey: ['searchpage', debouncedSearchQuery, { type: Item.Music, count: 50 }, musicFolder.id],
+    queryFn: ({ pageParam }) =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getSearch',
@@ -82,12 +91,11 @@ const SearchView = () => {
           musicFolderId: musicFolder.id,
         },
       }),
-    {
-      enabled: debouncedSearchQuery !== '' && musicFolder.loaded,
-      getNextPageParam: (lastPage) => lastPage.song.nextCursor,
-      staleTime: 5 * 60 * 1000,
-    }
-  );
+    initialPageParam: 0,
+    enabled: debouncedSearchQuery !== '' && musicFolder.loaded,
+    getNextPageParam: (lastPage) => lastPage.song.nextCursor,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const {
     data: albumResults,
@@ -95,9 +103,9 @@ const SearchView = () => {
     fetchNextPage: fetchNextAlbumPage,
     isFetchingNextPage: isFetchingNextAlbumPage,
     hasNextPage: hasNextAlbumPage,
-  }: any = useInfiniteQuery(
-    ['searchpage', debouncedSearchQuery, { type: Item.Album, count: 25 }, musicFolder.id],
-    ({ pageParam = 0 }) =>
+  } = useInfiniteQuery<SearchPage, Error>({
+    queryKey: ['searchpage', debouncedSearchQuery, { type: Item.Album, count: 25 }, musicFolder.id],
+    queryFn: ({ pageParam }) =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getSearch',
@@ -110,12 +118,11 @@ const SearchView = () => {
           musicFolderId: musicFolder.id,
         },
       }),
-    {
-      enabled: debouncedSearchQuery !== '' && musicFolder.loaded,
-      getNextPageParam: (lastPage) => lastPage.album.nextCursor,
-      staleTime: 5 * 60 * 1000,
-    }
-  );
+    initialPageParam: 0,
+    enabled: debouncedSearchQuery !== '' && musicFolder.loaded,
+    getNextPageParam: (lastPage) => lastPage.album.nextCursor,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const {
     data: artistResults,
@@ -123,9 +130,14 @@ const SearchView = () => {
     fetchNextPage: fetchNextArtistPage,
     isFetchingNextPage: isFetchingNextArtistPage,
     hasNextPage: hasNextArtistPage,
-  }: any = useInfiniteQuery(
-    ['searchpage', debouncedSearchQuery, { type: Item.Artist, count: 15 }, musicFolder.id],
-    ({ pageParam = 0 }) =>
+  } = useInfiniteQuery<SearchPage, Error>({
+    queryKey: [
+      'searchpage',
+      debouncedSearchQuery,
+      { type: Item.Artist, count: 15 },
+      musicFolder.id,
+    ],
+    queryFn: ({ pageParam }) =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getSearch',
@@ -138,17 +150,16 @@ const SearchView = () => {
           musicFolderId: musicFolder.id,
         },
       }),
-    {
-      enabled: debouncedSearchQuery !== '' && musicFolder.loaded,
-      getNextPageParam: (lastPage) => lastPage.artist.nextCursor,
-      staleTime: 5 * 60 * 1000,
-    }
-  );
+    initialPageParam: 0,
+    enabled: debouncedSearchQuery !== '' && musicFolder.loaded,
+    getNextPageParam: (lastPage) => lastPage.artist.nextCursor,
+    staleTime: 5 * 60 * 1000,
+  });
 
   useEffect(() => {
     setSongData(
       _.flatten(
-        songResults?.pages.map((page: any) => {
+        songResults?.pages.map((page: SearchPage) => {
           return page.song.data;
         })
       )
@@ -158,7 +169,7 @@ const SearchView = () => {
   useEffect(() => {
     setAlbumData(
       _.flatten(
-        albumResults?.pages.map((page: any) => {
+        albumResults?.pages.map((page: SearchPage) => {
           return page.album.data;
         })
       )
@@ -168,7 +179,7 @@ const SearchView = () => {
   useEffect(() => {
     setArtistData(
       _.flatten(
-        artistResults?.pages.map((page: any) => {
+        artistResults?.pages.map((page: SearchPage) => {
           return page.artist.data;
         })
       )
@@ -179,16 +190,16 @@ const SearchView = () => {
   const { handleRating } = useRating();
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
-    doubleClick: (rowData: any) => {
+    doubleClick: (rowData: RowDataType) => {
       if (rowData.isDir) {
-        history.push(`/library/folder?folderId=${rowData.parent}`);
+        navigate(`/library/folder?folderId=${rowData.parent}`);
       } else {
         dispatch(
           setPlayQueueByRowClick({
-            entries: songData.filter((entry: any) => entry.isDir !== true),
-            currentIndex: rowData.rowIndex,
-            currentSongId: rowData.id,
-            uniqueSongId: rowData.uniqueId,
+            entries: songData.filter((entry) => entry.isDir !== true),
+            currentIndex: rowData.rowIndex as number,
+            currentSongId: rowData.id as string,
+            uniqueSongId: rowData.uniqueId as string,
             filters: config.playback.filters,
           })
         );
@@ -200,12 +211,12 @@ const SearchView = () => {
 
   const { handleRowClick: handleAlbumRowClick, handleRowDoubleClick: handleAlbumRowDoubleClick } =
     useListClickHandler({
-      doubleClick: (rowData: any) => history.push(`/library/album/${rowData.id}`),
+      doubleClick: (rowData: RowDataType) => navigate(`/library/album/${rowData.id as string}`),
     });
 
   const { handleRowClick: handleArtistRowClick, handleRowDoubleClick: handleArtistRowDoubleClick } =
     useListClickHandler({
-      doubleClick: (rowData: any) => history.push(`/library/artist/${rowData.id}`),
+      doubleClick: (rowData: RowDataType) => navigate(`/library/artist/${rowData.id as string}`),
     });
 
   return (
@@ -221,19 +232,19 @@ const SearchView = () => {
                   nav === 'songs'
                     ? isFetchingNextSongPage
                     : nav === 'albums'
-                    ? isFetchingNextAlbumPage
-                    : nav === 'artists'
-                    ? isFetchingNextArtistPage
-                    : false
+                      ? isFetchingNextAlbumPage
+                      : nav === 'artists'
+                        ? isFetchingNextArtistPage
+                        : false
                 }
                 disabled={
                   nav === 'songs'
                     ? !hasNextSongPage
                     : nav === 'albums'
-                    ? !hasNextAlbumPage
-                    : nav === 'artists'
-                    ? !hasNextArtistPage
-                    : false
+                      ? !hasNextAlbumPage
+                      : nav === 'artists'
+                        ? !hasNextArtistPage
+                        : false
                 }
                 onClick={() => {
                   if (nav === 'songs') {
@@ -258,6 +269,7 @@ const SearchView = () => {
               <StyledInputGroup inside style={{ width: '50vw', maxWidth: '95%' }}>
                 <StyledInput
                   id="local-search-input"
+                  data-testid="search-page-input"
                   value={search}
                   onChange={(e: string) => {
                     debouncedSearchHandler(e);
@@ -266,35 +278,35 @@ const SearchView = () => {
                 />
                 {search !== '' && (
                   <StyledInputGroupButton
-                    height={30}
+                    $height={30}
                     appearance="subtle"
                     tabIndex={0}
                     onClick={() => {
                       setDebouncedSearchQuery('');
                       setSearch('');
                     }}
-                    onKeyDown={(e: KeyboardEvent) => {
+                    onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
                       if (e.key === ' ' || e.key === 'Enter') {
                         setDebouncedSearchQuery('');
                         setSearch('');
                       }
                     }}
                   >
-                    <Icon icon="close" />
+                    <CloseIcon />
                   </StyledInputGroupButton>
                 )}
               </StyledInputGroup>
 
               <Nav activeKey={nav} onSelect={setNav}>
-                <StyledNavItem eventKey="songs">
+                <StyledNavItem data-testid="search-tab-songs" eventKey="songs">
                   {t('Songs')} ({songData?.length}
                   {hasNextSongPage && '+'})
                 </StyledNavItem>
-                <StyledNavItem eventKey="albums">
+                <StyledNavItem data-testid="search-tab-albums" eventKey="albums">
                   {t('Albums')} ({albumData?.length}
                   {hasNextAlbumPage && '+'})
                 </StyledNavItem>
-                <StyledNavItem eventKey="artists">
+                <StyledNavItem data-testid="search-tab-artists" eventKey="artists">
                   {t('Artists')} ({artistData?.length}
                   {hasNextArtistPage && '+'})
                 </StyledNavItem>
@@ -313,27 +325,31 @@ const SearchView = () => {
           fontSize={config.lookAndFeel.listView.music.fontSize}
           handleRowClick={handleRowClick}
           handleRowDoubleClick={handleRowDoubleClick}
-          handleRating={(rowData: any, rating: number) =>
+          handleRating={(rowData: RowDataType, rating: number) =>
             handleRating(rowData, {
               rating,
               custom: () =>
-                queryClient.refetchQueries([
-                  'searchpage',
-                  debouncedSearchQuery,
-                  { type: Item.Music, count: 50 },
-                  musicFolder.id,
-                ]),
+                queryClient.refetchQueries({
+                  queryKey: [
+                    'searchpage',
+                    debouncedSearchQuery,
+                    { type: Item.Music, count: 50 },
+                    musicFolder.id,
+                  ],
+                }),
             })
           }
-          handleFavorite={(rowData: any) =>
+          handleFavorite={(rowData: RowDataType) =>
             handleFavorite(rowData, {
               custom: () =>
-                queryClient.refetchQueries([
-                  'searchpage',
-                  debouncedSearchQuery,
-                  { type: Item.Music, count: 50 },
-                  musicFolder.id,
-                ]),
+                queryClient.refetchQueries({
+                  queryKey: [
+                    'searchpage',
+                    debouncedSearchQuery,
+                    { type: Item.Music, count: 50 },
+                    musicFolder.id,
+                  ],
+                }),
             })
           }
           listType="music"
@@ -343,8 +359,6 @@ const SearchView = () => {
             cacheIdProperty: 'albumId',
           }}
           disabledContextMenuOptions={['deletePlaylist', 'viewInModal']}
-          playQueue={playQueue}
-          multiSelect={multiSelect}
           isModal={false}
           miniView={false}
           dnd={false}
@@ -361,27 +375,31 @@ const SearchView = () => {
           fontSize={config.lookAndFeel.listView.album.fontSize}
           handleRowClick={handleAlbumRowClick}
           handleRowDoubleClick={handleAlbumRowDoubleClick}
-          handleRating={(rowData: any, rating: number) =>
+          handleRating={(rowData: RowDataType, rating: number) =>
             handleRating(rowData, {
               rating,
               custom: () =>
-                queryClient.refetchQueries([
-                  'searchpage',
-                  debouncedSearchQuery,
-                  { type: Item.Album, count: 25 },
-                  musicFolder.id,
-                ]),
+                queryClient.refetchQueries({
+                  queryKey: [
+                    'searchpage',
+                    debouncedSearchQuery,
+                    { type: Item.Album, count: 25 },
+                    musicFolder.id,
+                  ],
+                }),
             })
           }
-          handleFavorite={(rowData: any) =>
+          handleFavorite={(rowData: RowDataType) =>
             handleFavorite(rowData, {
               custom: () =>
-                queryClient.refetchQueries([
-                  'searchpage',
-                  debouncedSearchQuery,
-                  { type: Item.Album, count: 25 },
-                  musicFolder.id,
-                ]),
+                queryClient.refetchQueries({
+                  queryKey: [
+                    'searchpage',
+                    debouncedSearchQuery,
+                    { type: Item.Album, count: 25 },
+                    musicFolder.id,
+                  ],
+                }),
             })
           }
           listType="album"
@@ -391,8 +409,6 @@ const SearchView = () => {
             cacheIdProperty: 'albumId',
           }}
           disabledContextMenuOptions={['deletePlaylist', 'viewInModal']}
-          playQueue={playQueue}
-          multiSelect={multiSelect}
           isModal={false}
           miniView={false}
           dnd={false}
@@ -409,27 +425,31 @@ const SearchView = () => {
           fontSize={config.lookAndFeel.listView.artist.fontSize}
           handleRowClick={handleArtistRowClick}
           handleRowDoubleClick={handleArtistRowDoubleClick}
-          handleRating={(rowData: any, rating: number) =>
+          handleRating={(rowData: RowDataType, rating: number) =>
             handleRating(rowData, {
               rating,
               custom: () =>
-                queryClient.refetchQueries([
-                  'searchpage',
-                  debouncedSearchQuery,
-                  { type: Item.Artist, count: 15 },
-                  musicFolder.id,
-                ]),
+                queryClient.refetchQueries({
+                  queryKey: [
+                    'searchpage',
+                    debouncedSearchQuery,
+                    { type: Item.Artist, count: 15 },
+                    musicFolder.id,
+                  ],
+                }),
             })
           }
-          handleFavorite={(rowData: any) =>
+          handleFavorite={(rowData: RowDataType) =>
             handleFavorite(rowData, {
               custom: () =>
-                queryClient.refetchQueries([
-                  'searchpage',
-                  debouncedSearchQuery,
-                  { type: Item.Artist, count: 15 },
-                  musicFolder.id,
-                ]),
+                queryClient.refetchQueries({
+                  queryKey: [
+                    'searchpage',
+                    debouncedSearchQuery,
+                    { type: Item.Artist, count: 15 },
+                    musicFolder.id,
+                  ],
+                }),
             })
           }
           listType="artist"
@@ -439,8 +459,6 @@ const SearchView = () => {
             cacheIdProperty: 'id',
           }}
           disabledContextMenuOptions={['deletePlaylist', 'viewInModal']}
-          playQueue={playQueue}
-          multiSelect={multiSelect}
           isModal={false}
           miniView={false}
           dnd={false}

@@ -1,23 +1,48 @@
 import React, { useRef } from 'react';
 import styled from 'styled-components';
-import { ButtonGroup, ButtonToolbar, FlexboxGrid, Icon } from 'rsuite';
+import { ButtonGroup, ButtonToolbar, FlexboxGrid } from 'rsuite';
+import ArrowLeftIcon from '@rsuite/icons/legacy/ArrowLeft';
+import ArrowRightIcon from '@rsuite/icons/legacy/ArrowRight';
 import Card from '../card/Card';
 import { SectionTitleWrapper, SectionTitle, StyledButton } from '../shared/styled';
 import { useAppSelector } from '../../redux/hooks';
 import { smoothScroll } from '../../shared/utils';
 import { Item } from '../../types';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
+import type { RowDataType } from 'rsuite-table';
 
-const ScrollMenuContainer = styled.div<{ $noScrollbar?: boolean; maxWidth: string }>`
+const ScrollMenuContainer = styled.div<{ $noScrollbar?: boolean; $maxWidth: string }>`
   overflow-x: auto;
   white-space: nowrap;
 
-  max-width: ${(props) => props.maxWidth};
+  max-width: ${(props) => props.$maxWidth};
 
-  ::-webkit-scrollbar {
+  &::-webkit-scrollbar {
     height: ${(props) => (props.$noScrollbar ? '0px' : '10px')};
   }
 `;
+
+interface CardConfig {
+  property: string;
+  urlProperty?: string;
+  prefix?: string;
+  unit?: string | false;
+}
+
+interface ScrollingMenuProps {
+  cardTitle: CardConfig;
+  cardSubtitle: CardConfig | string;
+  data: unknown[];
+  title?: React.ReactNode;
+  subtitle?: React.ReactNode;
+  onClickTitle?: () => void;
+  type?: string;
+  handleFavorite?: (rowData: RowDataType) => unknown;
+  noScrollbar?: boolean;
+  cardSize?: number;
+  maxWidth?: string;
+  noButtons?: boolean;
+}
 
 const ScrollingMenu = ({
   cardTitle,
@@ -32,23 +57,23 @@ const ScrollingMenu = ({
   cardSize,
   maxWidth,
   noButtons,
-}: any) => {
+}: ScrollingMenuProps) => {
   const cacheImages = Boolean(settings.get('cacheImages'));
   const misc = useAppSelector((state) => state.misc);
   const config = useAppSelector((state) => state.config);
-  const scrollContainerRef = useRef<any>();
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <>
-      <SectionTitleWrapper maxWidth={maxWidth}>
+      <SectionTitleWrapper $maxWidth={maxWidth}>
         <FlexboxGrid justify="space-between" style={{ alignItems: 'flex-end' }}>
           <FlexboxGrid.Item>
             <SectionTitle
               tabIndex={0}
               onClick={onClickTitle}
-              onKeyDown={(e: any) => {
+              onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
                 if (e.key === ' ' || e.key === 'Enter') {
-                  onClickTitle();
+                  onClickTitle?.();
                 }
               }}
             >
@@ -65,32 +90,34 @@ const ScrollingMenu = ({
                     size="sm"
                     appearance="subtle"
                     onClick={() => {
+                      const el = scrollContainerRef.current;
+                      if (!el) return;
                       smoothScroll(
                         400,
-                        scrollContainerRef.current,
-                        scrollContainerRef.current.scrollLeft -
-                          (cardSize || config.lookAndFeel.gridView.cardSize) * 5,
+                        el,
+                        el.scrollLeft - (cardSize || config.lookAndFeel.gridView.cardSize) * 5,
                         'scrollLeft'
                       );
                     }}
                   >
-                    <Icon icon="arrow-left" />
+                    <ArrowLeftIcon />
                   </StyledButton>
                   <StyledButton
                     aria-label="scroll right"
                     size="sm"
                     appearance="subtle"
                     onClick={() => {
+                      const el = scrollContainerRef.current;
+                      if (!el) return;
                       smoothScroll(
                         400,
-                        scrollContainerRef.current,
-                        scrollContainerRef.current.scrollLeft +
-                          (cardSize || config.lookAndFeel.gridView.cardSize) * 5,
+                        el,
+                        el.scrollLeft + (cardSize || config.lookAndFeel.gridView.cardSize) * 5,
                         'scrollLeft'
                       );
                     }}
                   >
-                    <Icon icon="arrow-right" />
+                    <ArrowRightIcon />
                   </StyledButton>
                 </ButtonGroup>
               </ButtonToolbar>
@@ -99,9 +126,13 @@ const ScrollingMenu = ({
         </FlexboxGrid>
       </SectionTitleWrapper>
 
-      <ScrollMenuContainer ref={scrollContainerRef} $noScrollbar={noScrollbar} maxWidth={maxWidth}>
-        {data.map((item: any) => (
-          <span key={item.id} style={{ display: 'inline-block' }}>
+      <ScrollMenuContainer
+        ref={scrollContainerRef}
+        $noScrollbar={noScrollbar}
+        $maxWidth={maxWidth ?? '100%'}
+      >
+        {(data as Record<string, unknown>[]).map((item) => (
+          <span key={item.id as string} style={{ display: 'inline-block' }}>
             <Card
               itemId={item.id}
               title={item[cardTitle.property] || item.title}
@@ -109,8 +140,8 @@ const ScrollingMenu = ({
                 typeof cardSubtitle === 'string'
                   ? cardSubtitle
                   : cardSubtitle.unit
-                  ? `${item[cardSubtitle.property]}${cardSubtitle.unit}`
-                  : item[cardSubtitle.property]
+                    ? `${item[cardSubtitle.property]}${cardSubtitle.unit}`
+                    : item[cardSubtitle.property]
               }
               coverArt={item.image}
               url={
@@ -119,7 +150,7 @@ const ScrollingMenu = ({
                   : undefined
               }
               subUrl={
-                cardSubtitle.urlProperty
+                typeof cardSubtitle !== 'string' && cardSubtitle.urlProperty
                   ? `${cardSubtitle.prefix}/${item[cardSubtitle.urlProperty]}`
                   : undefined
               }

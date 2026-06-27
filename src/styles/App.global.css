@@ -3,8 +3,141 @@
  *        See https://github.com/webpack-contrib/sass-loader#imports
  */
 
-@import '~rsuite/lib/styles/themes/dark/index.less';
-@import 'custom-theme.less';
+@import '~rsuite/dist/rsuite.min.css';
+
+/* ── rsuite v6 custom overrides (replaces custom-theme.less LESS variables) ── */
+
+/* Remove popover arrow */
+.rs-popover-arrow {
+  display: none !important;
+}
+.rs-popover {
+  --rs-popover-arrow-width: 0;
+  --rs-popover-arrow-gap: 0;
+}
+
+/* Remove tooltip arrow — rsuite 6 Tooltip uses ::after/::before pseudo-elements
+   (not .rs-popover-arrow), colored via --rs-tooltip-bg */
+.rs-tooltip::after,
+.rs-tooltip::before {
+  display: none !important;
+}
+
+/* Transparent tooltips (custom tooltip system used instead) */
+.rs-tooltip {
+  background: transparent !important;
+  color: transparent !important;
+}
+
+/* ── Sidenav: match rsuite 4 flat/compact appearance ── */
+
+/* No sidenav collapse animation; transparent background so FixedSidebar theme bg shows through */
+.rs-sidenav {
+  transition: none !important;
+  background: transparent !important;
+  /* Remove nav list padding so items go edge-to-edge */
+  --rs-sidenav-p: 0px;
+  /* Remove item border radius (rsuite 4 was flat) */
+  --rs-sidenav-nav-rounded: 0px;
+  /* Item font-size: 14px to match rsuite 4 */
+  --rs-sidenav-item-font-size: 14px;
+  /* Item padding: 15px vertical + 20px horizontal (rsuite 4 used padding:15px 20px) */
+  --rs-sidenav-nav-item-p-y: 15px;
+  --rs-sidenav-nav-item-p-x: 20px;
+  /* Collapsed item height: match expanded (~50px = 2×15px padding + ~20px line-height).
+     With border-box this gives 20px content area for the 14px icon. */
+  --rs-sidenav-item-height: 50px;
+  /* Remove item transition */
+  --rs-sidenav-item-transition: none;
+}
+
+/* Sidenav icon: rsuite 6 renders icons with class rs-sidenav-item-icon.
+   Remove the default 6px end margin — spacing is handled via gap in SidebarNavItem. */
+.rs-sidenav .rs-sidenav-item-icon {
+  margin-inline-end: 0 !important;
+}
+.rs-sidenav-collapse-in,
+.rs-sidenav-collapse-out {
+  transition: none !important;
+}
+
+/* Sidenav items: rsuite 6 sets background-color on each item individually via
+   .rs-sidenav[data-appearance=default] .rs-sidenav-item — override resting state to transparent.
+   Hover/focus states are handled by SidebarNavItem in styled.tsx to provide WCAG-compliant feedback. */
+.rs-sidenav[data-appearance='default'] .rs-sidenav-item,
+.rs-sidenav[data-appearance='default'] .rs-sidenav-dropdown-toggle,
+.rs-sidenav[data-appearance='default'] .rs-sidenav-toggle {
+  background-color: transparent !important;
+}
+
+/* FlexboxGrid.Item without colspan: rsuite 4 used flex:0 0 auto (auto-size),
+   rsuite 6 changed to width:100% (full-width) which breaks two-column settings layout.
+   Restore rsuite 4 behaviour for unsized items. max-width without !important lets
+   inline style={{ maxWidth: '50%' }} on ConfigOption text column win over this rule. */
+.rs-flex-box-grid-item:not([class*='rs-flex-box-grid-item-']) {
+  width: auto !important;
+  max-width: none;
+  flex: 0 0 auto !important;
+}
+
+/* Bridge app colour palette to RSuite 6 semantic variables.
+   CustomProvider adds .rs-theme-dark / .rs-theme-light to <body>.
+   These overrides make var(--rs-text-primary) etc. match the app's
+   intended colours so styled components can use RSuite vars directly.
+   Note: custom user themes still need props.theme.* in styled-components
+   because they override colours dynamically at runtime. */
+.rs-theme-dark {
+  --rs-text-primary: #d8d8d8;
+  --rs-text-secondary: #888e94;
+}
+.rs-theme-light {
+  --rs-text-primary: #000000;
+  --rs-text-secondary: #4c4c4c;
+}
+
+/* Table header: light theme uses rs-gray-0 (#fff) for --rs-bg-card, same as the
+   body background, making the header invisible. Use rs-gray-100 to give it the
+   same subtle tonal separation that dark themes already have by default. */
+.rs-theme-light .rs-table-row-header,
+.rs-theme-light .rs-table-row-header .rs-table-cell {
+  background-color: var(--rs-gray-100) !important;
+}
+
+/* Compact table cell padding + remove row dividers via native rsuite 6 variables */
+.rs-table {
+  --rs-table-cell-padding-x: 0;
+  --rs-table-cell-padding-y: 0;
+  /* Zero header padding to align column labels flush with data cell content */
+  --rs-table-header-padding: 0;
+  --rs-table-border-color: transparent;
+}
+
+/* Icon-only buttons in toolbars: RSuite Button sets height but not width, so buttons with
+   only an icon child end up wider than tall (oval). Force square + centred icon. */
+.rs-btn-toolbar .rs-btn:has(> svg:only-child) {
+  aspect-ratio: 1;
+  justify-content: center;
+  padding-inline: calc((var(--rs-btn-size) - var(--rs-btn-icon-size)) / 2);
+}
+
+/* Table hover row */
+.rs-table-row:hover .rs-table-cell {
+  background: rgba(150, 150, 150, 0.2) !important;
+}
+
+/* Notification compact layout — override the padding variable so icon and
+   content remain in the same alignment context (padding on the content div
+   alone would offset the text relative to the icon). */
+.rs-notification {
+  --rs-notify-padding: 10px;
+}
+
+/* Modal compact padding via native rsuite 6 variable */
+.rs-modal {
+  --rs-modal-body-padding: 10px;
+}
+
+/* Checkbox / radio border colour via native rsuite 6 variables */
 
 html,
 body {
@@ -31,11 +164,8 @@ body {
   backdrop-filter: blur(3px);
 }
 
-.rs-modal-backdrop.fade {
-  transition: none !important;
-}
-
-.rs-modal-backdrop.out {
+/* rsuite 6: backdrop uses rs-anim-fade (not .fade/.out) */
+.rs-modal-backdrop.rs-anim-fade {
   transition: none !important;
 }
 
@@ -55,20 +185,44 @@ body {
   background-color: transparent;
 }
 
-.rs-panel-body,
-.rs-panel-heading {
+.rs-panel-body {
   padding: 0px;
   user-select: none;
 }
 
-.rs-popover.in {
+.rs-panel-header {
+  /* No padding-top/sides but 2px bottom to avoid clipping font descenders (g, y, p) */
+  padding: 0 0 2px;
+  user-select: none;
+}
+
+/* Remove gap between sidenav items (rsuite 6 adds 2px gap by default) */
+.rs-sidenav-nav {
+  gap: 0 !important;
+}
+
+/* Active sidenav item: visual indicator handled by SidebarNavItem &[data-active='true'] in styled.tsx */
+
+/* rsuite 6: popover uses rs-anim-in (not .in) */
+.rs-popover.rs-anim-in {
   opacity: 0.97 !important;
 }
 
-/* Fixes the picker menu position */
-.rs-picker-menu {
-  left: inherit !important;
-  top: inherit !important;
+/* Picker toggle: force pointer cursor (rsuite 6 inner input shows text cursor by default) */
+.rs-picker-toggle,
+.rs-picker-toggle-wrapper {
+  cursor: pointer !important;
+}
+
+/* Notification icon alignment (rsuite 6 renders icon inline with title text) */
+.rs-notification-title-with-icon {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px;
+}
+.rs-notification-title-with-icon > svg,
+.rs-notification-title-with-icon > .rs-icon {
+  flex-shrink: 0;
 }
 
 .rs-tooltip {
@@ -77,8 +231,8 @@ body {
 }
 
 .rs-table-scrollbar-vertical {
+  /* width:10px is already the rsuite 6 default via --rs-table-scrollbar-width */
   transform: none !important;
-  width: 10px !important;
 }
 
 .rs-table-scrollbar-horizontal {
@@ -98,11 +252,11 @@ body {
 }
 
 *::-webkit-scrollbar-track {
-  background: rgba(50, 50, 50, 0.6);
+  background: var(--rs-bg-subtle);
 }
 
 *::-webkit-scrollbar-thumb {
-  background-color: rgba(220, 220, 220, 0.3) !important;
+  background-color: rgba(128, 128, 128, 0.5) !important;
   border-radius: 0px;
 }
 
@@ -181,6 +335,15 @@ body {
 .lazy-load-image-background.opacity.lazy-load-image-loaded {
   opacity: 1;
   transition: opacity 0.1s;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  line-height: 1.2;
 }
 
 h6 {

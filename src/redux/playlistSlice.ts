@@ -66,10 +66,10 @@ const playlistSlice = createSlice({
         state.sortedEntry = _.orderBy(
           state.entry,
           [
-            (entry: any) =>
-              typeof entry[action.payload.columnDataKey] === 'string'
-                ? entry[action.payload.columnDataKey].toLowerCase() || ''
-                : entry[action.payload.columnDataKey] || '',
+            (entry: Song) =>
+              typeof entry[action.payload.columnDataKey as keyof Song] === 'string'
+                ? (entry[action.payload.columnDataKey as keyof Song] as string).toLowerCase() || ''
+                : entry[action.payload.columnDataKey as keyof Song] || '',
           ],
           action.payload.sortType
         );
@@ -110,13 +110,13 @@ const playlistSlice = createSlice({
       action.payload.id.forEach((id: string) => {
         const findIndices = _.keys(_.pickBy(state.entry, { id }));
         if (action.payload.type === 'unstar') {
-          findIndices?.map((rowIndex: any) => {
-            state.entry[rowIndex].starred = undefined;
+          findIndices?.map((rowIndex: string) => {
+            state.entry[Number(rowIndex)].starred = undefined;
             return rowIndex;
           });
         } else {
-          findIndices?.map((rowIndex: any) => {
-            state.entry[rowIndex].starred = String(Date.now());
+          findIndices?.map((rowIndex: string) => {
+            state.entry[Number(rowIndex)].starred = String(Date.now());
             return rowIndex;
           });
         }
@@ -127,13 +127,13 @@ const playlistSlice = createSlice({
       action.payload.id.forEach((id: string) => {
         const findIndices = _.keys(_.pickBy(state.entry, { id }));
         if (action.payload.rating) {
-          findIndices?.forEach((rowIndex: any) => {
-            state.entry[rowIndex].userRating = action.payload.rating;
+          findIndices?.forEach((rowIndex: string) => {
+            state.entry[Number(rowIndex)].userRating = action.payload.rating;
             return rowIndex;
           });
         } else {
-          findIndices?.forEach((rowIndex: any) => {
-            state.entry[rowIndex].userRating = undefined;
+          findIndices?.forEach((rowIndex: string) => {
+            state.entry[Number(rowIndex)].userRating = undefined;
             return rowIndex;
           });
         }

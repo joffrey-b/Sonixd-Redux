@@ -1,9 +1,11 @@
 export const defaultDark = {
   label: 'Default Dark',
   value: 'defaultDark',
+  type: 'dark',
   fonts: {
     size: {
       page: '14px',
+      pageTitle: '30px',
       panelTitle: '20px',
     },
   },
@@ -111,9 +113,29 @@ export const defaultDark = {
     button: {
       borderRadius: '0px',
     },
+    coverArtBorderRadius: '0px',
     coverArtFilter: 'drop-shadow(0px 3px 5px #000000)',
     card: {
-      borderRadius: '0px',
+      border: 'none',
+      hover: {
+        transform: 'none',
+        transition: 'none',
+        filter: 'none',
+      },
+      image: {
+        borderTop: 'none',
+        borderRight: 'none',
+        borderBottom: 'none',
+        borderLeft: 'none',
+        borderRadius: '0px',
+      },
+      info: {
+        borderTop: 'none',
+        borderRight: 'none',
+        borderBottom: 'none',
+        borderLeft: 'none',
+        borderRadius: '0px',
+      },
     },
     input: {
       borderRadius: '0px',
@@ -161,6 +183,8 @@ export const defaultLight = {
         colorSecondary: '#4c4c4c',
         background: 'linear-gradient(0deg, rgba(255,255,255,1) 64%, rgba(220,220,220,1) 100%)',
       },
+      // Intentional: dark player bar / sidebar / titlebar on light background for visual
+      // separation between content area and chrome controls (matches mockup design).
       playerBar: {
         color: '#FFFFFF',
         colorSecondary: '#888e94',

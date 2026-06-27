@@ -1,8 +1,10 @@
 import React from 'react';
-import { ButtonGroup, ButtonToolbar, FlexboxGrid, Icon, Whisper } from 'rsuite';
+import { ButtonGroup, ButtonToolbar, FlexboxGrid, Whisper } from 'rsuite';
+import CaretRightIcon from '@rsuite/icons/legacy/CaretRight';
 import Popup from './Popup';
 import { SecondaryTextWrapper, StyledButton, StyledIconButton, StyledPagination } from './styled';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- rest includes StyledPagination props (activePage, pages, onChangePage, bottom, etc.); forwarded directly without transformation
 const Paginator = ({ startIndex, endIndex, handleGoToButton, children, ...rest }: any) => {
   return (
     <>
@@ -18,12 +20,12 @@ const Paginator = ({ startIndex, endIndex, handleGoToButton, children, ...rest }
       >
         <FlexboxGrid.Item style={{ alignSelf: 'center' }}>
           {children}
-          <SecondaryTextWrapper subtitle="true">
+          <SecondaryTextWrapper $subtitle="true">
             {startIndex && startIndex}
             {startIndex && endIndex && ` - ${endIndex}`}
           </SecondaryTextWrapper>
         </FlexboxGrid.Item>
-        <FlexboxGrid.Item style={{ alignSelf: 'center' }}>
+        <FlexboxGrid.Item style={{ alignSelf: 'center', display: 'flex', alignItems: 'center' }}>
           <StyledPagination {...rest} />
           {handleGoToButton && (
             <Whisper
@@ -36,31 +38,31 @@ const Paginator = ({ startIndex, endIndex, handleGoToButton, children, ...rest }
                   <ButtonGroup>
                     <StyledButton
                       appearance="subtle"
-                      onClick={() =>
-                        handleGoToButton(
-                          rest.activePage + 5 < rest.pages ? rest.activePage + 5 : rest.pages
-                        )
-                      }
+                      onClick={() => {
+                        const p =
+                          rest.activePage + 5 < rest.pages ? rest.activePage + 5 : rest.pages;
+                        if (p !== rest.activePage) handleGoToButton(p);
+                      }}
                     >
                       +5
                     </StyledButton>
                     <StyledButton
                       appearance="subtle"
-                      onClick={() =>
-                        handleGoToButton(
-                          rest.activePage + 15 < rest.pages ? rest.activePage + 15 : rest.pages
-                        )
-                      }
+                      onClick={() => {
+                        const p =
+                          rest.activePage + 15 < rest.pages ? rest.activePage + 15 : rest.pages;
+                        if (p !== rest.activePage) handleGoToButton(p);
+                      }}
                     >
                       +15
                     </StyledButton>
                     <StyledButton
                       appearance="subtle"
-                      onClick={() =>
-                        handleGoToButton(
-                          rest.activePage + 50 < rest.pages ? rest.activePage + 50 : rest.pages
-                        )
-                      }
+                      onClick={() => {
+                        const p =
+                          rest.activePage + 50 < rest.pages ? rest.activePage + 50 : rest.pages;
+                        if (p !== rest.activePage) handleGoToButton(p);
+                      }}
                     >
                       +50
                     </StyledButton>
@@ -68,25 +70,28 @@ const Paginator = ({ startIndex, endIndex, handleGoToButton, children, ...rest }
                   <ButtonToolbar>
                     <StyledButton
                       appearance="subtle"
-                      onClick={() =>
-                        handleGoToButton(rest.activePage - 5 > 1 ? rest.activePage - 5 : 1)
-                      }
+                      onClick={() => {
+                        const p = rest.activePage - 5 > 1 ? rest.activePage - 5 : 1;
+                        if (p !== rest.activePage) handleGoToButton(p);
+                      }}
                     >
                       -5
                     </StyledButton>
                     <StyledButton
                       appearance="subtle"
-                      onClick={() =>
-                        handleGoToButton(rest.activePage - 15 > 1 ? rest.activePage - 15 : 1)
-                      }
+                      onClick={() => {
+                        const p = rest.activePage - 15 > 1 ? rest.activePage - 15 : 1;
+                        if (p !== rest.activePage) handleGoToButton(p);
+                      }}
                     >
                       -15
                     </StyledButton>
                     <StyledButton
                       appearance="subtle"
-                      onClick={() =>
-                        handleGoToButton(rest.activePage - 50 > 1 ? rest.activePage - 50 : 1)
-                      }
+                      onClick={() => {
+                        const p = rest.activePage - 50 > 1 ? rest.activePage - 50 : 1;
+                        if (p !== rest.activePage) handleGoToButton(p);
+                      }}
                     >
                       -50
                     </StyledButton>
@@ -94,7 +99,7 @@ const Paginator = ({ startIndex, endIndex, handleGoToButton, children, ...rest }
                 </Popup>
               }
             >
-              <StyledIconButton size="sm" appearance="subtle" icon={<Icon icon="caret-right" />} />
+              <StyledIconButton size="sm" appearance="subtle" icon={<CaretRightIcon />} />
             </Whisper>
           )}
         </FlexboxGrid.Item>

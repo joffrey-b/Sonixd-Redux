@@ -1,5 +1,6 @@
 stages:
   - test
+  - e2e
   - build
 
 default:
@@ -11,30 +12,44 @@ default:
         - yarn.lock
     paths:
       - node_modules/
+      - .eslintcache
 
 # -------------------------
 # TEST JOB (runs always)
 # -------------------------
 test:
   stage: test
+  timeout: 60 minutes
+  variables:
+    ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
   rules:
     - when: always
   script:
     - yarn install --frozen-lockfile --network-timeout 300000 --network-concurrency 1
     - yarn lint
     - yarn build:main
+    - yarn build:preload
     - yarn build:renderer
-    - yarn tsc-silent -p ./tsconfig.json --suppress 2702@/node_modules/react-chartjs-2/ 9006@/src/main.dev.js
-    - yarn test
+    - yarn tsc-silent -p ./tsconfig.json --suppress 2702@/node_modules/react-chartjs-2/ 9006@/src/main.dev.mjs
+    - yarn test --ci --forceExit
 
 # -------------------------
 # BUILD JOB (only on tags)
 # -------------------------
 build-windows:
   stage: build
+  timeout: 60 minutes
   rules:
     - if: $CI_COMMIT_TAG
       when: on_success
+  cache:
+    policy: pull
+    key:
+      files:
+        - yarn.lock
+    paths:
+      - node_modules/
+      - .eslintcache
   variables:
     ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
   script:
@@ -47,4 +62,57 @@ build-windows:
     name: sonixd-redux-$CI_COMMIT_TAG-windows
     paths:
       - release/*.exe
+    expire_in: 2 weeks
+
+# -------------------------
+# E2E JOB
+# -------------------------
+e2e:
+  stage: e2e
+  tags:
+    - linux-mint
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: on_success
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: on_success
+  variables:
+    DISPLAY: ':99'
+  before_script:
+    # openssl is assumed present on the runner (standard on Linux Mint) — not
+    # scripted as an apt-get install here, same reasoning as the Chromium deps
+    # note below: a system-level runner dependency, not a per-job install.
+    - bash e2e/scripts/setup-tls.sh
+    - cd e2e
+    - docker compose pull --quiet
+    - docker compose up -d
+    - bash scripts/wait-for-services.sh
+    - bash scripts/setup-navidrome.sh
+    - bash scripts/setup-jellyfin.sh
+    - cd ..
+    - yarn install --frozen-lockfile --network-timeout 300000
+    - yarn build
+    # OS-level Chromium deps (libnss3, libatk, fonts, etc.) are pre-installed on
+    # the runner host once via `sudo npx playwright install-deps chromium` —
+    # *not* --with-deps here, since that shells out through `sudo sh -c "apt-get
+    # ..."`, which can't be meaningfully scoped in sudoers (any glob pattern
+    # permissive enough to match Playwright's evolving package list is also
+    # trivially bypassable via shell metacharacters). Re-run that command
+    # manually on the runner whenever bumping the Playwright version.
+    - npx playwright install chromium
+  script:
+    - xvfb-run -a --server-args="-screen 0 1920x1080x24"
+      yarn e2e
+  after_script:
+    # Captured before teardown for post-mortem debugging of any future
+    # library-scan or container-startup issues.
+    - cd e2e && docker compose logs navidrome > navidrome.log 2>&1 || true
+    - docker compose logs jellyfin > jellyfin.log 2>&1 || true
+    - docker compose down -v || true
+  artifacts:
+    when: always
+    paths:
+      - e2e/playwright-report/
+      - e2e/navidrome.log
+      - e2e/jellyfin.log
     expire_in: 2 weeks

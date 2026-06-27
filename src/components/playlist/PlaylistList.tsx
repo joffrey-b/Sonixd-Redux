@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { useQuery, useQueryClient } from 'react-query';
-import { useHistory } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Form, Whisper } from 'rsuite';
+import type { OverlayTriggerHandle } from 'rsuite/esm/internals/Overlay/types';
 import { useTranslation } from 'react-i18next';
 import useSearchQuery from '../../hooks/useSearchQuery';
 import ListViewType from '../viewtypes/ListViewType';
@@ -20,17 +21,17 @@ import { setSort } from '../../redux/playlistSlice';
 import ColumnSortPopover from '../shared/ColumnSortPopover';
 import useListClickHandler from '../../hooks/useListClickHandler';
 import Popup from '../shared/Popup';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
 
 const PlaylistList = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const history = useHistory();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const config = useAppSelector((state) => state.config);
   const misc = useAppSelector((state) => state.misc);
   const playlist = useAppSelector((state) => state.playlist);
-  const playlistTriggerRef = useRef<any>();
+  const playlistTriggerRef = useRef<OverlayTriggerHandle | null>(null);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [viewType, setViewType] = useState(settings.get('playlistViewType') || 'list');
   const {
@@ -38,9 +39,10 @@ const PlaylistList = () => {
     isError,
     data: playlists,
     error,
-  }: any = useQuery(['playlists'], () =>
-    apiController({ serverType: config.serverType, endpoint: 'getPlaylists' })
-  );
+  } = useQuery({
+    queryKey: ['playlists'],
+    queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getPlaylists' }),
+  });
   const filteredData = useSearchQuery(misc.searchQuery, playlists, ['title', 'comment', 'owner']);
   const { sortedData, sortColumns } = useColumnSort(
     playlists,
@@ -59,10 +61,8 @@ const PlaylistList = () => {
       if (isFailedResponse(res)) {
         notifyToast('error', errorMessages(res)[0]);
       } else {
-        await queryClient.refetchQueries(['playlists'], {
-          active: true,
-        });
-        notifyToast('success', `Playlist "${name}" created!`);
+        await queryClient.refetchQueries({ queryKey: ['playlists'], type: 'active' });
+        notifyToast('success', t('Playlist "{{name}}" created!', { name }));
       }
     } catch (err) {
       notifyToast('error', err);
@@ -70,7 +70,7 @@ const PlaylistList = () => {
   };
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
-    doubleClick: (rowData: any) => history.push(`playlist/${rowData.id}`),
+    doubleClick: (rowData: { id: string; uniqueId: string }) => navigate(`/playlist/${rowData.id}`),
   });
 
   if (isError) {
@@ -110,7 +110,7 @@ const PlaylistList = () => {
                     })
                   )
                 }
-                setSortType={(e: string) =>
+                setSortType={(e: 'asc' | 'desc') =>
                   dispatch(
                     setSort({
                       type: 'list',
@@ -141,48 +141,53 @@ const PlaylistList = () => {
             </>
           }
           subtitle={
-            <Whisper
-              ref={playlistTriggerRef}
-              enterable
-              placement="auto"
-              trigger="click"
-              speaker={
-                <Popup>
-                  <Form>
-                    <StyledInputGroup>
-                      <StyledInput
-                        placeholder={t('Enter name...')}
-                        value={newPlaylistName}
-                        onChange={(e: string) => setNewPlaylistName(e)}
-                      />
-                    </StyledInputGroup>
-                    <br />
-                    <StyledButton
-                      size="sm"
-                      type="submit"
-                      block
-                      loading={false}
-                      appearance="primary"
-                      onClick={() => {
-                        handleCreatePlaylist(newPlaylistName);
-                        playlistTriggerRef.current.close();
-                      }}
-                    >
-                      {t('Create')}
-                    </StyledButton>
-                  </Form>
-                </Popup>
-              }
-            >
-              <AddPlaylistButton
-                size="sm"
-                onClick={() =>
-                  playlistTriggerRef.current.state.isOverlayShown
-                    ? playlistTriggerRef.current.close()
-                    : playlistTriggerRef.current.open()
+            <span style={{ display: 'inline-block' }}>
+              <Whisper
+                ref={playlistTriggerRef}
+                enterable
+                placement="auto"
+                trigger="click"
+                speaker={
+                  <Popup>
+                    <Form>
+                      <StyledInputGroup>
+                        <StyledInput
+                          data-testid="new-playlist-name-input"
+                          placeholder={t('Enter name...')}
+                          value={newPlaylistName}
+                          onChange={(e: string) => setNewPlaylistName(e)}
+                        />
+                      </StyledInputGroup>
+                      <br />
+                      <StyledButton
+                        data-testid="create-playlist-confirm-button"
+                        size="sm"
+                        type="submit"
+                        block
+                        loading={false}
+                        appearance="primary"
+                        onClick={() => {
+                          handleCreatePlaylist(newPlaylistName);
+                          playlistTriggerRef.current?.close();
+                        }}
+                      >
+                        {t('Create')}
+                      </StyledButton>
+                    </Form>
+                  </Popup>
                 }
-              />
-            </Whisper>
+              >
+                <AddPlaylistButton
+                  data-testid="add-playlist-button"
+                  size="sm"
+                  onClick={() =>
+                    playlistTriggerRef.current?.getState().open
+                      ? playlistTriggerRef.current?.close()
+                      : playlistTriggerRef.current?.open()
+                  }
+                />
+              </Whisper>
+            </span>
           }
           showViewTypeButtons
           viewTypeSetting="playlist"
@@ -226,14 +231,14 @@ const PlaylistList = () => {
           data={misc.searchQuery === '' ? sortedData : filteredData}
           loading={isLoading}
           cardTitle={{
-            prefix: 'playlist',
+            prefix: '/playlist',
             property: 'title',
             urlProperty: 'id',
           }}
           cardSubtitle={{
             prefix: 'playlist',
             property: 'songCount',
-            unit: ' tracks',
+            unit: ` ${t('tracks')}`,
           }}
           playClick={{ type: 'playlist', idProperty: 'id' }}
           size={config.lookAndFeel.gridView.cardSize}

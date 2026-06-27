@@ -20,7 +20,7 @@ import {
   setEqPreamp,
   EqPreset,
 } from '../../../redux/eqSlice';
-import { settings } from '../../shared/setDefaultSettings';
+import { settings } from '../../shared/bridge';
 import { notifyToast } from '../../shared/toast';
 
 const EQ_BANDS = [
@@ -66,7 +66,7 @@ const BandColumn = styled.div`
 
 const BandLabel = styled.div`
   font-size: 11px;
-  color: ${(props) => props.theme.colors.layout.page.colorSecondary};
+  color: var(--app-text-secondary);
   white-space: nowrap;
 `;
 
@@ -74,7 +74,7 @@ const DbLabel = styled.div`
   font-size: 11px;
   min-width: 32px;
   text-align: center;
-  color: ${(props) => props.theme.colors.layout.page.color};
+  color: var(--app-text);
 `;
 
 const VerticalSlider = styled.input.attrs({ type: 'range' })`
@@ -83,7 +83,7 @@ const VerticalSlider = styled.input.attrs({ type: 'range' })`
   width: 24px;
   height: 120px;
   cursor: pointer;
-  accent-color: ${(props) => props.theme.colors.primary};
+  accent-color: var(--app-primary);
 `;
 
 const CustomPresetRow = styled.div`
@@ -104,10 +104,10 @@ const CustomPresetName = styled.div`
   flex: 1;
 `;
 
-const EQConfig = ({ bordered }: any) => {
+const EQConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const eq = useAppSelector((state: any) => state.eq);
+  const eq = useAppSelector((state) => state.eq);
   const [customPresetName, setCustomPresetName] = useState('');
   const [pendingOverwrite, setPendingOverwrite] = useState<string | null>(null);
   const presetPickerContainerRef = useRef(null);
@@ -182,7 +182,7 @@ const EQConfig = ({ bordered }: any) => {
           </FlexboxGrid.Item>
           <FlexboxGrid.Item>
             <StyledToggle
-              defaultChecked={eq.enabled}
+              data-testid="eq-enable-toggle"
               checked={eq.enabled}
               onChange={handleToggleEnabled}
             />
@@ -255,8 +255,9 @@ const EQConfig = ({ bordered }: any) => {
           <BandColumn>
             <BandLabel>{t('Pre')}</BandLabel>
             <VerticalSlider
-              min={-12}
-              max={0}
+              data-testid="eq-preamp-slider"
+              min={-15}
+              max={15}
               step={0.5}
               value={eq.preampDb}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
@@ -270,11 +271,14 @@ const EQConfig = ({ bordered }: any) => {
             <BandColumn key={band.freq}>
               <BandLabel>{band.label}</BandLabel>
               <VerticalSlider
+                data-testid={`eq-band-${i}-slider`}
                 min={-12}
                 max={12}
                 step={0.5}
                 value={eq.gains[i] ?? 0}
-                onChange={(e) => handleGainChange(i, Number(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  handleGainChange(i, Number(e.target.value))
+                }
                 disabled={!eq.enabled}
               />
               <DbLabel>{formatDb(eq.gains[i] ?? 0)}</DbLabel>
@@ -290,6 +294,7 @@ const EQConfig = ({ bordered }: any) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ flex: 1 }}>
             <StyledInput
+              data-testid="eq-preset-name-input"
               inputRef={inputRef}
               size="sm"
               disabled={!eq.enabled}
@@ -305,7 +310,12 @@ const EQConfig = ({ bordered }: any) => {
               }}
             />
           </div>
-          <StyledButton size="sm" disabled={!eq.enabled} onClick={handleSaveCustomPreset}>
+          <StyledButton
+            data-testid="eq-preset-save-button"
+            size="sm"
+            disabled={!eq.enabled}
+            onClick={handleSaveCustomPreset}
+          >
             {pendingOverwrite === customPresetName.trim() ? t('Confirm') : t('Save')}
           </StyledButton>
         </div>
@@ -314,7 +324,7 @@ const EQConfig = ({ bordered }: any) => {
             style={{
               marginTop: 6,
               fontSize: 12,
-              color: '#e8a838',
+              color: 'var(--rs-color-yellow)',
               display: 'flex',
               alignItems: 'center',
               gap: 8,
@@ -337,8 +347,9 @@ const EQConfig = ({ bordered }: any) => {
           </div>
           {eq.customPresets.map((preset: EqPreset) => (
             <CustomPresetRow key={preset.name}>
-              <CustomPresetName>{preset.name}</CustomPresetName>
+              <CustomPresetName data-testid="eq-preset-list-item">{preset.name}</CustomPresetName>
               <StyledButton
+                data-testid="eq-preset-load-button"
                 size="xs"
                 disabled={!eq.enabled}
                 onClick={() => handleLoadPreset(preset.gains, preset.preampDb)}
@@ -346,8 +357,8 @@ const EQConfig = ({ bordered }: any) => {
                 {t('Load')}
               </StyledButton>
               <StyledButton
+                data-testid="eq-preset-delete-button"
                 size="xs"
-                appearance="subtle"
                 disabled={!eq.enabled}
                 onClick={() => handleDeleteCustomPreset(preset.name)}
               >

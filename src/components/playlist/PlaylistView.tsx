@@ -1,11 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import _ from 'lodash';
-import fs from 'fs';
-import path from 'path';
-import { ButtonToolbar, ControlLabel, Form, Whisper } from 'rsuite';
+import { ButtonToolbar, Form, Whisper } from 'rsuite';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { useQuery, useQueryClient } from 'react-query';
-import { useParams, useHistory } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   DeleteButton,
@@ -30,12 +28,13 @@ import {
   getCurrentEntryList,
   getRecoveryPath,
   getUniqueRandomNumberArr,
-  isCached,
   isFailedResponse,
+  joinPath,
 } from '../../shared/utils';
+import useIsCached from '../../hooks/useIsCached';
 import useSearchQuery from '../../hooks/useSearchQuery';
 import GenericPage from '../layout/GenericPage';
-import ListViewType from '../viewtypes/ListViewType';
+import ListViewType, { ListViewHandle } from '../viewtypes/ListViewType';
 import GenericPageHeader from '../layout/GenericPageHeader';
 import { setStatus } from '../../redux/playerSlice';
 import { notifyToast } from '../shared/toast';
@@ -45,7 +44,10 @@ import { removeFromPlaylist, setPlaylistData } from '../../redux/playlistSlice';
 import { PageHeaderSubtitleDataLine } from '../layout/styled';
 import CustomTooltip from '../shared/CustomTooltip';
 import { apiController } from '../../api/controller';
-import { Play, Server } from '../../types';
+import { Play, Playlist, Server, Song } from '../../types';
+import type { RowDataType } from 'rsuite-table';
+import type { WhisperInstance } from 'rsuite/Whisper';
+
 import Card from '../card/Card';
 import CenterLoader from '../loader/CenterLoader';
 import useListClickHandler from '../../hooks/useListClickHandler';
@@ -54,11 +56,7 @@ import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
 import { useBrowserDownload } from '../../hooks/useBrowserDownload';
-import { settings } from '../shared/setDefaultSettings';
-
-interface PlaylistParams {
-  id: string;
-}
+import { settings, cache, recovery as recoveryBridge } from '../shared/bridge';
 
 const PlaylistView = ({ ...rest }) => {
   const { t } = useTranslation();
@@ -68,19 +66,24 @@ const PlaylistView = ({ ...rest }) => {
   const multiSelect = useAppSelector((state) => state.multiSelect);
   const config = useAppSelector((state) => state.config);
   const misc = useAppSelector((state) => state.misc);
-  const history = useHistory();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const editTriggerRef = useRef<any>();
-  const tableRef = useRef<any>();
-  const { id } = useParams<PlaylistParams>();
+  const editTriggerRef = useRef<WhisperInstance | null>(null);
+  const tableRef = useRef<ListViewHandle | null>(null);
+  const { id } = useParams();
   const playlistId = rest.id ? rest.id : id;
-  const { isLoading, isError, data, error }: any = useQuery(['playlist', playlistId], () =>
-    apiController({
-      serverType: config.serverType,
-      endpoint: 'getPlaylist',
-      args: { id: playlistId },
-    })
-  );
+  const playlistImagePath = `${misc.imageCachePath}playlist_${playlistId}.jpg`;
+  const isPlaylistImageCached = useIsCached(playlistImagePath);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- data has 50+ access sites guarded at runtime by isLoading/isError early returns; narrowing would require extensive restructuring
+  const { isLoading, isError, data, error }: any = useQuery({
+    queryKey: ['playlist', playlistId],
+    queryFn: () =>
+      apiController({
+        serverType: config.serverType,
+        endpoint: 'getPlaylist',
+        args: { id: playlistId },
+      }),
+  });
 
   const [customPlaylistImage, setCustomPlaylistImage] = useState<string | string[]>(
     'img/placeholder.png'
@@ -91,6 +94,7 @@ const PlaylistView = ({ ...rest }) => {
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const [recoveryPath, setRecoveryPath] = useState('');
   const [needsRecovery, setNeedsRecovery] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const filteredData = useSearchQuery(misc.searchQuery, playlist.entry, [
     'title',
     'artist',
@@ -103,19 +107,33 @@ const PlaylistView = ({ ...rest }) => {
   useHotkeys(
     config.hotkeys.removeSelected,
     () => {
+      if (multiSelect.selected.length === 0) return;
       const selectedType = multiSelect.selected[0].type;
       if (selectedType === 'music') {
-        dispatch(removeFromPlaylist({ selectedEntries: multiSelect.selected }));
+        dispatch(
+          removeFromPlaylist({ selectedEntries: multiSelect.selected as unknown as Song[] })
+        );
       }
     },
     [multiSelect.selected, config.hotkeys.removeSelected]
   );
 
   useEffect(() => {
-    const recoveryFilePath = path.join(getRecoveryPath(), `playlist_${data?.id}.json`);
+    let cancelled = false;
+    const recoveryFilePath = joinPath(getRecoveryPath(), `playlist_${data?.id}.json`);
 
     setRecoveryPath(recoveryFilePath);
-    setNeedsRecovery(fs.existsSync(recoveryFilePath));
+    cache
+      .exists(recoveryFilePath)
+      .then((exists) => {
+        if (!cancelled) setNeedsRecovery(exists);
+        return undefined;
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, [data?.id]);
 
   useEffect(() => {
@@ -135,7 +153,7 @@ const PlaylistView = ({ ...rest }) => {
   }, [data?.song, playlist]);
 
   const { handleRowClick, handleRowDoubleClick, handleDragEnd } = useListClickHandler({
-    doubleClick: (rowData: any) => {
+    doubleClick: (rowData: RowDataType) => {
       dispatch(
         setPlayQueueByRowClick({
           entries: rowData.tableData,
@@ -160,8 +178,13 @@ const PlaylistView = ({ ...rest }) => {
     if (config.serverType === Server.Subsonic) {
       try {
         let res;
+        // `recovery.read` returns null on ENOENT (the bridge can't synchronously throw
+        // like `fs.readFileSync` did) -- throwing here preserves the original's
+        // "missing recovery file falls into the catch block" behavior exactly.
+        const recoveryRaw = recovery ? await recoveryBridge.read(recoveryPath) : null;
+        if (recovery && recoveryRaw === null) throw new Error('Recovery file not found');
         const playlistData = recovery
-          ? JSON.parse(fs.readFileSync(recoveryPath, { encoding: 'utf-8' }))
+          ? JSON.parse(recoveryRaw as string)
           : playlist[getCurrentEntryList(playlist)];
 
         // Smaller playlists can use the safe /createPlaylist method of saving
@@ -176,9 +199,7 @@ const PlaylistView = ({ ...rest }) => {
             notifyToast('error', errorMessages(res)[0]);
           } else {
             notifyToast('success', t('Saved playlist'));
-            await queryClient.refetchQueries(['playlist'], {
-              active: true,
-            });
+            await queryClient.refetchQueries({ queryKey: ['playlist'], type: 'active' });
           }
         } else {
           // For larger playlists, we'll need to first clear out the playlist and then re-populate it
@@ -201,7 +222,7 @@ const PlaylistView = ({ ...rest }) => {
           });
 
           if (isFailedResponse(res)) {
-            res.forEach((response: any) => {
+            (res as unknown[]).forEach((response: unknown) => {
               if (isFailedResponse(response)) {
                 notifyToast('error', errorMessages(response)[0]);
               }
@@ -216,58 +237,74 @@ const PlaylistView = ({ ...rest }) => {
 
           if (recovery) {
             // If the recovery succeeds, we can remove the recovery file
-            fs.unlinkSync(recoveryPath);
+            await recoveryBridge.remove(recoveryPath);
             setNeedsRecovery(false);
             notifyToast('success', t('Recovered playlist from backup'));
           } else {
             notifyToast('success', t('Saved playlist'));
           }
 
-          await queryClient.refetchQueries(['playlist'], {
-            active: true,
-          });
+          await queryClient.refetchQueries({ queryKey: ['playlist'], type: 'active' });
         }
       } catch {
         notifyToast('error', t('Errored while saving playlist'));
-        const playlistData = recovery
-          ? JSON.parse(fs.readFileSync(recoveryPath, { encoding: 'utf-8' }))
-          : playlist[getCurrentEntryList(playlist)];
+        // The original's `fs.readFileSync` would throw uncaught here if the recovery
+        // file were missing (a latent crash this catch block had no handler for) --
+        // falling back to the live playlist data on a null read closes that path as
+        // a natural consequence of `recovery.read`'s null-on-ENOENT contract, without
+        // changing the happy-path (file present) behavior at all.
+        try {
+          const recoveryRaw = recovery ? await recoveryBridge.read(recoveryPath) : null;
+          const playlistData =
+            recovery && recoveryRaw !== null
+              ? JSON.parse(recoveryRaw)
+              : playlist[getCurrentEntryList(playlist)];
 
-        createRecoveryFile(data.id, 'playlist', playlistData);
-        setNeedsRecovery(true);
-        dispatch(removeProcessingPlaylist(data.id));
+          createRecoveryFile(data.id, 'playlist', playlistData);
+          setNeedsRecovery(true);
+        } catch (recoveryErr) {
+          // eslint-disable-next-line no-console
+          console.error(recoveryErr);
+        } finally {
+          dispatch(removeProcessingPlaylist(data.id));
+        }
       }
     }
 
     if (config.serverType === Server.Jellyfin) {
-      const { id: newPlaylistId } = await apiController({
-        serverType: config.serverType,
-        endpoint: 'updatePlaylistSongs',
-        args: { name: data.title, entry: playlist[getCurrentEntryList(playlist)] },
-      });
-
-      if (newPlaylistId) {
-        await apiController({
+      try {
+        const result = await apiController({
           serverType: config.serverType,
-          endpoint: 'deletePlaylist',
-          args: { id: data.id },
+          endpoint: 'updatePlaylistSongs',
+          args: { name: data.title, entry: playlist[getCurrentEntryList(playlist)] },
         });
+        const newPlaylistId = result?.id;
 
-        await apiController({
-          serverType: config.serverType,
-          endpoint: 'updatePlaylist',
-          args: {
-            id: newPlaylistId,
-            name: data.title,
-            dateCreated: data.created,
-            comment: data.comment,
-            genres: data.genres,
-          },
-        });
+        if (newPlaylistId) {
+          await apiController({
+            serverType: config.serverType,
+            endpoint: 'deletePlaylist',
+            args: { id: data.id },
+          });
 
-        history.replace(`/playlist/${newPlaylistId}`);
-        notifyToast('success', t('Saved playlist'));
-      } else {
+          await apiController({
+            serverType: config.serverType,
+            endpoint: 'updatePlaylist',
+            args: {
+              id: newPlaylistId,
+              name: data.title,
+              dateCreated: data.created,
+              comment: data.comment,
+              genres: data.genres,
+            },
+          });
+
+          navigate(`/playlist/${newPlaylistId}`);
+          notifyToast('success', t('Saved playlist'));
+        } else {
+          notifyToast('error', t('Error saving playlist'));
+        }
+      } catch {
         notifyToast('error', t('Error saving playlist'));
       }
     }
@@ -299,7 +336,7 @@ const PlaylistView = ({ ...rest }) => {
         if (isFailedResponse(res)) {
           notifyToast('error', errorMessages(res)[0]);
         } else {
-          queryClient.setQueryData(['playlist', playlistId], (oldData: any) => {
+          queryClient.setQueryData(['playlist', playlistId], (oldData: Playlist | undefined) => {
             return { ...oldData, title: editName, comment: editDescription, public: editPublic };
           });
         }
@@ -312,7 +349,7 @@ const PlaylistView = ({ ...rest }) => {
 
     if (config.serverType === Server.Jellyfin) {
       try {
-        apiController({
+        await apiController({
           serverType: config.serverType,
           endpoint: 'updatePlaylist',
           args: {
@@ -323,19 +360,18 @@ const PlaylistView = ({ ...rest }) => {
             isPublic: editPublic,
           },
         });
+        notifyToast('success', t('Saved playlist'));
+        queryClient.setQueryData(['playlist', playlistId], (oldData: Playlist | undefined) => {
+          return { ...oldData, title: editName, comment: editDescription, public: editPublic };
+        });
       } catch {
         notifyToast('error', t('Error saving playlist'));
       } finally {
         setIsSubmittingEdit(false);
       }
-
-      notifyToast('success', t('Saved playlist'));
-      queryClient.setQueryData(['playlist', playlistId], (oldData: any) => {
-        return { ...oldData, title: editName, comment: editDescription, public: editPublic };
-      });
     }
 
-    editTriggerRef.current.close();
+    editTriggerRef.current?.close();
   };
 
   const handleDelete = async () => {
@@ -349,7 +385,7 @@ const PlaylistView = ({ ...rest }) => {
       if (isFailedResponse(res)) {
         notifyToast('error', res.error.message);
       } else {
-        history.push('/playlist');
+        navigate('/playlist');
       }
     } catch (err) {
       notifyToast('error', err);
@@ -360,8 +396,8 @@ const PlaylistView = ({ ...rest }) => {
   const { handleRating } = useRating();
 
   useEffect(() => {
-    if (data?.image.match('placeholder')) {
-      const uniqueAlbums: any = _.uniqBy(data?.song, 'albumId');
+    if (data?.image?.match('placeholder')) {
+      const uniqueAlbums = _.uniqBy(data?.song ?? [], 'albumId') as unknown as Song[];
 
       if (uniqueAlbums.length === 0) {
         setCustomPlaylistImage('img/placeholder.png');
@@ -382,7 +418,11 @@ const PlaylistView = ({ ...rest }) => {
   }
 
   if (isError) {
-    return <span>Error: {error.message}</span>;
+    return (
+      <span>
+        {t('Error')}: {error.message}
+      </span>
+    );
   }
 
   return (
@@ -395,11 +435,11 @@ const PlaylistView = ({ ...rest }) => {
               title={t('None')}
               subtitle=""
               coverArt={
-                data?.image.match('placeholder')
+                data?.image?.match('placeholder')
                   ? customPlaylistImage
-                  : isCached(`${misc.imageCachePath}playlist_${playlistId}.jpg`)
-                  ? `${misc.imageCachePath}playlist_${playlistId}.jpg`
-                  : data.image
+                  : isPlaylistImageCached
+                    ? playlistImagePath
+                    : data?.image
               }
               size={185}
               hasHoverButtons
@@ -411,7 +451,7 @@ const PlaylistView = ({ ...rest }) => {
             />
           }
           cacheImages={{
-            enabled: settings.get('cacheImages'),
+            enabled: settings.get('cacheImages') ?? false,
             cacheType: 'playlist',
             id: data.id,
           }}
@@ -420,7 +460,7 @@ const PlaylistView = ({ ...rest }) => {
           subtitle={
             <div>
               <PageHeaderSubtitleDataLine $top>
-                <StyledLink onClick={() => history.push('/playlist')}>
+                <StyledLink onClick={() => navigate('/playlist')}>
                   <strong>{t('Playlist')}</strong>
                 </StyledLink>{' '}
                 • {data.songCount} songs, {formatDuration(data.duration)} •{' '}
@@ -484,6 +524,7 @@ const PlaylistView = ({ ...rest }) => {
                     disabled={playlist.entry?.length < 1}
                   />
                   <SaveButton
+                    data-testid="playlist-save-button"
                     size="md"
                     appearance="subtle"
                     text={
@@ -518,27 +559,30 @@ const PlaylistView = ({ ...rest }) => {
                     speaker={
                       <Popup>
                         <Form>
-                          <ControlLabel>{t('Name')}</ControlLabel>
+                          <Form.ControlLabel>{t('Name')}</Form.ControlLabel>
                           <StyledInput
+                            data-testid="edit-playlist-name-input"
                             placeholder={t('Name')}
                             value={editName}
                             onChange={(e: string) => setEditName(e)}
                           />
-                          <ControlLabel>{t('Description')}</ControlLabel>
+                          <Form.ControlLabel>{t('Description')}</Form.ControlLabel>
                           <StyledInput
+                            data-testid="edit-playlist-description-input"
                             placeholder={t('Description')}
                             value={editDescription}
                             onChange={(e: string) => setEditDescription(e)}
                           />
                           <StyledCheckbox
-                            defaultChecked={editPublic}
-                            value={editPublic}
-                            onChange={(_v: any, e: boolean) => setEditPublic(e)}
+                            data-testid="edit-playlist-public-checkbox"
+                            checked={editPublic}
+                            onChange={(_v: unknown, e: boolean) => setEditPublic(e)}
                             disabled={config.serverType === Server.Jellyfin}
                           >
                             {t('Public')}
                           </StyledCheckbox>
                           <StyledButton
+                            data-testid="edit-playlist-save-button"
                             size="md"
                             type="submit"
                             block
@@ -554,6 +598,7 @@ const PlaylistView = ({ ...rest }) => {
                     }
                   >
                     <EditButton
+                      data-testid="edit-playlist-button"
                       size="md"
                       appearance="subtle"
                       disabled={misc.isProcessingPlaylist.includes(data?.id)}
@@ -578,31 +623,47 @@ const PlaylistView = ({ ...rest }) => {
                       </Popup>
                     }
                   >
-                    <DownloadButton
-                      size="lg"
-                      appearance="subtle"
-                      downloadSize={getAlbumSize(data.song)}
-                    />
+                    {/* DownloadButton renders its own CustomTooltip, which is itself a
+                        Whisper — nesting that directly as this outer Whisper's child
+                        leaves it without a plain DOM node to measure for positioning,
+                        so the popup fell back to the viewport origin (top-left)
+                        instead of anchoring under the button. A plain wrapper element
+                        gives it one, same as nav-search's Whisper in SearchBar.tsx. */}
+                    <span style={{ display: 'inline-block' }}>
+                      <DownloadButton
+                        size="lg"
+                        appearance="subtle"
+                        downloadSize={getAlbumSize(data.song)}
+                      />
+                    </span>
                   </Whisper>
-                  <Whisper
-                    enterable
-                    placement="auto"
-                    trigger="click"
-                    speaker={
-                      <Popup>
-                        <p>{t('Are you sure you want to delete this playlist?')}</p>
-                        <StyledButton onClick={handleDelete} appearance="link">
-                          {t('Yes')}
-                        </StyledButton>
-                      </Popup>
-                    }
-                  >
+                  {showDeleteConfirm ? (
+                    <>
+                      <StyledButton
+                        data-testid="delete-playlist-confirm-yes"
+                        size="sm"
+                        appearance="primary"
+                        onClick={handleDelete}
+                      >
+                        {t('Yes')}
+                      </StyledButton>
+                      <StyledButton
+                        size="sm"
+                        appearance="subtle"
+                        onClick={() => setShowDeleteConfirm(false)}
+                      >
+                        {t('No')}
+                      </StyledButton>
+                    </>
+                  ) : (
                     <DeleteButton
+                      data-testid="delete-playlist-button"
                       size="md"
                       appearance="subtle"
                       disabled={misc.isProcessingPlaylist.includes(data?.id)}
+                      onClick={() => setShowDeleteConfirm(true)}
                     />
-                  </Whisper>
+                  )}
                 </ButtonToolbar>
               </div>
             </div>
@@ -630,10 +691,10 @@ const PlaylistView = ({ ...rest }) => {
         dnd
         isModal={rest.isModal}
         disabledContextMenuOptions={['deletePlaylist', 'viewInModal']}
-        handleFavorite={(rowData: any) =>
+        handleFavorite={(rowData: RowDataType) =>
           handleFavorite(rowData, { queryKey: ['playlist', playlistId] })
         }
-        handleRating={(rowData: any, rating: number) => handleRating(rowData, { rating })}
+        handleRating={(rowData: RowDataType, rating: number) => handleRating(rowData, { rating })}
         loading={isLoading}
       />
     </GenericPage>

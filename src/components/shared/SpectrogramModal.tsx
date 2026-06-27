@@ -1,64 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import styled from 'styled-components';
-
-// Cooley-Tukey in-place FFT (power-of-2 size)
-function fft(re: Float32Array, im: Float32Array) {
-  const n = re.length;
-  for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) {
-      // eslint-disable-next-line no-param-reassign
-      let t = re[i];
-      // eslint-disable-next-line no-param-reassign
-      re[i] = re[j];
-      // eslint-disable-next-line no-param-reassign
-      re[j] = t;
-      // eslint-disable-next-line no-param-reassign
-      t = im[i];
-      // eslint-disable-next-line no-param-reassign
-      im[i] = im[j];
-      // eslint-disable-next-line no-param-reassign
-      im[j] = t;
-    }
-  }
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = (-2 * Math.PI) / len;
-    const wCosBase = Math.cos(ang);
-    const wSinBase = Math.sin(ang);
-    for (let i = 0; i < n; i += len) {
-      let wCos = 1;
-      let wSin = 0;
-      for (let j = 0; j < len >> 1; j++) {
-        const k = i + j + (len >> 1);
-        const uRe = re[i + j];
-        const uIm = im[i + j];
-        const vRe = re[k] * wCos - im[k] * wSin;
-        const vIm = re[k] * wSin + im[k] * wCos;
-        // eslint-disable-next-line no-param-reassign
-        re[i + j] = uRe + vRe;
-        // eslint-disable-next-line no-param-reassign
-        im[i + j] = uIm + vIm;
-        // eslint-disable-next-line no-param-reassign
-        re[k] = uRe - vRe;
-        // eslint-disable-next-line no-param-reassign
-        im[k] = uIm - vIm;
-        const nextWCos = wCos * wCosBase - wSin * wSinBase;
-        wSin = wCos * wSinBase + wSin * wCosBase;
-        wCos = nextWCos;
-      }
-    }
-  }
-}
-
-function makeHannWindow(size: number): Float32Array {
-  const w = new Float32Array(size);
-  for (let i = 0; i < size; i++) {
-    w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (size - 1)));
-  }
-  return w;
-}
 
 // black → blue → cyan → green → yellow → red — range: -120 to 0 dB
 function dbToRgb(db: number): [number, number, number] {
@@ -109,6 +51,106 @@ function getFreqLabels(nyquist: number): number[] {
   return labels;
 }
 
+// Worker code embedded as a plain-JS string so it runs as a Blob URL.
+// This avoids Electron's cross-origin block when the page is loaded from
+// file:// but the dev-server serves chunk URLs at http://localhost:PORT.
+// Blob URLs are always same-origin with the creating document.
+const SPECTROGRAM_WORKER_JS = `(function () {
+  function fft(re, im) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) {
+        let tmp = re[i]; re[i] = re[j]; re[j] = tmp;
+        tmp = im[i]; im[i] = im[j]; im[j] = tmp;
+      }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = (-2 * Math.PI) / len;
+      const wCosBase = Math.cos(ang);
+      const wSinBase = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let wCos = 1, wSin = 0;
+        for (let j = 0; j < len >> 1; j++) {
+          const k = i + j + (len >> 1);
+          const uRe = re[i + j], uIm = im[i + j];
+          const vRe = re[k] * wCos - im[k] * wSin;
+          const vIm = re[k] * wSin + im[k] * wCos;
+          re[i + j] = uRe + vRe; im[i + j] = uIm + vIm;
+          re[k] = uRe - vRe; im[k] = uIm - vIm;
+          const nextWCos = wCos * wCosBase - wSin * wSinBase;
+          wSin = wCos * wSinBase + wSin * wCosBase;
+          wCos = nextWCos;
+        }
+      }
+    }
+  }
+  function makeHannWindow(size) {
+    const w = new Float32Array(size);
+    for (let i = 0; i < size; i++)
+      w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (size - 1)));
+    return w;
+  }
+  function dbToRgb(db) {
+    const t = Math.max(0, Math.min(1, (db + 120) / 120));
+    if (t < 0.25) return [0, 0, Math.round(t * 4 * 255)];
+    if (t < 0.5) { const s = (t - 0.25) * 4; return [0, Math.round(s * 255), 255]; }
+    if (t < 0.75) { const s = (t - 0.5) * 4; return [Math.round(s * 255), 255, Math.round((1 - s) * 255)]; }
+    const s = (t - 0.75) * 4;
+    return [255, Math.round((1 - s) * 255), 0];
+  }
+  let cancelled = false;
+  self.onmessage = function (e) {
+    const msg = e.data;
+    if (msg.type === 'cancel') { cancelled = true; return; }
+    cancelled = false;
+    const { channelData, sampleRate, fftSize, hopSize, numFrames, specH } = msg;
+    try {
+      const nyquist = sampleRate / 2;
+      const freqPerBin = nyquist / (fftSize / 2);
+      const hann = makeHannWindow(fftSize);
+      const re = new Float32Array(fftSize);
+      const im = new Float32Array(fftSize);
+      const rowToBin = new Int32Array(specH);
+      for (let row = 0; row < specH; row++) {
+        const tVal = (specH - 1 - row) / (specH - 1);
+        rowToBin[row] = Math.min(fftSize / 2 - 1, Math.max(0, Math.round((tVal * nyquist) / freqPerBin)));
+      }
+      const pixels = new Uint8ClampedArray(numFrames * specH * 4);
+      const progressStep = Math.max(1, Math.floor(numFrames / 10));
+      for (let frame = 0; frame < numFrames; frame++) {
+        if (cancelled) return;
+        const offset = frame * hopSize;
+        for (let i = 0; i < fftSize; i++) {
+          re[i] = (channelData[offset + i] || 0) * hann[i];
+          im[i] = 0;
+        }
+        fft(re, im);
+        for (let row = 0; row < specH; row++) {
+          const bin = rowToBin[row];
+          const mag = Math.sqrt(re[bin] * re[bin] + im[bin] * im[bin]);
+          const db = mag > 1e-10 ? 20 * Math.log10(mag / (fftSize / 2)) : -120;
+          const [r, g, b] = dbToRgb(db);
+          const idx = (row * numFrames + frame) * 4;
+          pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
+        }
+        if ((frame + 1) % progressStep === 0) {
+          self.postMessage({ type: 'progress', percent: Math.round(((frame + 1) / numFrames) * 100) });
+        }
+      }
+      if (cancelled) return;
+      self.postMessage(
+        { type: 'result', buffer: pixels.buffer, width: numFrames, height: specH },
+        [pixels.buffer]
+      );
+    } catch (err) {
+      self.postMessage({ type: 'error', message: String(err) });
+    }
+  };
+})();`;
+
 // Canvas pixel layout
 const CW = 1500; // total canvas width
 const SPEC_H = 520; // spectrogram area height
@@ -139,6 +181,8 @@ const Container = styled.div`
   overflow: hidden;
   min-width: 500px;
   min-height: 320px;
+  max-width: 100vw;
+  max-height: 100vh;
   width: 860px;
   height: 538px;
   background: #111;
@@ -180,6 +224,11 @@ const CanvasArea = styled.div`
   background: #000;
 `;
 
+type WorkerOutMessage =
+  | { type: 'progress'; percent: number }
+  | { type: 'result'; buffer: ArrayBuffer; width: number; height: number }
+  | { type: 'error'; message: string };
+
 interface Props {
   show: boolean;
   handleHide: () => void;
@@ -189,183 +238,220 @@ interface Props {
 }
 
 const SpectrogramModal = ({ show, handleHide, streamUrl, title, artist }: Props) => {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [progress, setProgress] = useState(0);
+  // Track whether the most recent mousedown on the Backdrop targeted the Backdrop
+  // itself (not a child). If the user drags a resize handle and releases over
+  // the Backdrop, the browser fires click on the Backdrop — we must not close.
+  const mouseDownOnBackdropRef = useRef(false);
 
   useEffect(() => {
     if (!show) {
       setStatus('idle');
+      setProgress(0);
       return undefined;
     }
     if (!streamUrl) return undefined;
     setStatus('loading');
+    setProgress(0);
 
-    let cancelled = false;
+    const blobUrl = URL.createObjectURL(
+      new Blob([SPECTROGRAM_WORKER_JS], { type: 'application/javascript' })
+    );
+    let worker: Worker;
+    try {
+      worker = new Worker(blobUrl);
+    } catch {
+      URL.revokeObjectURL(blobUrl);
+      setStatus('error');
+      return undefined;
+    }
+    URL.revokeObjectURL(blobUrl);
+
+    let workerActive = true;
+
+    // Register onerror immediately — if the worker script fails to load (404,
+    // CSP block, etc.) the ErrorEvent fires right away, before the async IIFE
+    // below has a chance to set it up. A late registration would miss the event.
+    worker.onerror = () => {
+      if (workerActive) setStatus('error');
+    };
 
     (async () => {
       try {
         const response = await fetch(streamUrl);
-        if (cancelled) return;
+        if (!workerActive) return;
         if (!response.ok) throw new Error('fetch failed');
         const arrayBuffer = await response.arrayBuffer();
-        if (cancelled) return;
+        if (!workerActive) return;
 
         const nativeRate = probeNativeSampleRate(arrayBuffer);
         const audioCtx =
           nativeRate > 0
             ? new window.AudioContext({ sampleRate: nativeRate })
             : new window.AudioContext();
-        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        audioCtx.close();
-        if (cancelled) return;
+        try {
+          const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+          if (!workerActive) return;
 
-        const numChannels = audioBuffer.numberOfChannels;
-        const totalSamples = audioBuffer.length;
-        const sampleRate = audioBuffer.sampleRate;
-        const nyquist = sampleRate / 2;
+          const numChannels = audioBuffer.numberOfChannels;
+          const totalSamples = audioBuffer.length;
+          const sampleRate = audioBuffer.sampleRate;
+          const nyquist = sampleRate / 2;
 
-        // Mix down to mono
-        const samples = new Float32Array(totalSamples);
-        for (let c = 0; c < numChannels; c++) {
-          const ch = audioBuffer.getChannelData(c);
-          for (let i = 0; i < totalSamples; i++) samples[i] += ch[i] / numChannels;
-        }
-
-        const numFrames = SPEC_W;
-        const hopSize = Math.max(1, Math.floor((totalSamples - FFT_SIZE) / numFrames));
-        const hann = makeHannWindow(FFT_SIZE);
-        const re = new Float32Array(FFT_SIZE);
-        const im = new Float32Array(FFT_SIZE);
-
-        const canvas = canvasRef.current;
-        if (!canvas || cancelled) return;
-        const ctx = canvas.getContext('2d')!;
-
-        // Background
-        ctx.fillStyle = '#111';
-        ctx.fillRect(0, 0, CW, CH);
-
-        // Linear frequency mapping: row 0 = top = nyquist, row SPEC_H-1 = bottom = 0 Hz
-        const freqPerBin = nyquist / (FFT_SIZE / 2);
-        const rowToBin = new Int32Array(SPEC_H);
-        for (let row = 0; row < SPEC_H; row++) {
-          const t = (SPEC_H - 1 - row) / (SPEC_H - 1); // 0 at bottom, 1 at top
-          const freq = t * nyquist;
-          rowToBin[row] = Math.min(FFT_SIZE / 2 - 1, Math.max(0, Math.round(freq / freqPerBin)));
-        }
-
-        // Compute and draw spectrogram
-        const imgData = ctx.createImageData(SPEC_W, SPEC_H);
-        for (let frame = 0; frame < numFrames; frame++) {
-          if (cancelled) return;
-          const offset = frame * hopSize;
-          for (let i = 0; i < FFT_SIZE; i++) {
-            re[i] = (samples[offset + i] || 0) * hann[i];
-            im[i] = 0;
+          // Mix down to mono
+          const samples = new Float32Array(totalSamples);
+          for (let c = 0; c < numChannels; c++) {
+            const ch = audioBuffer.getChannelData(c);
+            for (let i = 0; i < totalSamples; i++) samples[i] += ch[i] / numChannels;
           }
-          fft(re, im);
-          for (let row = 0; row < SPEC_H; row++) {
-            const bin = rowToBin[row];
-            const mag = Math.sqrt(re[bin] * re[bin] + im[bin] * im[bin]);
-            const db = mag > 1e-10 ? 20 * Math.log10(mag / (FFT_SIZE / 2)) : -120;
-            const [r, g, b] = dbToRgb(db);
-            const idx = (row * SPEC_W + frame) * 4;
-            imgData.data[idx] = r;
-            imgData.data[idx + 1] = g;
-            imgData.data[idx + 2] = b;
-            imgData.data[idx + 3] = 255;
-          }
+
+          const numFrames = SPEC_W;
+          const hopSize = Math.max(1, Math.floor((totalSamples - FFT_SIZE) / numFrames));
+
+          const canvas = canvasRef.current;
+          if (!canvas || !workerActive) return;
+          const ctx = canvas.getContext('2d');
+          if (!ctx || !workerActive) return;
+
+          // Draw background immediately so canvas isn't blank while worker runs
+          ctx.fillStyle = '#111';
+          ctx.fillRect(0, 0, CW, CH);
+
+          worker.onmessage = (e: MessageEvent<WorkerOutMessage>) => {
+            if (!workerActive) return;
+
+            if (e.data.type === 'progress') {
+              setProgress(e.data.percent);
+            } else if (e.data.type === 'result') {
+              const imageData = new ImageData(
+                new Uint8ClampedArray(e.data.buffer),
+                e.data.width,
+                e.data.height
+              );
+              ctx.putImageData(imageData, SPEC_X, 0);
+
+              // Scale font sizes so text renders at the intended CSS pixel size
+              // regardless of how far the canvas is stretched by its CSS dimensions.
+              const bodyFont = window.getComputedStyle(document.body).fontFamily;
+              // 12 px canvas ≈ 7 px visible at default 860 px container width.
+              // Used for all three axes so labels share a consistent size.
+              const labelFont = `300 12px ${bodyFont}`;
+              const txFont = `300 12px ${bodyFont}`;
+
+              // Frequency axis (left strip, dark bg, labels)
+              ctx.fillStyle = '#111';
+              ctx.fillRect(0, 0, AX_L, CH);
+              ctx.font = labelFont;
+              ctx.textAlign = 'right';
+
+              // Separator line
+              ctx.fillStyle = 'rgba(255,255,255,0.2)';
+              ctx.fillRect(AX_L, 0, 1, CH);
+
+              ctx.fillStyle = 'rgba(255,255,255,0.7)';
+
+              // Top label = nyquist — baseline must be >= font size or glyph ascenders clip
+              const nyqLabel = nyquist >= 1000 ? `${Math.round(nyquist / 1000)}k` : `${nyquist}`;
+              ctx.fillText(nyqLabel, AX_L - 4, 12);
+
+              // Bottom label = 0
+              ctx.fillText('0', AX_L - 4, SPEC_H - 2);
+
+              // Intermediate freq labels + grid lines (linear spacing)
+              for (const freq of getFreqLabels(nyquist)) {
+                const y = Math.round((1 - freq / nyquist) * (SPEC_H - 1));
+                const label = freq >= 1000 ? `${freq / 1000}k` : `${freq}`;
+                ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                ctx.fillRect(SPEC_X + 1, y, SPEC_W - 1, 1);
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.fillText(label, AX_L - 4, y + 4);
+              }
+
+              // Color bar (right strip)
+              ctx.fillStyle = '#111';
+              ctx.fillRect(SPEC_X + SPEC_W, 0, AX_R, CH);
+
+              // Gradient bar
+              const gradImgData = ctx.createImageData(GRAD_W, SPEC_H);
+              for (let y = 0; y < SPEC_H; y++) {
+                // top = 0 dB, bottom = -120 dB
+                const db = -120 + ((SPEC_H - 1 - y) / (SPEC_H - 1)) * 120;
+                const [r, g, b] = dbToRgb(db);
+                for (let x = 0; x < GRAD_W; x++) {
+                  const idx = (y * GRAD_W + x) * 4;
+                  gradImgData.data[idx] = r;
+                  gradImgData.data[idx + 1] = g;
+                  gradImgData.data[idx + 2] = b;
+                  gradImgData.data[idx + 3] = 255;
+                }
+              }
+              ctx.putImageData(gradImgData, GRAD_X, 0);
+
+              // dB labels every 10 dB, right-aligned at the canvas edge so labels
+              // of any width (e.g. "-120 dB") can never be clipped on the right.
+              ctx.font = labelFont;
+              ctx.textAlign = 'right';
+              for (let db = 0; db >= -120; db -= 10) {
+                const tVal = (db + 120) / 120;
+                const y = Math.round((1 - tVal) * (SPEC_H - 1));
+                const textY = Math.max(12, Math.min(SPEC_H - 3, y + 4));
+                ctx.fillStyle = 'rgba(255,255,255,0.3)';
+                ctx.fillRect(GRAD_X - 2, y, 2, 1);
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.fillText(`${db} dB`, CW - 2, textY);
+              }
+
+              // Time axis (dedicated strip below spectrogram)
+              const duration = totalSamples / sampleRate;
+              const timeStep = duration < 90 ? 15 : duration < 300 ? 30 : duration < 600 ? 60 : 120;
+              const formatTime = (s: number) =>
+                `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+              ctx.fillStyle = 'rgba(255,255,255,0.15)';
+              ctx.fillRect(SPEC_X, SPEC_H, SPEC_W, 1);
+              ctx.font = txFont;
+              ctx.textAlign = 'center';
+              for (let s = 0; s <= duration; s += timeStep) {
+                const x = SPEC_X + Math.round((s / duration) * SPEC_W);
+                ctx.fillStyle = 'rgba(255,255,255,0.25)';
+                ctx.fillRect(x, SPEC_H + 2, 1, 4);
+                ctx.fillStyle = 'rgba(255,255,255,0.65)';
+                ctx.fillText(formatTime(s), x, SPEC_H + TAXIS_H - 3);
+              }
+
+              setStatus('done');
+            } else if (e.data.type === 'error') {
+              setStatus('error');
+            }
+          };
+
+          // Transfer samples to worker — Float32Array.buffer is now owned by the worker
+          worker.postMessage(
+            {
+              type: 'compute',
+              channelData: samples,
+              sampleRate,
+              fftSize: FFT_SIZE,
+              hopSize,
+              numFrames,
+              specH: SPEC_H,
+            },
+            [samples.buffer]
+          );
+        } finally {
+          audioCtx.close();
         }
-        if (cancelled) return;
-        ctx.putImageData(imgData, SPEC_X, 0);
-
-        // Frequency axis (left strip, dark bg, labels)
-        ctx.fillStyle = '#111';
-        ctx.fillRect(0, 0, AX_L, CH);
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'right';
-
-        // Separator line
-        ctx.fillStyle = 'rgba(255,255,255,0.2)';
-        ctx.fillRect(AX_L, 0, 1, CH);
-
-        ctx.fillStyle = 'rgba(255,255,255,0.7)';
-
-        // Top label = nyquist
-        const nyqLabel = nyquist >= 1000 ? `${Math.round(nyquist / 1000)}k` : `${nyquist}`;
-        ctx.fillText(nyqLabel, AX_L - 4, 10);
-
-        // Bottom label = 0
-        ctx.fillText('0', AX_L - 4, SPEC_H - 2);
-
-        // Intermediate freq labels + grid lines (linear spacing)
-        for (const freq of getFreqLabels(nyquist)) {
-          const y = Math.round((1 - freq / nyquist) * (SPEC_H - 1));
-          const label = freq >= 1000 ? `${freq / 1000}k` : `${freq}`;
-          ctx.fillStyle = 'rgba(255,255,255,0.08)';
-          ctx.fillRect(SPEC_X + 1, y, SPEC_W - 1, 1);
-          ctx.fillStyle = 'rgba(255,255,255,0.7)';
-          ctx.fillText(label, AX_L - 4, y + 4);
-        }
-
-        // Color bar (right strip)
-        ctx.fillStyle = '#111';
-        ctx.fillRect(SPEC_X + SPEC_W, 0, AX_R, CH);
-
-        // Gradient bar
-        const gradImgData = ctx.createImageData(GRAD_W, SPEC_H);
-        for (let y = 0; y < SPEC_H; y++) {
-          // top = 0 dB, bottom = -120 dB
-          const db = -120 + ((SPEC_H - 1 - y) / (SPEC_H - 1)) * 120;
-          const [r, g, b] = dbToRgb(db);
-          for (let x = 0; x < GRAD_W; x++) {
-            const idx = (y * GRAD_W + x) * 4;
-            gradImgData.data[idx] = r;
-            gradImgData.data[idx + 1] = g;
-            gradImgData.data[idx + 2] = b;
-            gradImgData.data[idx + 3] = 255;
-          }
-        }
-        ctx.putImageData(gradImgData, GRAD_X, 0);
-
-        // dB labels every 10 dB, clamped so text never clips the edge
-        ctx.font = '10px monospace';
-        ctx.textAlign = 'left';
-        for (let db = 0; db >= -120; db -= 10) {
-          const t = (db + 120) / 120;
-          const y = Math.round((1 - t) * (SPEC_H - 1));
-          const textY = Math.max(10, Math.min(SPEC_H - 3, y + 4));
-          ctx.fillStyle = 'rgba(255,255,255,0.3)';
-          ctx.fillRect(GRAD_X - 2, y, 2, 1);
-          ctx.fillStyle = 'rgba(255,255,255,0.7)';
-          ctx.fillText(`${db} dB`, GRAD_X + GRAD_W + 4, textY);
-        }
-
-        // Time axis (dedicated strip below spectrogram)
-        const duration = totalSamples / sampleRate;
-        const timeStep = duration < 90 ? 15 : duration < 300 ? 30 : duration < 600 ? 60 : 120;
-        const formatTime = (s: number) =>
-          `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
-        ctx.fillStyle = 'rgba(255,255,255,0.15)';
-        ctx.fillRect(SPEC_X, SPEC_H, SPEC_W, 1);
-        ctx.font = '9px monospace';
-        ctx.textAlign = 'center';
-        for (let s = 0; s <= duration; s += timeStep) {
-          const x = SPEC_X + Math.round((s / duration) * SPEC_W);
-          ctx.fillStyle = 'rgba(255,255,255,0.25)';
-          ctx.fillRect(x, SPEC_H + 2, 1, 4);
-          ctx.fillStyle = 'rgba(255,255,255,0.65)';
-          ctx.fillText(formatTime(s), x, SPEC_H + TAXIS_H - 3);
-        }
-
-        setStatus('done');
       } catch {
-        if (!cancelled) setStatus('error');
+        if (workerActive) setStatus('error');
       }
     })();
 
     return () => {
-      cancelled = true;
+      workerActive = false;
+      worker.postMessage({ type: 'cancel' });
+      worker.terminate();
     };
   }, [show, streamUrl]);
 
@@ -375,18 +461,29 @@ const SpectrogramModal = ({ show, handleHide, streamUrl, title, artist }: Props)
 
   return (
     <Backdrop
-      onClick={(e) => {
-        if (e.target === e.currentTarget) handleHide();
+      data-testid="spectrogram-modal"
+      onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => {
+        // Record whether the drag started on the Backdrop itself. If the user
+        // grabs the Container's resize handle and releases over the Backdrop,
+        // the browser fires a click on the Backdrop (LCA of mousedown/mouseup
+        // targets) — we must not treat that as a close-intent click.
+        mouseDownOnBackdropRef.current = e.target === e.currentTarget;
+      }}
+      onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.target === e.currentTarget && mouseDownOnBackdropRef.current) handleHide();
       }}
     >
       <Container>
         <Header>
           <span>{label}</span>
-          <CloseBtn onClick={handleHide}>✕</CloseBtn>
+          <CloseBtn data-testid="spectrogram-modal-close" onClick={handleHide}>
+            ✕
+          </CloseBtn>
         </Header>
         <CanvasArea>
           <canvas
             ref={canvasRef}
+            data-testid="spectrogram-canvas"
             width={CW}
             height={CH}
             style={{
@@ -399,6 +496,7 @@ const SpectrogramModal = ({ show, handleHide, streamUrl, title, artist }: Props)
           />
           {status === 'loading' && (
             <div
+              data-testid="spectrogram-progress"
               style={{
                 position: 'absolute',
                 inset: 0,
@@ -409,7 +507,8 @@ const SpectrogramModal = ({ show, handleHide, streamUrl, title, artist }: Props)
                 fontSize: '0.85em',
               }}
             >
-              Analyzing audio...
+              {t('Analyzing audio...')}
+              {progress > 0 && ` ${progress}%`}
             </div>
           )}
           {status === 'error' && (
@@ -424,7 +523,7 @@ const SpectrogramModal = ({ show, handleHide, streamUrl, title, artist }: Props)
                 fontSize: '0.85em',
               }}
             >
-              Failed to load audio for analysis.
+              {t('Failed to load audio for analysis.')}
             </div>
           )}
         </CanvasArea>

@@ -4,6 +4,163 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.1.0]
+
+This release covers a large body of work since the last public version, including
+a significant security overhaul, a lot of upgrades underthe hood, a visual refresh, and a long list of bug fixes
+across playback, scrobbling, and the interface.
+
+## What's New
+
+### Look and feel
+
+- Refreshed the interface's underlying styling system. Most controls - checkboxes,
+  dropdowns, number inputs, pickers, and the sidebar - now have more consistent
+  hover, focus, and active-state highlighting in both light and dark themes.
+- The parametric EQ graph is now taller and easier to read, with clearer frequency
+  labels.
+- The quick-search popup can now be pinned open, and its spacing and overflow
+  behavior have been cleaned up.
+- Deleting a playlist or smart playlist now always asks for confirmation first.
+- The Delete button next to a saved EQ/PEQ preset now matches the styling of
+  the Load button beside it.
+
+### Library and caching
+
+- The cached-songs and cached-images limits are now tracked and enforced
+  separately, with the oldest files automatically cleared once a limit is reached.
+  The limit is also now customizable.
+  The cache is also reliably saved when you quit the app.
+- Library cache updates (play counts, favorites, sync status) are noticeably
+  faster, especially for large libraries.
+
+## Bug Fixes
+
+### Playback
+
+- Fixed an issue where the MPV playback engine could fail to start for some
+  Windows users.
+- Fixed the MPV backend not being found automatically on Windows when the
+  "MPV binary path" setting was left blank and MPV was installed in a folder
+  with a space in its name (such as the default Program Files location),
+  even though MPV was correctly available on your system PATH.
+- Fixed playback sometimes not starting automatically when using the built-in
+  (non-MPV) audio engine, due to an overly strict browser autoplay restriction.
+- Reduced the number of simultaneous requests sent to your server when loading an
+  artist's full discography, improving reliability on slower or more heavily
+  loaded servers.
+- Fixed synced lyrics (.lrc files) failing to load for certain timestamp formats
+  or files containing a particular encoding marker.
+- Fixed the app briefly freezing when opening the audio spectrogram view.
+
+### Scrobbling / listen history
+
+- Fixed scrobbles being submitted too early when crossfade was enabled, and added
+  a consistent minimum-listen-time floor across all playback modes.
+
+### Interface and stability
+
+- Fixed a crash when clicking the info button on an artist's page.
+- Fixed playback keyboard shortcuts (play/pause, next/previous track, volume,
+  mute) stopping working after clicking the seek bar, the volume slider, or a
+  song's rating stars, until clicking somewhere else first.
+- Fixed the app showing a blank screen instead of recovering gracefully when an
+  unexpected error occurred while rendering a page.
+- Fixed misaligned table headers, missing row borders, and inconsistent hover
+  highlighting in the song and album lists, particularly in the light theme.
+- Fixed pagination controls not consistently enforcing list boundaries.
+- Fixed a number of smaller layout issues across smart playlists, the lyrics
+  view, the player bar, and the login screen.
+
+### Settings
+
+- Fixed some settings (such as "Allow dev console" and your sidebar
+  customization) not actually taking effect after importing a settings
+  backup or using "Reset to Defaults", even though the change was saved
+  correctly.
+- Fixed "Direct Previous Track" and "Preserve Play Next Order" in Playback
+  settings sometimes appearing to do nothing when toggled, or appearing to
+  flip on their own when a different nearby setting was changed. The
+  setting itself was always being saved correctly - only the toggle's own
+  display was failing to update.
+
+## Security Improvements
+
+- Significantly hardened how the app's interface communicates with the rest of
+  the application, closing off an entire class of potential security issues
+  related to that communication layer.
+- Added protections to ensure cached files, downloads, and exported data can
+  never be written outside of their intended folder.
+- Improved how login credentials are stored - your password is only ever saved
+  in plain form if you specifically enable the legacy authentication option for
+  servers that require it.
+- Added validation to several settings fields (custom background images, Discord
+  integration, OBS overlay links, and external links opened from the app) to
+  reject malformed or unexpected values before they're saved or used.
+- Hardened the packaged application's runtime configuration to further reduce
+  its attack surface.
+- Fixed the "Allow dev console" setting not reliably controlling whether F12
+  could open developer tools in the packaged app.
+
+## Under the Hood
+
+This release also updates many of the underlying frameworks and libraries the
+app is built on. No action is needed on your part - listed for anyone curious
+about what's changed beneath the surface:
+
+- **Electron** (the framework that runs the app) updated from version 34 to 42,
+  bringing the latest upstream security and stability fixes.
+- **RSuite** (the UI component library behind most of the app's controls)
+  updated from version 4 to version 6.
+- **Babel** (the JavaScript build toolchain) updated to its latest release.
+- **React** updated from version 18 to 19, and **React Router** from 5 to 7.
+- The state management library (**Redux Toolkit**) updated from version 1 to 2.
+- Replaced an older, no-longer-maintained date-handling library (Moment.js)
+  with a modern, lighter-weight alternative (Day.js).
+- The translation system (**i18next**) updated from version 21 to 26.
+- The charting library used for the EQ graph, the search popup, the playlist
+  virtualized lists, and several other smaller libraries throughout the app
+  were all updated to their latest stable versions as well.
+- Added 672 new automated unit and component tests (growing the suite from 1
+  to 673) and a brand-new end-to-end test suite of 199 tests that exercises
+  real user workflows against live servers, to catch regressions before they
+  reach a release. All tests have to pass for the app to build.
+
+## Upgrade Notes
+
+Things users upgrading from a previous version should know:
+
+- If you are upgrading from v1.0.7, your Smart Playlist library cache will be
+  reset on first launch. Navigate to Smart Playlists → Sync Library to rebuild
+  it. Your settings and credentials are preserved.
+- If you previously connected using a plain username/password (legacy
+  authentication) and are upgrading from v1.0.7, this update fixes an issue
+  where your saved login could silently stop working after upgrading even though
+  you were never logged out. No action should be needed - this is now detected
+  and corrected automatically on first launch.
+- If you had customized your 10-band parametric EQ, older 6-band EQ
+  configurations are automatically migrated to the new 10-band layout, preserving
+  your settings for any frequency band that exists in both.
+- Newly added sidebar sections are added automatically without affecting any
+  sidebar items you've already removed or reordered.
+- Fixed a bug where upgrading from v1.0.7 (or earlier) could incorrectly
+  restore the "Playlist List" sidebar item even if you'd deliberately removed
+  it. If you'd hidden it before, it will stay hidden after this update.
+
+---
+
+## [1.0.8]
+
+### Changed
+
+- **Updated Electron runtime from 34 to 42**: The underlying Electron framework has been updated to version 42. This brings a more recent version of Chromium and Node.js, improving web standards support, performance, and stability.
+
+### Security
+
+- **Dependency security patches**: Several internal libraries used for server API communication and URL routing have been updated to address known security vulnerabilities. There is no change in behaviour.
+
+---
+
 ## [1.0.7]
 
 ### Fixed

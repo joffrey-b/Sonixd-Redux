@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { shell } from 'electron';
-import fs from 'fs';
-import path from 'path';
-import { Message, Icon, ButtonToolbar, Whisper } from 'rsuite';
+import { Message, ButtonToolbar, Whisper } from 'rsuite';
+import CheckIcon from '@rsuite/icons/legacy/Check';
+import CloseIcon from '@rsuite/icons/legacy/Close';
+import ExternalLinkIcon from '@rsuite/icons/legacy/ExternalLink';
 import { useTranslation } from 'react-i18next';
 import { ConfigOptionDescription, ConfigPanel } from '../styled';
 import {
   StyledInput,
   StyledCheckbox,
   StyledInputGroup,
+  StyledInputNumber,
   StyledLink,
   StyledTag,
   StyledButton,
@@ -19,24 +20,9 @@ import { notifyToast } from '../../shared/toast';
 import { setMiscSetting } from '../../../redux/miscSlice';
 import { useAppDispatch } from '../../../redux/hooks';
 import Popup from '../../shared/Popup';
-import { settings } from '../../shared/setDefaultSettings';
+import { settings, shell, cache, cacheDir } from '../../shared/bridge';
 
-const getDirSize = (dirPath: string): number => {
-  try {
-    return fs.readdirSync(dirPath).reduce((total, file) => {
-      try {
-        const stats = fs.statSync(path.join(dirPath, file));
-        return total + (stats.isFile() ? stats.size : 0);
-      } catch {
-        return total;
-      }
-    }, 0);
-  } catch {
-    return 0;
-  }
-};
-
-const CacheConfig = ({ bordered }: any) => {
+const CacheConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const [imgCacheSize, setImgCacheSize] = useState(0);
@@ -46,24 +32,35 @@ const CacheConfig = ({ bordered }: any) => {
   const [errorMessage, setErrorMessage] = useState('');
   const [cacheSongs, setCacheSongs] = useState(Boolean(settings.get('cacheSongs')));
   const [cacheImages, setCacheImages] = useState(Boolean(settings.get('cacheImages')));
+  const [cacheSizeLimitMb, setCacheSizeLimitMb] = useState(
+    Math.round(Number(settings.get('songCacheSizeLimit')) / 1000 / 1000) || 5000
+  );
+  const [imageCacheSizeLimitMb, setImageCacheSizeLimitMb] = useState(
+    Math.round(Number(settings.get('imageCacheSizeLimit')) / 1000 / 1000) || 2000
+  );
 
   useEffect(() => {
     if (!settings.get('serverBase64')) return;
-    fs.mkdirSync(getSongCachePath(), { recursive: true });
-    fs.mkdirSync(getImageCachePath(), { recursive: true });
-    setImgCacheSize(Number((getDirSize(getImageCachePath()) / 1000 / 1000).toFixed(0)));
-    setSongCacheSize(Number((getDirSize(getSongCachePath()) / 1000 / 1000).toFixed(0)));
+    cacheDir.ensure(getSongCachePath());
+    cacheDir.ensure(getImageCachePath());
+    cacheDir
+      .getSize(getImageCachePath())
+      .then((size) => setImgCacheSize(Number((size / 1000 / 1000).toFixed(0))))
+      .catch(() => {});
+    cacheDir
+      .getSize(getSongCachePath())
+      .then((size) => setSongCacheSize(Number((size / 1000 / 1000).toFixed(0))))
+      .catch(() => {});
   }, []);
 
   const handleClearSongCache = async () => {
     const songCachePath = getSongCachePath();
     try {
-      const files = await fs.promises.readdir(songCachePath);
-      await Promise.all(
-        files
-          .filter((file) => /\.(mp3|flac|ogg|aac|m4a|wav|opus|wma|ape|alac)$/i.test(file))
-          .map((file) => fs.promises.unlink(path.join(songCachePath, file)))
+      const files = await cacheDir.list(songCachePath);
+      const matching = files.filter((file) =>
+        /\.(mp3|flac|ogg|aac|m4a|wav|opus|wma|ape|alac)$/i.test(file)
       );
+      await cacheDir.removeFiles(songCachePath, matching);
       setSongCacheSize(0);
       notifyToast('success', t('Cleared song cache'));
     } catch (err) {
@@ -74,20 +71,20 @@ const CacheConfig = ({ bordered }: any) => {
   const handleClearImageCache = async (type: 'playlist' | 'album' | 'artist' | 'folder') => {
     const imageCachePath = getImageCachePath();
     try {
-      const files = await fs.promises.readdir(imageCachePath);
+      const files = await cacheDir.list(imageCachePath);
       // Match both normal cached files (e.g. album_123.jpg) and any stale TEMP files
       // left by interrupted downloads (e.g. TEMP_album_123.jpg)
-      await Promise.all(
-        files
-          .filter(
-            (file) =>
-              (file.split('_')[0] === type ||
-                (file.split('_')[0] === 'TEMP' && file.split('_')[1] === type)) &&
-              path.extname(file) === '.jpg'
-          )
-          .map((file) => fs.promises.unlink(path.join(imageCachePath, file)))
+      const matching = files.filter(
+        (file) =>
+          (file.split('_')[0] === type ||
+            (file.split('_')[0] === 'TEMP' && file.split('_')[1] === type)) &&
+          file.endsWith('.jpg')
       );
-      setImgCacheSize(Number((getDirSize(imageCachePath) / 1000 / 1000).toFixed(0)));
+      await cacheDir.removeFiles(imageCachePath, matching);
+      cacheDir
+        .getSize(imageCachePath)
+        .then((size) => setImgCacheSize(Number((size / 1000 / 1000).toFixed(0))))
+        .catch(() => {});
       notifyToast('success', t('Cleared {{type}} image cache', { type }));
     } catch (err) {
       notifyToast('error', t('Unable to clear cache: {{err}}', { err }));
@@ -98,7 +95,9 @@ const CacheConfig = ({ bordered }: any) => {
     <ConfigPanel bordered={bordered} header={t('Cache')}>
       {errorMessage !== '' && (
         <>
-          <Message showIcon type="error" description={errorMessage} />
+          <Message showIcon type="error">
+            {errorMessage}
+          </Message>
           <br />
         </>
       )}
@@ -113,12 +112,12 @@ const CacheConfig = ({ bordered }: any) => {
           <StyledInputGroup>
             <StyledInput value={newCachePath} onChange={(e: string) => setNewCachePath(e)} />
             <StyledInputGroupButton
-              onClick={() => {
-                const check = fs.existsSync(newCachePath);
+              onClick={async () => {
+                const check = await cache.exists(newCachePath);
                 if (check) {
                   settings.set('cachePath', newCachePath);
-                  fs.mkdirSync(getSongCachePath(), { recursive: true });
-                  fs.mkdirSync(getImageCachePath(), { recursive: true });
+                  cacheDir.ensure(getSongCachePath());
+                  cacheDir.ensure(getImageCachePath());
                   dispatch(
                     setMiscSetting({ setting: 'imageCachePath', value: getImageCachePath() })
                   );
@@ -134,7 +133,7 @@ const CacheConfig = ({ bordered }: any) => {
                 );
               }}
             >
-              <Icon icon="check" />
+              <CheckIcon />
             </StyledInputGroupButton>
             <StyledInputGroupButton
               onClick={() => {
@@ -142,11 +141,11 @@ const CacheConfig = ({ bordered }: any) => {
                 setErrorMessage('');
               }}
             >
-              <Icon icon="close" />
+              <CloseIcon />
             </StyledInputGroupButton>
             <StyledInputGroupButton
               onClick={() => {
-                const defaultPath = path.join(path.dirname(settings.path));
+                const defaultPath = settings.getDefaultCachePath();
                 settings.set('cachePath', defaultPath);
                 dispatch(setMiscSetting({ setting: 'imageCachePath', value: getImageCachePath() }));
                 dispatch(setMiscSetting({ setting: 'songCachePath', value: getSongCachePath() }));
@@ -165,17 +164,18 @@ const CacheConfig = ({ bordered }: any) => {
       {!isEditingCachePath && (
         <>
           {t('Location:')}{' '}
-          <div style={{ overflow: 'none' }}>
+          <div style={{ overflow: 'hidden' }}>
             <StyledLink onClick={() => shell.openPath(getRootCachePath())}>
-              {getRootCachePath()} <Icon icon="external-link" />
+              {getRootCachePath()} <ExternalLinkIcon />
             </StyledLink>
           </div>
         </>
       )}
       <div style={{ width: '300px', marginTop: '20px' }}>
         <StyledCheckbox
-          defaultChecked={cacheSongs}
-          onChange={(_v: any, e: boolean) => {
+          data-testid="song-cache-enable"
+          checked={cacheSongs}
+          onChange={(_v: unknown, e: boolean) => {
             settings.set('cacheSongs', e);
             setCacheSongs(e);
           }}
@@ -183,14 +183,52 @@ const CacheConfig = ({ bordered }: any) => {
           {t('Songs')} <StyledTag>{songCacheSize} MB</StyledTag>
         </StyledCheckbox>
         <StyledCheckbox
-          defaultChecked={cacheImages}
-          onChange={(_v: any, e: boolean) => {
+          checked={cacheImages}
+          onChange={(_v: unknown, e: boolean) => {
             settings.set('cacheImages', e);
             setCacheImages(e);
           }}
         >
           {t('Images')} <StyledTag>{imgCacheSize} MB</StyledTag>
         </StyledCheckbox>
+      </div>
+      <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ width: '120px' }}>{t('Songs limit')}</span>
+          <StyledInputNumber
+            defaultValue={String(cacheSizeLimitMb)}
+            step={100}
+            min={100}
+            max={10000}
+            width={125}
+            onChange={(e: number | string) => {
+              const mb = Number(e);
+              if (!Number.isNaN(mb) && mb >= 100 && mb <= 10000) {
+                settings.set('songCacheSizeLimit', mb * 1000 * 1000);
+                setCacheSizeLimitMb(mb);
+              }
+            }}
+          />
+          <span>{t('MB')}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ width: '120px' }}>{t('Images limit')}</span>
+          <StyledInputNumber
+            defaultValue={String(imageCacheSizeLimitMb)}
+            step={100}
+            min={100}
+            max={10000}
+            width={125}
+            onChange={(e: number | string) => {
+              const mb = Number(e);
+              if (!Number.isNaN(mb) && mb >= 100 && mb <= 10000) {
+                settings.set('imageCacheSizeLimit', mb * 1000 * 1000);
+                setImageCacheSizeLimitMb(mb);
+              }
+            }}
+          />
+          <span>{t('MB')}</span>
+        </div>
       </div>
       <br />
       <ButtonToolbar>

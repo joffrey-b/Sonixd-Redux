@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import styled, { useTheme } from 'styled-components';
 import { FlexboxGrid } from 'rsuite';
 import { useTranslation } from 'react-i18next';
@@ -24,14 +24,14 @@ import {
   PeqPreset,
   PeqState,
 } from '../../../redux/peqSlice';
-import { settings } from '../../shared/setDefaultSettings';
+import { settings } from '../../shared/bridge';
 import { notifyToast } from '../../shared/toast';
 
 const SAMPLE_RATE = 48000;
 const SVG_W = 600;
-const SVG_H = 160;
-const DB_MAX = 24;
-const DB_MIN = -24;
+const SVG_H = 300;
+const DB_MAX = 15;
+const DB_MIN = -15;
 const FREQ_MIN = 20;
 const FREQ_MAX = 20000;
 const N_POINTS = 300;
@@ -147,15 +147,15 @@ function buildCurvePath(bands: PeqBand[], enabled: boolean): string {
 }
 
 const GRID_FREQS = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
-const GRID_DB = [-18, -12, -6, 0, 6, 12, 18];
-const LABEL_FREQS = [100, 1000, 10000];
+const GRID_DB = [-12, -6, 0, 6, 12];
+const LABEL_FREQS = [50, 100, 200, 500, 1000, 2000, 5000, 10000];
 
 const SvgWrapper = styled.div`
   width: 100%;
   margin-bottom: 12px;
   border-radius: 6px;
   overflow: hidden;
-  background: ${(props) => props.theme.colors.input.background};
+  background: var(--app-input-bg);
 `;
 
 const BandTable = styled.div`
@@ -174,17 +174,14 @@ const BandCell = styled.div<{ $header?: boolean; $center?: boolean }>`
   font-size: 12px;
   vertical-align: middle;
   text-align: ${(props) => (props.$center ? 'center' : 'left')};
-  color: ${(props) =>
-    props.$header
-      ? props.theme.colors.layout.page.colorSecondary
-      : props.theme.colors.layout.page.color};
+  color: ${(props) => (props.$header ? 'var(--app-text-secondary)' : 'var(--app-text)')};
   border-bottom: 1px solid rgba(128, 128, 128, 0.15);
 `;
 
 const PreampSlider = styled.input.attrs({ type: 'range' })`
   width: 100%;
   cursor: pointer;
-  accent-color: ${(props) => props.theme.colors.primary};
+  accent-color: var(--app-primary);
 
   &:disabled {
     opacity: 0.4;
@@ -364,11 +361,13 @@ const TYPE_DATA = [
 
 const NO_GAIN_TYPES = new Set(['lowpass', 'highpass', 'notch']);
 
-const PEQConfig = ({ bordered }: any) => {
+const PEQConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const peq = useAppSelector((state: any) => state.peq as PeqState);
-  const theme = useTheme() as any;
+  const peq = useAppSelector((state) => state.peq as PeqState);
+  const theme = useTheme() as unknown as {
+    colors?: { primary?: string; layout?: { page?: { colorSecondary?: string } } };
+  };
   const typePickerRefs = useRef<(HTMLDivElement | null)[]>(Array(10).fill(null));
   const presetPickerContainerRef = useRef(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -395,6 +394,18 @@ const PEQConfig = ({ bordered }: any) => {
   const handleLoadPreset = (preset: { bands: PeqBand[]; preampDb: number }) => {
     dispatch(loadPeqPreset(preset));
     setPendingReset(true);
+  };
+
+  const handlePresetPickerValue = (val: string | null) => {
+    if (!val || val === '__separator__') return;
+    if (val.startsWith('custom:')) {
+      const name = val.slice(7);
+      const preset = peq.customPresets.find((p: PeqPreset) => p.name === name);
+      if (preset) handleLoadPreset(preset);
+    } else {
+      const preset = BUILT_IN_PEQ_PRESETS.find((p) => p.value === val);
+      if (preset) handleLoadPreset(preset);
+    }
   };
 
   const handleSaveCustomPreset = () => {
@@ -434,14 +445,27 @@ const PEQConfig = ({ bordered }: any) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [peq.bands]);
 
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [textScaleX, setTextScaleX] = useState(1);
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      if (w > 0) setTextScaleX(SVG_W / w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const primaryColor = theme?.colors?.primary || '#2196f3';
   const gridColor = 'rgba(128,128,128,0.2)';
   const labelColor = theme?.colors?.layout?.page?.colorSecondary || '#888';
   const zeroDashColor = 'rgba(128,128,128,0.5)';
 
-  const curvePath = buildCurvePath(peq.bands, peq.enabled);
+  const curvePath = useMemo(() => buildCurvePath(peq.bands, peq.enabled), [peq.bands, peq.enabled]);
 
-  const updateBandField = (index: number, field: keyof PeqBand, value: any) => {
+  const updateBandField = (index: number, field: keyof PeqBand, value: PeqBand[keyof PeqBand]) => {
     dispatch(setPeqBandField({ index, field, value }));
   };
 
@@ -459,7 +483,7 @@ const PEQConfig = ({ bordered }: any) => {
           </FlexboxGrid.Item>
           <FlexboxGrid.Item>
             <StyledToggle
-              defaultChecked={peq.enabled}
+              data-testid="peq-enable-toggle"
               checked={peq.enabled}
               onChange={(val: boolean) => dispatch(setPeqEnabled(val))}
             />
@@ -473,7 +497,41 @@ const PEQConfig = ({ bordered }: any) => {
             {t('Presets')}
           </FlexboxGrid.Item>
           <FlexboxGrid.Item>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
+              {/* Hidden native select — same e2e-testability workaround as
+                  player-backend-select/replaygain-mode-select in PlaybackConfig.tsx.
+                  Uncontrolled (no value=) since presets are fire-once triggers,
+                  not a persisted "current preset" concept. */}
+              <select
+                data-testid="peq-preset-select"
+                defaultValue=""
+                disabled={!peq.enabled}
+                onChange={(e) => handlePresetPickerValue(e.target.value)}
+                style={{
+                  position: 'absolute',
+                  width: '1px',
+                  height: '1px',
+                  opacity: 0.01,
+                  top: 0,
+                  left: 0,
+                }}
+                aria-hidden="true"
+                tabIndex={-1}
+              >
+                <option value="" disabled hidden>
+                  {t('Load preset')}
+                </option>
+                {BUILT_IN_PEQ_PRESETS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+                {peq.customPresets.map((p: PeqPreset) => (
+                  <option key={p.name} value={`custom:${p.name}`}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
               <StyledInputPickerContainer
                 ref={presetPickerContainerRef}
                 style={{ position: 'relative', height: 30, overflow: 'visible' }}
@@ -498,17 +556,7 @@ const PEQConfig = ({ bordered }: any) => {
                   ]}
                   placeholder={t('Load preset')}
                   value={null}
-                  onChange={(val: string | null) => {
-                    if (!val || val === '__separator__') return;
-                    if (val.startsWith('custom:')) {
-                      const name = val.slice(7);
-                      const preset = peq.customPresets.find((p: PeqPreset) => p.name === name);
-                      if (preset) handleLoadPreset(preset);
-                    } else {
-                      const preset = BUILT_IN_PEQ_PRESETS.find((p) => p.value === val);
-                      if (preset) handleLoadPreset(preset);
-                    }
-                  }}
+                  onChange={handlePresetPickerValue}
                   style={{ width: 180 }}
                 />
               </StyledInputPickerContainer>
@@ -531,9 +579,10 @@ const PEQConfig = ({ bordered }: any) => {
       <ConfigOptionSection>
         <SvgWrapper>
           <svg
+            ref={svgRef}
             viewBox={`0 0 ${SVG_W} ${SVG_H}`}
             preserveAspectRatio="none"
-            style={{ display: 'block', width: '100%', height: '160px' }}
+            style={{ display: 'block', width: '100%', height: '300px' }}
           >
             {/* Vertical grid lines */}
             {GRID_FREQS.map((f) => (
@@ -560,27 +609,38 @@ const PEQConfig = ({ bordered }: any) => {
                 strokeDasharray={db === 0 ? '4 3' : undefined}
               />
             ))}
-            {/* Frequency labels */}
+            {/* Frequency labels — scale(textScaleX,1) counters horizontal SVG stretch */}
             {LABEL_FREQS.map((f) => (
               <text
                 key={f}
                 x={xPos(f)}
                 y={SVG_H - 4}
                 textAnchor="middle"
-                fontSize="11"
+                fontSize="12"
+                fontWeight="300"
                 fill={labelColor}
+                transform={`translate(${xPos(f)},0) scale(${textScaleX},1) translate(${-xPos(f)},0)`}
               >
                 {f >= 1000 ? `${f / 1000}k` : `${f}`}
               </text>
             ))}
-            {/* dB labels */}
-            {[-12, 0, 12].map((db) => (
-              <text key={db} x={4} y={yPos(db) - 3} fontSize="10" fill={labelColor}>
+            {/* dB labels — same counter-scale anchored at x=4 */}
+            {[-12, -6, 0, 6, 12].map((db) => (
+              <text
+                key={db}
+                x={4}
+                y={yPos(db) - 3}
+                fontSize="12"
+                fontWeight="300"
+                fill={labelColor}
+                transform={`translate(4,0) scale(${textScaleX},1) translate(-4,0)`}
+              >
                 {db > 0 ? `+${db}` : db}
               </text>
             ))}
             {/* Frequency response curve */}
             <path
+              data-testid="peq-frequency-response-curve"
               d={curvePath}
               fill="none"
               stroke={peq.enabled ? primaryColor : gridColor}
@@ -595,8 +655,9 @@ const PEQConfig = ({ bordered }: any) => {
         <PreampRow>
           <PreampLabel>{t('Preamp')}</PreampLabel>
           <PreampSlider
-            min={-20}
-            max={0}
+            data-testid="peq-preamp-slider"
+            min={-15}
+            max={15}
             step={0.1}
             value={peq.preampDb}
             disabled={!peq.enabled}
@@ -620,20 +681,44 @@ const PEQConfig = ({ bordered }: any) => {
             <BandCell $header>{t('Q')}</BandCell>
           </BandRow>
           {peq.bands.map((band, i) => (
-            // eslint-disable-next-line react/no-array-index-key
             <BandRow key={i}>
               <BandCell $center style={{ opacity: 0.5, width: 24 }}>
                 {i + 1}
               </BandCell>
               <BandCell $center style={{ width: 36 }}>
                 <StyledToggle
+                  data-testid={`peq-band-${i}-enabled-toggle`}
                   size="sm"
                   checked={band.enabled}
                   disabled={!peq.enabled}
                   onChange={(val: boolean) => updateBandField(i, 'enabled', val)}
                 />
               </BandCell>
-              <BandCell>
+              <BandCell style={{ position: 'relative' }}>
+                {/* Hidden native select — same e2e-testability workaround as
+                    player-backend-select/replaygain-mode-select in PlaybackConfig.tsx. */}
+                <select
+                  data-testid={`peq-band-${i}-type`}
+                  value={band.type}
+                  disabled={!peq.enabled || !band.enabled}
+                  onChange={(e) => updateBandField(i, 'type', e.target.value as PeqBand['type'])}
+                  style={{
+                    position: 'absolute',
+                    width: '1px',
+                    height: '1px',
+                    opacity: 0.01,
+                    top: 0,
+                    left: 0,
+                  }}
+                  aria-hidden="true"
+                  tabIndex={-1}
+                >
+                  {TYPE_DATA.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
                 <StyledInputPickerContainer
                   ref={(el: HTMLDivElement | null) => {
                     typePickerRefs.current[i] = el;
@@ -655,6 +740,7 @@ const PEQConfig = ({ bordered }: any) => {
               </BandCell>
               <BandCell>
                 <StyledInputNumber
+                  data-testid={`peq-band-${i}-freq`}
                   size="xs"
                   disabled={!peq.enabled || !band.enabled}
                   key={`${resetKey}-${fieldKeys[`${i}-freq`] || 0}-${i}-freq`}
@@ -663,7 +749,7 @@ const PEQConfig = ({ bordered }: any) => {
                   min={20}
                   max={20000}
                   step={1}
-                  width={80}
+                  $width={70}
                   onChange={(val: number) => {
                     const n = Number(val);
                     if (!Number.isFinite(n)) return;
@@ -673,6 +759,7 @@ const PEQConfig = ({ bordered }: any) => {
               </BandCell>
               <BandCell>
                 <StyledInputNumber
+                  data-testid={`peq-band-${i}-gain`}
                   size="xs"
                   disabled={!peq.enabled || !band.enabled || NO_GAIN_TYPES.has(band.type)}
                   key={`${resetKey}-${fieldKeys[`${i}-gain`] || 0}-${i}-gain`}
@@ -681,7 +768,7 @@ const PEQConfig = ({ bordered }: any) => {
                   min={-12}
                   max={12}
                   step={0.1}
-                  width={70}
+                  $width={70}
                   onChange={(val: number) => {
                     const n = Number(val);
                     if (!Number.isFinite(n)) return;
@@ -695,6 +782,7 @@ const PEQConfig = ({ bordered }: any) => {
               </BandCell>
               <BandCell>
                 <StyledInputNumber
+                  data-testid={`peq-band-${i}-q`}
                   size="xs"
                   disabled={!peq.enabled || !band.enabled}
                   key={`${resetKey}-${fieldKeys[`${i}-q`] || 0}-${i}-q`}
@@ -703,7 +791,7 @@ const PEQConfig = ({ bordered }: any) => {
                   min={0.1}
                   max={16}
                   step={0.1}
-                  width={65}
+                  $width={70}
                   onChange={(val: number) => {
                     const n = Number(val);
                     if (!Number.isFinite(n) || n <= 0) return;
@@ -723,6 +811,7 @@ const PEQConfig = ({ bordered }: any) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ flex: 1 }}>
             <StyledInput
+              data-testid="peq-preset-name-input"
               inputRef={inputRef}
               size="sm"
               disabled={!peq.enabled}
@@ -738,7 +827,12 @@ const PEQConfig = ({ bordered }: any) => {
               }}
             />
           </div>
-          <StyledButton size="sm" disabled={!peq.enabled} onClick={handleSaveCustomPreset}>
+          <StyledButton
+            data-testid="peq-preset-save-button"
+            size="sm"
+            disabled={!peq.enabled}
+            onClick={handleSaveCustomPreset}
+          >
             {pendingOverwrite === customPresetName.trim() ? t('Confirm') : t('Save')}
           </StyledButton>
         </div>
@@ -747,7 +841,7 @@ const PEQConfig = ({ bordered }: any) => {
             style={{
               marginTop: 6,
               fontSize: 12,
-              color: '#e8a838',
+              color: 'var(--rs-color-yellow)',
               display: 'flex',
               alignItems: 'center',
               gap: 8,
@@ -770,8 +864,9 @@ const PEQConfig = ({ bordered }: any) => {
           </div>
           {peq.customPresets.map((preset: PeqPreset) => (
             <CustomPresetRow key={preset.name}>
-              <CustomPresetName>{preset.name}</CustomPresetName>
+              <CustomPresetName data-testid="peq-preset-list-item">{preset.name}</CustomPresetName>
               <StyledButton
+                data-testid="peq-preset-load-button"
                 size="xs"
                 disabled={!peq.enabled}
                 onClick={() => handleLoadPreset(preset)}
@@ -779,8 +874,8 @@ const PEQConfig = ({ bordered }: any) => {
                 {t('Load')}
               </StyledButton>
               <StyledButton
+                data-testid="peq-preset-delete-button"
                 size="xs"
-                appearance="subtle"
                 disabled={!peq.enabled}
                 onClick={() => dispatch(deletePeqCustomPreset(preset.name))}
               >

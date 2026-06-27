@@ -1,8 +1,11 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { mockSettings } from '../shared/mockSettings';
-import { settings } from '../components/shared/setDefaultSettings';
+import { getParsedSettings } from '../components/shared/settingsAccess';
+import type { Settings } from '../components/shared/setDefaultSettings';
 
-const parsedSettings: any = process.env.NODE_ENV === 'test' ? mockSettings : settings.store;
+const parsedSettings = (
+  process.env.NODE_ENV === 'test' ? mockSettings : getParsedSettings()
+) as Partial<Settings>;
 
 export interface FolderSelection {
   musicFolder?: string;
@@ -20,17 +23,17 @@ export interface FolderSelection {
 
 const initialState: FolderSelection = {
   musicFolder:
-    String(parsedSettings.musicFolder.id) === 'null'
-      ? undefined
-      : String(parsedSettings.musicFolder.id),
-  musicFolderName: String(parsedSettings.musicFolder.name) || undefined,
+    parsedSettings.musicFolder?.id == null ? undefined : String(parsedSettings.musicFolder.id),
+  musicFolderName: parsedSettings.musicFolder?.name
+    ? String(parsedSettings.musicFolder.name)
+    : undefined,
   applied: {
-    albums: Boolean(parsedSettings.musicFolder.albums),
-    artists: Boolean(parsedSettings.musicFolder.artists),
-    dashboard: Boolean(parsedSettings.musicFolder.artists),
-    search: Boolean(parsedSettings.musicFolder.search),
-    starred: Boolean(parsedSettings.musicFolder.starred),
-    music: Boolean(parsedSettings.musicFolder.music),
+    albums: parsedSettings.musicFolder?.albums ?? true,
+    artists: parsedSettings.musicFolder?.artists ?? true,
+    dashboard: parsedSettings.musicFolder?.dashboard ?? true,
+    search: parsedSettings.musicFolder?.search ?? false,
+    starred: parsedSettings.musicFolder?.starred ?? false,
+    music: parsedSettings.musicFolder?.music ?? true,
   },
   currentViewedFolder: undefined,
 };
@@ -48,7 +51,7 @@ const folderSlice = createSlice({
       state.currentViewedFolder = action.payload;
     },
 
-    setAppliedFolderViews: (state, action: PayloadAction<any>) => {
+    setAppliedFolderViews: (state, action: PayloadAction<FolderSelection['applied']>) => {
       state.applied = action.payload;
     },
   },

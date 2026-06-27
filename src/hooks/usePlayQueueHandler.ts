@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useQueryClient } from 'react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { getPlayedSongsNotification, filterPlayQueue } from '../shared/utils';
 import { notifyToast } from '../components/shared/toast';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
@@ -76,30 +76,34 @@ const usePlayQueueHandler = () => {
         }
       };
 
-      const data = await apiController({
-        serverType: config.serverType,
-        endpoint: options.byItemType.endpoint || getEndpoint(options.byItemType.item),
-        args: { id: options.byItemType.id, musicFolder: options.musicFolder },
-      });
+      try {
+        const data = await apiController({
+          serverType: config.serverType,
+          endpoint: options.byItemType.endpoint || getEndpoint(options.byItemType.item),
+          args: { id: options.byItemType.id, musicFolderId: options.musicFolder },
+        });
 
-      const songs = data?.song ?? data;
-      if (options.onEmpty && Array.isArray(songs) && songs.length === 0) {
-        options.onEmpty();
-        return;
-      }
+        const songs = data?.song ?? data;
+        if (options.onEmpty && Array.isArray(songs) && songs.length === 0) {
+          options.onEmpty();
+          return;
+        }
 
-      if (options.byItemType.item === Item.Album) {
-        queryClient.setQueryData(['album', options.byItemType.id], data);
-      } else if (options.byItemType.item === Item.Artist) {
-        queryClient.setQueryData(['artistSongs', options.byItemType.id], data);
-      } else if (options.byItemType.item === Item.Playlist) {
-        queryClient.setQueryData(['playlist', options.byItemType.id], data);
-      }
+        if (options.byItemType.item === Item.Album) {
+          queryClient.setQueryData(['album', options.byItemType.id], data);
+        } else if (options.byItemType.item === Item.Artist) {
+          queryClient.setQueryData(['artistSongs', options.byItemType.id], data);
+        } else if (options.byItemType.item === Item.Playlist) {
+          queryClient.setQueryData(['playlist', options.byItemType.id], data);
+        }
 
-      if (data?.song) {
-        dispatchSongsToQueue(data.song, options.play);
-      } else {
-        dispatchSongsToQueue(data, options.play);
+        if (data?.song) {
+          dispatchSongsToQueue(data.song, options.play);
+        } else {
+          dispatchSongsToQueue(data, options.play);
+        }
+      } catch (err) {
+        notifyToast('error', err);
       }
     }
   };

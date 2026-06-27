@@ -9,9 +9,11 @@ import {
   StyledPanel,
 } from '../../shared/styled';
 import ListViewTable from '../../viewtypes/ListViewTable';
+import type { RowDataType } from 'rsuite-table';
 import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
 import { setIsDragging } from '../../../redux/multiSelectSlice';
 import {
+  type ColumnEntry,
   ColumnList,
   moveToIndex,
   setColumnList,
@@ -20,9 +22,9 @@ import {
 } from '../../../redux/configSlice';
 import ConfigOption from '../ConfigOption';
 import useListClickHandler from '../../../hooks/useListClickHandler';
-import { settings } from '../../shared/setDefaultSettings';
+import { settings } from '../../shared/bridge';
 
-const columnSelectorColumns = [
+const getColumnSelectorColumns = () => [
   {
     id: '#',
     dataKey: 'index',
@@ -49,6 +51,30 @@ const columnSelectorColumns = [
   },
 ];
 
+interface ColumnPickerItem {
+  label: string;
+}
+
+interface ColumnListItem {
+  label: string;
+  value: Omit<ColumnEntry, 'uniqueId'>;
+}
+
+interface SettingsConfig {
+  columnList: string;
+  rowHeight: string;
+  fontSize: string;
+}
+
+interface ListViewConfigProps {
+  type: string;
+  defaultColumns: string[];
+  columnPicker: ColumnPickerItem[];
+  columnList: ColumnListItem[];
+  settingsConfig: SettingsConfig;
+  disabledItemValues: string[];
+}
+
 const ListViewConfig = ({
   type,
   defaultColumns,
@@ -56,25 +82,27 @@ const ListViewConfig = ({
   columnList,
   settingsConfig,
   disabledItemValues,
-}: any) => {
+}: ListViewConfigProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const playQueue = useAppSelector((state) => state.playQueue);
   const multiSelect = useAppSelector((state) => state.multiSelect);
   const config = useAppSelector((state) => state.config);
-  const [selectedColumns, setSelectedColumns] = useState<any[]>([]);
-  const columnListType = settingsConfig.columnList.split('List')[0];
+  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  const columnListType = settingsConfig.columnList.split('List')[0] as ColumnList;
   const columnPickerContainerRef = useRef(null);
-  const tableRef = useRef<any>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tableRef is passed to ListViewTable which has pre-existing type errors; using any to avoid cascading type issues
+  const tableRef = useRef<any>(null);
 
   useEffect(() => {
-    const cols = config.lookAndFeel.listView[columnListType].columns.map((col: any) => {
-      return col.label;
-    });
+    const cols = (config.lookAndFeel.listView[columnListType]?.columns ?? []).map(
+      (col) => col.label
+    );
 
     setSelectedColumns(cols);
 
-    settings.set(settingsConfig.columnList, config.lookAndFeel.listView[columnListType].columns);
+    if (config.lookAndFeel.listView[columnListType]?.columns) {
+      settings.set(settingsConfig.columnList, config.lookAndFeel.listView[columnListType].columns);
+    }
   }, [columnListType, config.lookAndFeel.listView, settingsConfig.columnList]);
 
   const { handleRowClick } = useListClickHandler({});
@@ -83,7 +111,7 @@ const ListViewConfig = ({
     if (multiSelect.isDragging) {
       dispatch(
         moveToIndex({
-          entries: multiSelect.selected,
+          entries: multiSelect.selected as unknown as ColumnEntry[],
           moveBeforeId: multiSelect.currentMouseOverId,
           listType,
         })
@@ -96,9 +124,12 @@ const ListViewConfig = ({
     <div style={{ width: '100%' }}>
       <div>
         <StyledPanel>
-          <StyledInputPickerContainer ref={columnPickerContainerRef}>
+          <StyledInputPickerContainer
+            ref={columnPickerContainerRef}
+            data-testid={`column-picker-${columnListType}`}
+          >
             <StyledCheckPicker
-              container={() => columnPickerContainerRef.current}
+              container={() => columnPickerContainerRef.current as unknown as HTMLElement}
               data={columnPicker}
               defaultValue={defaultColumns}
               value={selectedColumns}
@@ -109,24 +140,22 @@ const ListViewConfig = ({
               searchable={false}
               style={{ width: '100%' }}
               maxHeight={250}
-              onChange={(e: any) => {
-                const columns: any[] = [];
+              onChange={(e: unknown[]) => {
+                const columns: ColumnEntry[] = [];
                 if (e) {
-                  const availableCols = columnPicker.map((col: any) => col.label);
+                  const availableCols = columnPicker.map((col) => col.label);
 
-                  e.forEach((selected: string) => {
+                  (e as string[]).forEach((selected: string) => {
                     if (availableCols.includes(selected)) {
                       const alreadySelectedColumn = config.lookAndFeel.listView[
                         columnListType
-                      ].columns.find((column: any) => column.label === selected);
+                      ].columns.find((column) => column.label === selected);
 
                       if (alreadySelectedColumn) {
                         return columns.push(alreadySelectedColumn);
                       }
 
-                      const selectedColumn = columnList.find(
-                        (column: any) => column.label === selected
-                      );
+                      const selectedColumn = columnList.find((column) => column.label === selected);
 
                       if (selectedColumn) {
                         return columns.push({ ...selectedColumn.value, uniqueId: nanoid() });
@@ -152,22 +181,28 @@ const ListViewConfig = ({
           </StyledInputPickerContainer>
           <ListViewTable
             tableRef={tableRef}
-            data={config.lookAndFeel.listView[columnListType].columns || []}
+            data={config.lookAndFeel.listView[columnListType]?.columns || []}
             height={200}
-            handleRowClick={handleRowClick}
+            handleRowClick={
+              handleRowClick as (
+                e: MouseEvent,
+                rowData: RowDataType,
+                tableData: RowDataType[]
+              ) => void
+            }
             handleRowDoubleClick={() => {}}
             handleDragEnd={() => handleDragEnd(columnListType)}
-            columns={columnSelectorColumns}
+            columns={getColumnSelectorColumns()}
             rowHeight={35}
             fontSize={12}
-            listType="column"
+            listType={'column' as ColumnList}
             cacheImages={{ enabled: false }}
-            playQueue={playQueue}
-            multiSelect={multiSelect}
             isModal={false}
             miniView={false}
             dnd
             disableContextMenu
+            handleFavorite={() => {}}
+            handleRating={() => {}}
             config={{ option: columnListType, columnList }}
             virtualized
           />
@@ -186,7 +221,7 @@ const ListViewConfig = ({
             step={1}
             min={15}
             max={250}
-            width={125}
+            $width={125}
             onChange={(e: number) => {
               settings.set(settingsConfig.rowHeight, Number(e));
               dispatch(setRowHeight({ listType: columnListType, height: Number(e) }));
@@ -204,7 +239,7 @@ const ListViewConfig = ({
             step={0.5}
             min={1}
             max={100}
-            width={125}
+            $width={125}
             onChange={(e: number) => {
               settings.set(settingsConfig.fontSize, Number(e));
               dispatch(setFontSize({ listType: columnListType, size: Number(e) }));

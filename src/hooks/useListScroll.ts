@@ -1,6 +1,10 @@
-import { useCallback } from 'react';
+import React, { useCallback } from 'react';
 
-const useListScroll = (ref: any) => {
+interface ListScrollTarget {
+  table: { current: { scrollTop: (pos: number) => void } | null };
+}
+
+const useListScroll = (ref: React.RefObject<ListScrollTarget | null>) => {
   const listScroll = useCallback(
     (position: number) => {
       setTimeout(() => {

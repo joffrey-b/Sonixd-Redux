@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
 import {
   clearSelected,
@@ -8,30 +9,44 @@ import {
 import { setStatus } from '../redux/playerSlice';
 import { fixPlayer2Index, moveToIndex, setPlayerIndex } from '../redux/playQueueSlice';
 import { moveToIndex as moveToIndexPlaylist } from '../redux/playlistSlice';
-import { moveToIndex as moveToIndexConfig } from '../redux/configSlice';
+import type { Song } from '../types';
 import { moveSelectedToIndex, sliceRangeByUniqueId } from '../shared/utils';
 
-const useListClickHandler = (options?: {
-  singleClick?: any;
-  doubleClick?: any;
-  dnd?: 'playQueue' | 'playlist' | 'config';
+const useListClickHandler = <T extends { uniqueId: string }>(options?: {
+  singleClick?: (e: MouseEvent, rowData: T, tableData: T[]) => void;
+  doubleClick?: (rowData: T, e?: MouseEvent) => void;
+  dnd?: 'playQueue' | 'playlist';
 }) => {
   const dispatch = useAppDispatch();
   const multiSelect = useAppSelector((state) => state.multiSelect);
+  // useRef so the timeout ID persists across re-renders — a plain let variable
+  // would be reset to null on every render, breaking double-click detection.
+  const timeoutRef = useRef<number | null>(null);
 
-  let timeout: any = null;
-  const handleRowClick = (e: any, rowData: any, tableData: any) => {
-    if (timeout === null) {
-      timeout = window.setTimeout(() => {
-        timeout = null;
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleRowClick = (e: MouseEvent, rowData: T, tableData: T[]) => {
+    if (timeoutRef.current === null) {
+      timeoutRef.current = window.setTimeout(() => {
+        timeoutRef.current = null;
 
         if (!options?.singleClick) {
           if (e.ctrlKey) {
-            dispatch(toggleSelected(rowData));
+            dispatch(toggleSelected(rowData as unknown as Parameters<typeof toggleSelected>[0]));
           } else if (e.shiftKey) {
             dispatch(
               setSelected(
-                sliceRangeByUniqueId(tableData, multiSelect.lastSelected.uniqueId, rowData.uniqueId)
+                sliceRangeByUniqueId(
+                  tableData,
+                  multiSelect.lastSelected.uniqueId,
+                  rowData.uniqueId
+                ) as unknown as Parameters<typeof setSelected>[0]
               )
             );
           }
@@ -42,14 +57,14 @@ const useListClickHandler = (options?: {
     }
   };
 
-  const handleRowDoubleClick = (rowData: any, e?: any) => {
-    window.clearTimeout(timeout);
-    timeout = null;
+  const handleRowDoubleClick = (rowData: T, e?: MouseEvent) => {
+    window.clearTimeout(timeoutRef.current ?? undefined);
+    timeoutRef.current = null;
 
     dispatch(clearSelected());
 
     if (!options?.doubleClick) {
-      dispatch(setPlayerIndex(rowData));
+      dispatch(setPlayerIndex(rowData as unknown as Song));
       dispatch(fixPlayer2Index());
       dispatch(setStatus('PLAYING'));
     } else {
@@ -57,7 +72,7 @@ const useListClickHandler = (options?: {
     }
   };
 
-  const handleDragEnd = (entries: any) => {
+  const handleDragEnd = (entries: Song[]) => {
     if (multiSelect.isDragging) {
       const reorderedQueue = moveSelectedToIndex(
         entries,
@@ -71,10 +86,6 @@ const useListClickHandler = (options?: {
 
       if (options?.dnd === 'playlist') {
         dispatch(moveToIndexPlaylist(reorderedQueue));
-      }
-
-      if (options?.dnd === 'config') {
-        dispatch(moveToIndexConfig(reorderedQueue));
       }
 
       dispatch(setIsDragging(false));

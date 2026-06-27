@@ -2,8 +2,24 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import useMeasure from 'react-use/lib/useMeasure';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import { useTranslation } from 'react-i18next';
-import { useHistory } from 'react-router-dom';
-import { Sidenav, Nav, Icon } from 'rsuite';
+import { useNavigate } from 'react-router-dom';
+import { Sidenav, Nav } from 'rsuite';
+import AngleLeftIcon from '@rsuite/icons/legacy/AngleLeft';
+import AngleRightIcon from '@rsuite/icons/legacy/AngleRight';
+import Book2Icon from '@rsuite/icons/legacy/Book2';
+import DashboardIcon from '@rsuite/icons/legacy/Dashboard';
+import DownIcon from '@rsuite/icons/legacy/Down';
+import FolderOpenIcon from '@rsuite/icons/legacy/FolderOpen';
+import GearCircleIcon from '@rsuite/icons/legacy/GearCircle';
+import Globe2Icon from '@rsuite/icons/legacy/Globe2';
+import HeadphonesIcon from '@rsuite/icons/legacy/Headphones';
+import HeartIcon from '@rsuite/icons/legacy/Heart';
+import ListUlIcon from '@rsuite/icons/legacy/ListUl';
+import MagicIcon from '@rsuite/icons/legacy/Magic';
+import MicrophoneIcon from '@rsuite/icons/legacy/Microphone';
+import MusicIcon from '@rsuite/icons/legacy/Music';
+import PeopleGroupIcon from '@rsuite/icons/legacy/PeopleGroup';
+import PodcastIcon from '@rsuite/icons/legacy/Podcast';
 import _ from 'lodash';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { Server } from '../../types';
@@ -19,20 +35,28 @@ import { InfoModal } from '../modal/Modal';
 import placeholderImg from '../../img/placeholder.png';
 import SidebarPlaylists from './SidebarPlaylists';
 import { setSidebar } from '../../redux/configSlice';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
+
+interface SidebarProps {
+  expand: boolean;
+  handleToggle: () => void;
+  handleSidebarSelect: (eventKey: string) => void;
+  disableSidebar: boolean;
+  titleBar: string;
+  onClick?: React.MouseEventHandler;
+}
 
 const Sidebar = ({
   expand,
   handleToggle,
   handleSidebarSelect,
   disableSidebar,
-  font,
   titleBar,
   ...rest
-}: any) => {
+}: SidebarProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const history = useHistory();
+  const navigate = useNavigate();
   const playQueue = useAppSelector((state) => state.playQueue);
   const config = useAppSelector((state) => state.config);
   const [width, setWidth] = useState(Number(config.lookAndFeel.sidebar.width.replace('px', '')));
@@ -56,10 +80,10 @@ const Sidebar = ({
     return num;
   }, []);
 
-  const handleResizeMove = useMemo(() => {
-    const throttled = _.throttle((e: MouseEvent) => setThrottledWidth(e.clientX), 25);
-    return (e: MouseEvent) => throttled(e);
-  }, []);
+  const handleResizeMove = useMemo(
+    () => _.throttle((e: MouseEvent) => setThrottledWidth(e.clientX), 25),
+    []
+  );
 
   const handleResizeEnd = useCallback(
     (e: MouseEvent) => {
@@ -83,6 +107,7 @@ const Sidebar = ({
     return () => {
       document.removeEventListener('mousemove', handleResizeMove);
       document.removeEventListener('mouseup', handleResizeEnd);
+      handleResizeMove.cancel();
     };
   }, [handleResizeEnd, isResizing, handleResizeMove]);
 
@@ -94,8 +119,8 @@ const Sidebar = ({
     <>
       <FixedSidebar
         id="sidebar"
+        data-testid="sidebar"
         width={expand ? `${width}px` : 56}
-        font={font}
         $titleBar={titleBar} // transient prop to determine position
         onClick={rest.onClick}
       >
@@ -118,7 +143,7 @@ const Sidebar = ({
                   settings.set('sidebar.coverArt', false);
                 }}
               >
-                <Icon icon="down" />
+                <DownIcon />
               </StyledButton>
             </SidebarCoverArtContainer>
           )}
@@ -147,12 +172,12 @@ const Sidebar = ({
                   <SidebarNavItem
                     tabIndex={0}
                     eventKey="discover"
-                    icon={<Icon icon="dashboard" />}
+                    icon={<DashboardIcon />}
                     onSelect={handleSidebarSelect}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        history.push('/');
+                        navigate('/');
                       }
                     }}
                     $show={config.lookAndFeel.sidebar.selected.includes('dashboard')}
@@ -162,12 +187,12 @@ const Sidebar = ({
                   <SidebarNavItem
                     tabIndex={0}
                     eventKey="nowplaying"
-                    icon={<Icon icon="headphones" />}
+                    icon={<HeadphonesIcon />}
                     onSelect={handleSidebarSelect}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        history.push('/nowplaying');
+                        navigate('/nowplaying');
                       }
                     }}
                     $show={config.lookAndFeel.sidebar.selected.includes('nowplaying')}
@@ -176,13 +201,14 @@ const Sidebar = ({
                   </SidebarNavItem>
                   <SidebarNavItem
                     tabIndex={0}
+                    data-testid="nav-playlists"
                     eventKey="playlists"
-                    icon={<Icon icon="list-ul" />}
+                    icon={<ListUlIcon />}
                     onSelect={handleSidebarSelect}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        history.push('/playlist');
+                        navigate('/playlist');
                       }
                     }}
                     $show={config.lookAndFeel.sidebar.selected.includes('playlists')}
@@ -191,13 +217,14 @@ const Sidebar = ({
                   </SidebarNavItem>
                   <SidebarNavItem
                     tabIndex={0}
+                    data-testid="nav-smart-playlists"
                     eventKey="smartplaylists"
-                    icon={<Icon icon="magic" />}
+                    icon={<MagicIcon />}
                     onSelect={handleSidebarSelect}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        history.push('/smartplaylists');
+                        navigate('/smartplaylists');
                       }
                     }}
                     $show={config.lookAndFeel.sidebar.selected.includes('smartplaylists')}
@@ -206,13 +233,14 @@ const Sidebar = ({
                   </SidebarNavItem>
                   <SidebarNavItem
                     tabIndex={0}
+                    data-testid="nav-starred"
                     eventKey="starred"
-                    icon={<Icon icon="heart" />}
+                    icon={<HeartIcon />}
                     onSelect={handleSidebarSelect}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        history.push('/starred');
+                        navigate('/starred');
                       }
                     }}
                     $show={config.lookAndFeel.sidebar.selected.includes('favorites')}
@@ -223,28 +251,29 @@ const Sidebar = ({
                     <SidebarNavItem
                       tabIndex={0}
                       eventKey="music"
-                      icon={<Icon icon="music" />}
+                      icon={<MusicIcon />}
                       onSelect={handleSidebarSelect}
                       disabled={disableSidebar}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ' || e.key === 'Enter') {
-                          history.push('/library/music');
+                          navigate('/library/music');
                         }
                       }}
                       $show={config.lookAndFeel.sidebar.selected.includes('songs')}
                     >
-                      Songs
+                      {t('Songs')}
                     </SidebarNavItem>
                   )}
                   <SidebarNavItem
                     tabIndex={0}
+                    data-testid="nav-albums"
                     eventKey="albums"
-                    icon={<Icon icon="book2" />}
+                    icon={<Book2Icon />}
                     onSelect={handleSidebarSelect}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        history.push('/library/album');
+                        navigate('/library/album');
                       }
                     }}
                     $show={config.lookAndFeel.sidebar.selected.includes('albums')}
@@ -253,13 +282,14 @@ const Sidebar = ({
                   </SidebarNavItem>
                   <SidebarNavItem
                     tabIndex={0}
+                    data-testid="nav-artists"
                     eventKey="artists"
-                    icon={<Icon icon="people-group" />}
+                    icon={<PeopleGroupIcon />}
                     onSelect={handleSidebarSelect}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        history.push('/library/artist');
+                        navigate('/library/artist');
                       }
                     }}
                     $show={config.lookAndFeel.sidebar.selected.includes('artists')}
@@ -268,30 +298,32 @@ const Sidebar = ({
                   </SidebarNavItem>
                   <SidebarNavItem
                     tabIndex={0}
+                    data-testid="nav-genres"
                     eventKey="genres"
-                    icon={<Icon icon="globe2" />}
+                    icon={<Globe2Icon />}
                     onSelect={handleSidebarSelect}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        history.push('/library/genre');
+                        navigate('/library/genre');
                       }
                     }}
                     $show={config.lookAndFeel.sidebar.selected.includes('genres')}
                   >
                     {t('Genres')}
                   </SidebarNavItem>
-                  {useAppSelector((state) => state.config).serverType !== 'funkwhale' && (
+                  {(config.serverType as string) !== 'funkwhale' && (
                     <>
                       <SidebarNavItem
                         tabIndex={0}
+                        data-testid="nav-folders"
                         eventKey="folders"
-                        icon={<Icon icon="folder-open" />}
+                        icon={<FolderOpenIcon />}
                         onSelect={handleSidebarSelect}
                         disabled={disableSidebar}
-                        onKeyDown={(e: any) => {
+                        onKeyDown={(e: React.KeyboardEvent) => {
                           if (e.key === ' ' || e.key === 'Enter') {
-                            history.push('/library/folder');
+                            navigate('/library/folder');
                           }
                         }}
                         $show={config.lookAndFeel.sidebar.selected.includes('folders')}
@@ -302,14 +334,15 @@ const Sidebar = ({
                   )}
                   {config.serverType !== Server.Jellyfin && (
                     <SidebarNavItem
+                      data-testid="nav-internet-radio"
                       tabIndex={0}
                       eventKey="radio"
-                      icon={<Icon icon="podcast" />}
+                      icon={<PodcastIcon />}
                       onSelect={handleSidebarSelect}
                       disabled={disableSidebar}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ' || e.key === 'Enter') {
-                          history.push('/radio');
+                          navigate('/radio');
                         }
                       }}
                       $show={config.lookAndFeel.sidebar.selected.includes('radio')}
@@ -320,13 +353,14 @@ const Sidebar = ({
                   {config.serverType !== Server.Jellyfin && (
                     <SidebarNavItem
                       tabIndex={0}
+                      data-testid="nav-podcasts"
                       eventKey="podcasts"
-                      icon={<Icon icon="microphone" />}
+                      icon={<MicrophoneIcon />}
                       onSelect={handleSidebarSelect}
                       disabled={disableSidebar}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ' || e.key === 'Enter') {
-                          history.push('/podcasts');
+                          navigate('/podcasts');
                         }
                       }}
                       $show={config.lookAndFeel.sidebar.selected.includes('podcasts')}
@@ -336,13 +370,14 @@ const Sidebar = ({
                   )}
                   <SidebarNavItem
                     tabIndex={0}
+                    data-testid="settings-link"
                     eventKey="config"
-                    icon={<Icon icon="gear-circle" />}
+                    icon={<GearCircleIcon />}
                     onSelect={handleSidebarSelect}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
-                        history.push('/config');
+                        navigate('/config');
                       }
                     }}
                     $show={config.lookAndFeel.sidebar.selected.includes('config')}
@@ -351,10 +386,10 @@ const Sidebar = ({
                   </SidebarNavItem>
                   <SidebarNavItem
                     tabIndex={0}
-                    icon={<Icon icon={expand ? 'arrow-left' : 'arrow-right'} />}
+                    icon={expand ? <AngleLeftIcon /> : <AngleRightIcon />}
                     onSelect={handleToggle}
                     disabled={disableSidebar}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
                         handleToggle();
                       }

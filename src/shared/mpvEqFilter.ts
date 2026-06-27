@@ -4,7 +4,7 @@ import { PeqBand, PeqState } from '../redux/peqSlice';
 const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 const EQ_Q = 1.4;
 
-function peqBandToFilter(band: PeqBand): string | null {
+export function peqBandToFilter(band: PeqBand): string | null {
   if (!band.enabled) return null;
   const { freq, gain, q, type } = band;
   switch (type) {
@@ -39,7 +39,7 @@ export function buildMpvAfChain(eq: EqState, peq: PeqState): string {
       }
     });
     if (eq.preampDb !== 0) {
-      filters.push(`volume=volume=${eq.preampDb}dB`);
+      filters.push(`volume=volume=${Math.pow(10, eq.preampDb / 20).toFixed(6)}`);
     }
   }
 
@@ -50,7 +50,7 @@ export function buildMpvAfChain(eq: EqState, peq: PeqState): string {
       if (f) filters.push(f);
     });
     if (peq.preampDb !== 0) {
-      filters.push(`volume=volume=${peq.preampDb}dB`);
+      filters.push(`volume=volume=${Math.pow(10, peq.preampDb / 20).toFixed(6)}`);
     }
   }
 

@@ -1,7 +1,7 @@
 {
   "name": "sonixd-redux",
   "productName": "Sonixd Redux",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "description": "Sonixd Redux",
   "main": "./main.prod.js",
   "author": {
@@ -9,12 +9,12 @@
     "url": "https://github.com/joffrey-b/Sonixd-Redux"
   },
   "scripts": {
-    "electron-rebuild": "node -r ../.erb/scripts/BabelRegister.js ../.erb/scripts/ElectronRebuild.js",
+    "electron-rebuild": "node ../.erb/scripts/ElectronRebuild.mjs",
     "postinstall": "yarn electron-rebuild"
   },
   "license": "GPL-3.0",
   "devDependencies": {
-    "electron": "34.5.8"
+    "electron": "42.2.0"
   },
   "dependencies": {}
 }

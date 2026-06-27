@@ -2,7 +2,13 @@ import React from 'react';
 import { FlexboxGrid } from 'rsuite';
 import { ConfigOptionDescription, ConfigOptionName, ConfigOptionSection } from './styled';
 
-const ConfigOption = ({ name, description, option }: any) => {
+interface ConfigOptionProps {
+  name?: React.ReactNode;
+  description?: React.ReactNode;
+  option?: React.ReactNode;
+}
+
+const ConfigOption = ({ name, description, option }: ConfigOptionProps) => {
   return (
     <ConfigOptionSection>
       <FlexboxGrid justify="space-between" style={{ alignItems: 'center' }}>

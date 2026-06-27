@@ -3,9 +3,13 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { mockSettings } from '../shared/mockSettings';
 import { moveSelectedToIndex } from '../shared/utils';
 import { Server } from '../types';
-import { settings } from '../components/shared/setDefaultSettings';
+import { getParsedSettings } from '../components/shared/settingsAccess';
+import type { Column, Settings } from '../components/shared/setDefaultSettings';
 
-const parsedSettings: any = process.env.NODE_ENV === 'test' ? mockSettings : settings.store;
+export type ColumnEntry = Column & { uniqueId?: string; fixed?: boolean | 'left' | 'right' };
+
+const getConfigParsedSettings = (): Partial<Settings> =>
+  (process.env.NODE_ENV === 'test' ? mockSettings : getParsedSettings()) as Partial<Settings>;
 
 export interface ConfigPage {
   active: {
@@ -31,6 +35,7 @@ export interface ConfigPage {
     favoriteTracksPage?: SortColumn;
     folderListPage?: SortColumn;
     genreListPage?: SortColumn;
+    musicListPage?: SortColumn;
     playlistListPage?: SortColumn;
   };
   player: {
@@ -40,12 +45,12 @@ export interface ConfigPage {
   lookAndFeel: {
     font: string;
     listView: {
-      music: { columns: any; rowHeight: number; fontSize: number };
-      album: { columns: any; rowHeight: number; fontSize: number };
-      playlist: { columns: any; rowHeight: number; fontSize: number };
-      artist: { columns: any; rowHeight: number; fontSize: number };
-      genre: { columns: any; rowHeight: number; fontSize: number };
-      mini: { columns: any; rowHeight: number; fontSize: number };
+      music: { columns: ColumnEntry[]; rowHeight: number; fontSize: number };
+      album: { columns: ColumnEntry[]; rowHeight: number; fontSize: number };
+      playlist: { columns: ColumnEntry[]; rowHeight: number; fontSize: number };
+      artist: { columns: ColumnEntry[]; rowHeight: number; fontSize: number };
+      genre: { columns: ColumnEntry[]; rowHeight: number; fontSize: number };
+      mini: { columns: ColumnEntry[]; rowHeight: number; fontSize: number };
     };
     gridView: {
       cardSize: number;
@@ -116,171 +121,201 @@ export type SidebarList =
   | 'folders'
   | 'config'
   | 'collapse'
-  | 'playlists';
+  | 'playlists'
+  | 'playlistList'
+  | 'smartplaylists'
+  | 'radio'
+  | 'podcasts';
 
 export type ColumnList = 'music' | 'album' | 'playlist' | 'artist' | 'genre' | 'mini';
 
-const initialState: ConfigPage = {
-  active: {
-    tab: 'playback',
-    columnSelectorTab: 'music',
-  },
-  playback: {
-    filters: parsedSettings.playbackFilters,
-    audioDeviceId: parsedSettings.audioDeviceId || undefined,
-    mpvAudioDeviceId: parsedSettings.mpvAudioDeviceId || undefined,
-    playerBackend: (parsedSettings.playerBackend as 'web' | 'mpv') ?? 'web',
-    mpvPath: (parsedSettings.mpvPath as string) ?? '',
-    mpvGapless: (parsedSettings.mpvGapless as 'no' | 'weak' | 'yes') ?? 'weak',
-    mpvReplayGain: (parsedSettings.mpvReplayGain as 'no' | 'track' | 'album') ?? 'no',
-  },
-  player: {
-    systemNotifications: parsedSettings.systemNotifications,
-    globalShortcuts: parsedSettings.globalShortcuts || false,
-  },
-  sort: {
-    albumListPage: undefined,
-    albumPage: undefined,
-    artistListPage: undefined,
-    artistPage: undefined,
-    favoriteAlbumsPage: undefined,
-    favoriteArtistsPage: undefined,
-    favoriteTracksPage: undefined,
-    folderListPage: undefined,
-    genreListPage: undefined,
-    playlistListPage: undefined,
-  },
-  lookAndFeel: {
-    font: String(parsedSettings.font),
-    listView: {
-      music: {
-        columns: parsedSettings.musicListColumns?.map((col: any) => {
-          return { ...col, uniqueId: nanoid() };
-        }),
-        rowHeight: Number(parsedSettings.musicListRowHeight),
-        fontSize: Number(parsedSettings.musicListFontSize),
+// Exported so import-settings (main.dev.mjs) can rebuild this slice's state
+// fresh from the post-import settings store and dispatch it wholesale — the
+// main process's redux store is created once at app boot and never
+// recomputed afterwards (see initStore() in main.dev.mjs), so without this,
+// settings imported via the generic settings.set() path (which doesn't go
+// through redux at all) get silently reverted on the next reload when
+// electron-redux's INIT_STATE handshake re-hydrates the renderer from main's
+// stale in-memory state. Safe to call again later: `active`/`sort` are
+// already runtime-only (not settings-derived) and already reset to these
+// same fixed values on every reload regardless.
+export const buildInitialState = (): ConfigPage => {
+  const parsedSettings = getConfigParsedSettings();
+  return {
+    active: {
+      tab: 'playback',
+      columnSelectorTab: 'music',
+    },
+    playback: {
+      filters: parsedSettings.playbackFilters ?? [],
+      audioDeviceId: parsedSettings.audioDeviceId || undefined,
+      mpvAudioDeviceId: parsedSettings.mpvAudioDeviceId || undefined,
+      playerBackend: (parsedSettings.playerBackend as 'web' | 'mpv') ?? 'web',
+      mpvPath: (parsedSettings.mpvPath as string) ?? '',
+      mpvGapless: (parsedSettings.mpvGapless as 'no' | 'weak' | 'yes') ?? 'weak',
+      mpvReplayGain: (parsedSettings.mpvReplayGain as 'no' | 'track' | 'album') ?? 'no',
+    },
+    player: {
+      systemNotifications: parsedSettings.systemNotifications ?? false,
+      globalShortcuts: parsedSettings.globalShortcuts || false,
+    },
+    sort: {
+      albumListPage: undefined,
+      albumPage: undefined,
+      artistListPage: undefined,
+      artistPage: undefined,
+      favoriteAlbumsPage: undefined,
+      favoriteArtistsPage: undefined,
+      favoriteTracksPage: undefined,
+      folderListPage: undefined,
+      genreListPage: undefined,
+      musicListPage: undefined,
+      playlistListPage: undefined,
+    },
+    lookAndFeel: {
+      font: String(parsedSettings.font),
+      listView: {
+        music: {
+          columns:
+            parsedSettings.musicListColumns?.map((col) => {
+              return { ...col, uniqueId: nanoid() };
+            }) ?? [],
+          rowHeight: Number(parsedSettings.musicListRowHeight),
+          fontSize: Number(parsedSettings.musicListFontSize),
+        },
+        album: {
+          columns:
+            parsedSettings.albumListColumns?.map((col) => {
+              return { ...col, uniqueId: nanoid() };
+            }) ?? [],
+          rowHeight: Number(parsedSettings.albumListRowHeight),
+          fontSize: Number(parsedSettings.albumListFontSize),
+        },
+        playlist: {
+          columns:
+            parsedSettings.playlistListColumns?.map((col) => {
+              return { ...col, uniqueId: nanoid() };
+            }) ?? [],
+          rowHeight: Number(parsedSettings.playlistListRowHeight),
+          fontSize: Number(parsedSettings.playlistListFontSize),
+        },
+        artist: {
+          columns:
+            parsedSettings.artistListColumns?.map((col) => {
+              return { ...col, uniqueId: nanoid() };
+            }) ?? [],
+          rowHeight: Number(parsedSettings.artistListRowHeight),
+          fontSize: Number(parsedSettings.artistListFontSize),
+        },
+        genre: {
+          columns:
+            parsedSettings.genreListColumns?.map((col) => {
+              return { ...col, uniqueId: nanoid() };
+            }) ?? [],
+          rowHeight: Number(parsedSettings.genreListRowHeight),
+          fontSize: Number(parsedSettings.genreListFontSize),
+        },
+        mini: {
+          columns:
+            parsedSettings.miniListColumns?.map((col) => {
+              return { ...col, uniqueId: nanoid() };
+            }) ?? [],
+          rowHeight: Number(parsedSettings.miniListRowHeight),
+          fontSize: Number(parsedSettings.miniListFontSize),
+        },
       },
-      album: {
-        columns: parsedSettings.albumListColumns?.map((col: any) => {
-          return { ...col, uniqueId: nanoid() };
-        }),
-        rowHeight: Number(parsedSettings.albumListRowHeight),
-        fontSize: Number(parsedSettings.albumListFontSize),
+      gridView: {
+        cardSize: Number(parsedSettings.gridCardSize),
+        gapSize: Number(parsedSettings.gridGapSize),
+        alignment: String(parsedSettings.gridAlignment),
       },
-      playlist: {
-        columns: parsedSettings.playlistListColumns?.map((col: any) => {
-          return { ...col, uniqueId: nanoid() };
-        }),
-        rowHeight: Number(parsedSettings.playlistListRowHeight),
-        fontSize: Number(parsedSettings.playlistListFontSize),
-      },
-      artist: {
-        columns: parsedSettings.artistListColumns?.map((col: any) => {
-          return { ...col, uniqueId: nanoid() };
-        }),
-        rowHeight: Number(parsedSettings.artistListRowHeight),
-        fontSize: Number(parsedSettings.artistListFontSize),
-      },
-      genre: {
-        columns: parsedSettings.genreListColumns?.map((col: any) => {
-          return { ...col, uniqueId: nanoid() };
-        }),
-        rowHeight: Number(parsedSettings.genreListRowHeight),
-        fontSize: Number(parsedSettings.genreListFontSize),
-      },
-      mini: {
-        columns: parsedSettings.miniListColumns?.map((col: any) => {
-          return { ...col, uniqueId: nanoid() };
-        }),
-        rowHeight: Number(parsedSettings.miniListRowHeight),
-        fontSize: Number(parsedSettings.miniListFontSize),
+      sidebar: {
+        expand: Boolean(parsedSettings.sidebar?.expand),
+        width: String(parsedSettings.sidebar?.width),
+        coverArt: Boolean(parsedSettings.sidebar?.coverArt),
+        selected: (parsedSettings.sidebar?.selected as SidebarList[]) || [
+          'dashboard',
+          'nowplaying',
+          'favorites',
+          'songs',
+          'albums',
+          'artists',
+          'genres',
+          'folders',
+          'config',
+          'collapse',
+          'playlists',
+          'playlistList',
+          'smartplaylists',
+          'radio',
+          'podcasts',
+        ],
       },
     },
-    gridView: {
-      cardSize: Number(parsedSettings.gridCardSize),
-      gapSize: Number(parsedSettings.gridGapSize),
-      alignment: String(parsedSettings.gridAlignment),
+    external: {
+      discord: {
+        enabled: parsedSettings.discord?.enabled || false,
+        clientId: parsedSettings.discord?.clientId || '',
+        showAlbumArt: parsedSettings.discord?.showAlbumArt || false,
+      },
+      obs: {
+        enabled: parsedSettings.obs?.enabled || false,
+        url: parsedSettings.obs?.url || '',
+        path: parsedSettings.obs?.path || '',
+        pollingInterval: parsedSettings.obs?.pollingInterval || 1000,
+        type: (parsedSettings.obs?.type as 'local' | 'web') || 'local',
+      },
     },
-    sidebar: {
-      expand: Boolean(parsedSettings.sidebar?.expand),
-      width: String(parsedSettings.sidebar?.width),
-      coverArt: Boolean(parsedSettings.sidebar?.coverArt),
-      selected: parsedSettings.sidebar?.selected || [
-        'dashboard',
-        'nowplaying',
-        'favorites',
-        'songs',
-        'albums',
-        'artists',
-        'genres',
-        'folders',
-        'config',
-        'collapse',
-        'playlists',
-        'playlistList',
-        'smartplaylists',
-        'radio',
-        'podcasts',
-      ],
+    window: {
+      minimizeToTray: parsedSettings.minimizeToTray ?? false,
+      exitToTray: parsedSettings.exitToTray ?? false,
+      allowDevConsole: parsedSettings.allowDevConsole || false,
     },
-  },
-  external: {
-    discord: {
-      enabled: parsedSettings.discord?.enabled || false,
-      clientId: parsedSettings.discord?.clientId || '',
-      showAlbumArt: parsedSettings.discord?.showAlbumArt || false,
+    serverType: (parsedSettings.serverType as Server) ?? Server.Subsonic,
+    hotkeys: {
+      navigateBack: parsedSettings.hotkeyNavigateBack || 'backspace',
+      search: parsedSettings.hotkeySearch || 'ctrl+f',
+      selectAll: parsedSettings.hotkeySelectAll || 'ctrl+a',
+      removeSelected: parsedSettings.hotkeyRemoveSelected || 'del',
+      playPause: parsedSettings.hotkeyPlayPause || 'ctrl+p',
+      nextTrack: parsedSettings.hotkeyNextTrack || 'ctrl+right',
+      prevTrack: parsedSettings.hotkeyPrevTrack || 'ctrl+left',
+      volumeUp: parsedSettings.hotkeyVolumeUp || 'ctrl+up',
+      volumeDown: parsedSettings.hotkeyVolumeDown || 'ctrl+down',
+      mute: parsedSettings.hotkeyMute || 'ctrl+m',
     },
-    obs: {
-      enabled: parsedSettings.obs?.enabled || false,
-      url: parsedSettings.obs?.url || '',
-      path: parsedSettings.obs?.path || '',
-      pollingInterval: parsedSettings.obs?.pollingInterval || 1000,
-      type: parsedSettings.obs?.type || 'local',
-    },
-  },
-  window: {
-    minimizeToTray: parsedSettings.minimizeToTray,
-    exitToTray: parsedSettings.exitToTray,
-    allowDevConsole: parsedSettings.allowDevConsole || false,
-  },
-  serverType: parsedSettings.serverType,
-  hotkeys: {
-    navigateBack: parsedSettings.hotkeyNavigateBack || 'backspace',
-    search: parsedSettings.hotkeySearch || 'ctrl+f',
-    selectAll: parsedSettings.hotkeySelectAll || 'ctrl+a',
-    removeSelected: parsedSettings.hotkeyRemoveSelected || 'del',
-    playPause: parsedSettings.hotkeyPlayPause || 'ctrl+p',
-    nextTrack: parsedSettings.hotkeyNextTrack || 'ctrl+right',
-    prevTrack: parsedSettings.hotkeyPrevTrack || 'ctrl+left',
-    volumeUp: parsedSettings.hotkeyVolumeUp || 'ctrl+up',
-    volumeDown: parsedSettings.hotkeyVolumeDown || 'ctrl+down',
-    mute: parsedSettings.hotkeyMute || 'ctrl+m',
-  },
+  };
 };
+
+const initialState = buildInitialState();
 
 const configSlice = createSlice({
   name: 'config',
   initialState,
   reducers: {
-    setActive: (state, action: PayloadAction<any>) => {
+    // Wholesale replace, dispatched by main.dev.mjs's import-settings handler
+    // with a freshly-built buildInitialState() — see that function's comment.
+    replaceState: (_state, action: PayloadAction<ConfigPage>) => action.payload,
+
+    setActive: (state, action: PayloadAction<ConfigPage['active']>) => {
       state.active = action.payload;
     },
 
-    setSidebar: (state, action: PayloadAction<any>) => {
+    setSidebar: (state, action: PayloadAction<Partial<Sidebar>>) => {
       state.lookAndFeel.sidebar = {
         ...state.lookAndFeel.sidebar,
         ...action.payload,
       };
     },
 
-    setPlayer: (state, action: PayloadAction<any>) => {
+    setPlayer: (state, action: PayloadAction<Partial<ConfigPage['player']>>) => {
       state.player = {
         ...state.player,
         ...action.payload,
       };
     },
 
-    setWindow: (state, action: PayloadAction<any>) => {
+    setWindow: (state, action: PayloadAction<Partial<ConfigPage['window']>>) => {
       state.window = { ...state.window, ...action.payload };
     },
 
@@ -355,11 +390,14 @@ const configSlice = createSlice({
       );
     },
 
-    setPlaybackFilters: (state, action: PayloadAction<any>) => {
+    setPlaybackFilters: (state, action: PayloadAction<PlaybackFilter[]>) => {
       state.playback.filters = action.payload;
     },
 
-    setColumnList: (state, action: PayloadAction<{ listType: ColumnList; entries: any }>) => {
+    setColumnList: (
+      state,
+      action: PayloadAction<{ listType: ColumnList; entries: ColumnEntry[] }>
+    ) => {
       state.lookAndFeel.listView[action.payload.listType].columns = action.payload.entries;
     },
 
@@ -389,8 +427,8 @@ const configSlice = createSlice({
     moveToIndex: (
       state,
       action: PayloadAction<{
-        entries: any;
-        moveBeforeId: string;
+        entries: ColumnEntry[];
+        moveBeforeId: string | undefined;
         listType: 'music' | 'album' | 'playlist' | 'artist' | 'genre' | 'mini';
       }>
     ) => {
@@ -401,11 +439,11 @@ const configSlice = createSlice({
       );
     },
 
-    setDiscord: (state, action: PayloadAction<any>) => {
+    setDiscord: (state, action: PayloadAction<ConfigPage['external']['discord']>) => {
       state.external.discord = action.payload;
     },
 
-    setOBS: (state, action: PayloadAction<any>) => {
+    setOBS: (state, action: PayloadAction<ConfigPage['external']['obs']>) => {
       state.external.obs = action.payload;
     },
 
@@ -415,10 +453,21 @@ const configSlice = createSlice({
     ) => {
       state.hotkeys[action.payload.action] = action.payload.key;
     },
+
+    // The main process owns a long-lived Redux store (electron-redux's stateSyncEnhancer)
+    // that is created once at app boot and never recomputed on renderer reload. Login/
+    // disconnect write serverType directly to electron-store via IPC, bypassing Redux, so
+    // without this action the main store's stale serverType gets synced back to the
+    // renderer on the next reload, clobbering the value the renderer just persisted. See
+    // bridge:settings:setCredentials and bridge:settings:disconnect in main.dev.mjs.
+    setServerType: (state, action: PayloadAction<Server>) => {
+      state.serverType = action.payload;
+    },
   },
 });
 
 export const {
+  replaceState,
   setActive,
   setPageSort,
   appendPlaybackFilter,
@@ -445,5 +494,6 @@ export const {
   setWindow,
   setPlayer,
   setHotkey,
+  setServerType,
 } = configSlice.actions;
 export default configSlice.reducer;

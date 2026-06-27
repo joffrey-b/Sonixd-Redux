@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { ButtonToolbar, Icon, FlexboxGrid } from 'rsuite';
+import { ButtonToolbar, FlexboxGrid } from 'rsuite';
+import CloudUploadIcon from '@rsuite/icons/legacy/CloudUpload';
+import PlusIcon from '@rsuite/icons/legacy/Plus';
+import RefreshIcon from '@rsuite/icons/legacy/Refresh';
+import TrashIcon from '@rsuite/icons/legacy/Trash';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import {
@@ -10,6 +14,12 @@ import {
 } from '../../redux/smartPlaylistSlice';
 import { notifyToast } from '../shared/toast';
 import { StyledButton } from '../shared/styled';
+import {
+  PlayButton,
+  PlayAppendNextButton,
+  PlayAppendButton,
+  EditButton,
+} from '../shared/ToolbarButtons';
 import GenericPage from '../layout/GenericPage';
 import GenericPageHeader from '../layout/GenericPageHeader';
 import { SmartPlaylist, Play } from '../../types';
@@ -47,6 +57,7 @@ const SmartPlaylistRow = ({
   onDelete: () => void;
 }) => {
   const { t } = useTranslation();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const sortLabel = SORT_LABEL[playlist.sort] || playlist.sort;
   const dirLabel = playlist.sortDirection === 'desc' ? '↓' : '↑';
 
@@ -54,6 +65,7 @@ const SmartPlaylistRow = ({
     <FlexboxGrid
       align="middle"
       justify="space-between"
+      data-testid="smart-playlist-row"
       style={{
         padding: '10px 14px',
         marginBottom: 6,
@@ -70,30 +82,43 @@ const SmartPlaylistRow = ({
       </FlexboxGrid.Item>
       <FlexboxGrid.Item>
         <ButtonToolbar>
-          <StyledButton appearance="primary" size="sm" onClick={() => onPlay(playlist)}>
-            <Icon icon="play" />
-          </StyledButton>
-          <StyledButton appearance="subtle" size="sm" onClick={() => onPlayNext(playlist)}>
-            <Icon icon="plus-circle" />
-          </StyledButton>
-          <StyledButton appearance="subtle" size="sm" onClick={() => onPlayLater(playlist)}>
-            <Icon icon="plus" />
-          </StyledButton>
+          <PlayButton
+            data-testid="playlist-play-btn"
+            size="sm"
+            appearance="primary"
+            onClick={() => onPlay(playlist)}
+          />
+          <PlayAppendNextButton
+            size="sm"
+            appearance="subtle"
+            onClick={() => onPlayNext(playlist)}
+          />
+          <PlayAppendButton size="sm" appearance="subtle" onClick={() => onPlayLater(playlist)} />
           <StyledButton
+            data-testid="playlist-save-to-server-btn"
             appearance="subtle"
             size="sm"
             onClick={() => onSaveToServer(playlist)}
             loading={isSaving}
             title={t('Save to server')}
           >
-            <Icon icon="cloud-upload" />
+            <CloudUploadIcon />
           </StyledButton>
-          <StyledButton appearance="subtle" size="sm" onClick={onEdit}>
-            <Icon icon="edit2" />
-          </StyledButton>
-          <StyledButton appearance="subtle" size="sm" onClick={onDelete}>
-            <Icon icon="trash" />
-          </StyledButton>
+          <EditButton size="sm" appearance="subtle" onClick={onEdit} />
+          {confirmDelete ? (
+            <>
+              <StyledButton size="sm" appearance="primary" onClick={onDelete}>
+                {t('Yes')}
+              </StyledButton>
+              <StyledButton size="sm" appearance="subtle" onClick={() => setConfirmDelete(false)}>
+                {t('No')}
+              </StyledButton>
+            </>
+          ) : (
+            <StyledButton appearance="subtle" size="sm" onClick={() => setConfirmDelete(true)}>
+              <TrashIcon />
+            </StyledButton>
+          )}
         </ButtonToolbar>
       </FlexboxGrid.Item>
     </FlexboxGrid>
@@ -211,27 +236,32 @@ const SmartPlaylistList = () => {
           subtitle={
             <div>
               <ButtonToolbar style={{ marginBottom: 6 }}>
-                <StyledButton appearance="primary" onClick={openCreate}>
-                  <Icon icon="plus" /> {t('New Playlist')}
+                <StyledButton
+                  appearance="primary"
+                  data-testid="create-smart-playlist"
+                  onClick={openCreate}
+                >
+                  <PlusIcon style={{ marginRight: 6 }} /> {t('New Playlist')}
                 </StyledButton>
                 <StyledButton appearance="subtle" onClick={handleSync} loading={syncing}>
-                  <Icon icon="refresh" /> {syncing ? t('Syncing...') : t('Sync Library')}
+                  <RefreshIcon style={{ marginRight: 6 }} />{' '}
+                  {syncing ? t('Syncing...') : t('Sync Library')}
                 </StyledButton>
               </ButtonToolbar>
               <div style={{ fontSize: 12, opacity: 0.55 }}>
                 {syncing && syncProgress
                   ? t('Syncing... {{fetched}} songs', { fetched: syncProgress.fetched })
                   : usingCache
-                  ? t('Using local library cache') +
-                    (lastSynced
-                      ? ` — ${t('Last synced')} ${new Intl.DateTimeFormat(undefined, {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        }).format(new Date(lastSynced))}`
-                      : '')
-                  : t(
-                      'No library cache — smart playlists use a random pool of 500 songs. Click Sync Library to enable full library search.'
-                    )}
+                    ? t('Using local library cache') +
+                      (lastSynced
+                        ? ` — ${t('Last synced')} ${new Intl.DateTimeFormat(undefined, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          }).format(new Date(lastSynced))}`
+                        : '')
+                    : t(
+                        'No library cache — smart playlists use a random pool of 500 songs. Click Sync Library to enable full library search.'
+                      )}
               </div>
             </div>
           }

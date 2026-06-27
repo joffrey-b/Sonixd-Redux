@@ -1,9 +1,12 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { mockSettings } from '../shared/mockSettings';
 import { Item, Sort, Pagination } from '../types';
-import { settings } from '../components/shared/setDefaultSettings';
+import { getParsedSettings } from '../components/shared/settingsAccess';
+import type { Settings } from '../components/shared/setDefaultSettings';
 
-const parsedSettings: any = process.env.NODE_ENV === 'test' ? mockSettings : settings.store;
+const parsedSettings = (
+  process.env.NODE_ENV === 'test' ? mockSettings : getParsedSettings()
+) as Partial<Settings>;
 
 export interface AdvancedFilters {
   enabled: boolean;
@@ -12,11 +15,11 @@ export interface AdvancedFilters {
     starred: boolean;
     notStarred: boolean;
     genre: {
-      list: any[];
+      list: string[];
       type: 'and' | 'or';
     };
     artist: {
-      list: any[];
+      list: string[];
       type: 'and' | 'or';
     };
     year: {
@@ -44,9 +47,9 @@ const initialState: View = {
   album: {
     filter:
       parsedSettings.serverType === 'jellyfin' &&
-      ['frequent', 'recent'].includes(String(parsedSettings.albumSortDefault))
+      ['frequent', 'recent'].includes(parsedSettings.albumSortDefault ?? 'random')
         ? 'random'
-        : String(parsedSettings.albumSortDefault),
+        : (parsedSettings.albumSortDefault ?? 'random'),
     sort: {
       column: undefined,
       type: 'asc',
@@ -72,8 +75,8 @@ const initialState: View = {
       },
     },
     pagination: {
-      serverSide: parsedSettings.pagination.album.serverSide,
-      recordsPerPage: parsedSettings.pagination.album.recordsPerPage,
+      serverSide: parsedSettings.pagination?.album?.serverSide ?? false,
+      recordsPerPage: parsedSettings.pagination?.album?.recordsPerPage ?? 50,
       activePage: 1,
       pages: 1,
     },
@@ -85,8 +88,8 @@ const initialState: View = {
       type: 'asc',
     },
     pagination: {
-      serverSide: parsedSettings.pagination.music.serverSide,
-      recordsPerPage: parsedSettings.pagination.music.recordsPerPage,
+      serverSide: parsedSettings.pagination?.music?.serverSide ?? true,
+      recordsPerPage: parsedSettings.pagination?.music?.recordsPerPage ?? 50,
       activePage: 1,
       pages: 1,
     },
@@ -97,7 +100,7 @@ const viewSlice = createSlice({
   name: 'view',
   initialState,
   reducers: {
-    setFilter: (state, action: PayloadAction<{ listType: Item; data: any }>) => {
+    setFilter: (state, action: PayloadAction<{ listType: Item; data: string }>) => {
       if (action.payload.listType === Item.Album) {
         state.album.filter = action.payload.data;
       }
@@ -112,6 +115,7 @@ const viewSlice = createSlice({
       action: PayloadAction<{
         listType: Item;
         filter: 'enabled' | 'starred' | 'notStarred' | 'genre' | 'artist' | 'year' | 'nav';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- value type depends on the filter discriminant; each assignment site enforces the correct type at runtime
         value: any;
       }>
     ) => {
@@ -146,7 +150,7 @@ const viewSlice = createSlice({
       }
     },
 
-    setColumnSort: (state, action: PayloadAction<{ listType: Item; data: any }>) => {
+    setColumnSort: (state, action: PayloadAction<{ listType: Item; data: Sort }>) => {
       if (action.payload.listType === Item.Album) {
         state.album.sort = action.payload.data;
       }

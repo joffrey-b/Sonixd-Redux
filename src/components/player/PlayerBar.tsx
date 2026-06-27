@@ -1,11 +1,13 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { ipcRenderer } from 'electron';
+import React, { useEffect, useState, useRef, useMemo, startTransition } from 'react';
+import { ipcRenderer, settings } from '../shared/bridge';
 import { useHotkeys } from 'react-hotkeys-hook';
 import axios from 'axios';
-import { useQueryClient } from 'react-query';
-import { FlexboxGrid, Grid, Row, Col, Whisper, Icon } from 'rsuite';
-import { WhisperInstance } from 'rsuite/lib/Whisper';
-import { useHistory } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { FlexboxGrid, Grid, Row, Col, Whisper } from 'rsuite';
+import CommentingOIcon from '@rsuite/icons/legacy/CommentingO';
+import UpIcon from '@rsuite/icons/legacy/Up';
+import { WhisperInstance } from 'rsuite/Whisper';
+import { useNavigate } from 'react-router-dom';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import format from 'format-duration';
 import { useTranslation } from 'react-i18next';
@@ -25,7 +27,7 @@ import {
 } from '../../redux/playQueueSlice';
 import { setStatus } from '../../redux/playerSlice';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
-import Player from './Player';
+import Player, { type PlayerRef } from './Player';
 import MpvPlayer from './MpvPlayer';
 import CustomTooltip from '../shared/CustomTooltip';
 import placeholderImg from '../../img/placeholder.png';
@@ -50,8 +52,8 @@ import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
 import { apiController } from '../../api/controller';
 import Slider from '../slider/Slider';
 import useDiscordRpc from '../../hooks/useDiscordRpc';
-import { settings } from '../shared/setDefaultSettings';
 import { incrementPlayCountInCache } from '../../hooks/useLibraryCache';
+import { shouldScrobble as checkShouldScrobble } from '../../shared/scrobbleLogic';
 import useJukebox from '../../hooks/useJukebox';
 import { notifyToast } from '../shared/toast';
 
@@ -66,7 +68,9 @@ const PlayerBar = () => {
   const dispatch = useAppDispatch();
   const [currentTime, setCurrentTime] = useState(0);
   const [isDraggingVolume, setIsDraggingVolume] = useState(false);
-  const [currentEntryList, setCurrentEntryList] = useState('entry');
+  const [currentEntryList, setCurrentEntryList] = useState<
+    'sortedEntry' | 'shuffledEntry' | 'entry'
+  >('entry');
   const [localVolume, setLocalVolume] = useState(Number(settings.get('volume')));
   const [muted, setMuted] = useState(false);
   const localVolumeRef = useRef(localVolume);
@@ -83,7 +87,7 @@ const PlayerBar = () => {
   // Updated every render — lets the IPC volume handlers call setGain without stale closure
   jukeboxSetGainRef.current = isJukebox && !muted ? jukebox.setGain : null;
   const songDuration = useMemo(
-    () => format(playQueue[currentEntryList][playQueue.currentIndex]?.duration * 1000 || 0),
+    () => format((playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0) * 1000),
     [currentEntryList, playQueue]
   );
   const songCurrentTime = useMemo(
@@ -93,27 +97,33 @@ const PlayerBar = () => {
 
   const handlePlayRandom = async () => {
     setIsLoadingRandom(true);
-    const res: Song[] = await apiController({
-      serverType: config.serverType,
-      endpoint: 'getRandomSongs',
-      args: {
-        size: 200,
-        musicFolderId: folder.musicFolder,
-      },
-    });
+    try {
+      const res: Song[] = await apiController({
+        serverType: config.serverType,
+        endpoint: 'getRandomSongs',
+        args: {
+          size: 200,
+          musicFolderId: folder.musicFolder,
+        },
+      });
 
-    handlePlayQueueAdd({ byData: res, play: Play.Play });
-    setIsLoadingRandom(false);
+      handlePlayQueueAdd({ byData: res, play: Play.Play });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(err);
+    } finally {
+      setIsLoadingRandom(false);
+    }
   };
 
-  const playersRef = useRef<any>();
+  const playersRef = useRef<PlayerRef | null>(null);
   const currentTimeRef = useRef(currentTime);
   const podcastStopPressedRef = useRef(false);
   useEffect(() => {
     currentTimeRef.current = currentTime;
   }, [currentTime]);
   const sleepTimerWhisperRef = useRef<WhisperInstance>(null);
-  const history = useHistory();
+  const navigate = useNavigate();
   useDiscordRpc({ playersRef, currentTimeRef, isMpv });
 
   const isCurrentPodcastOrRadio = Boolean(
@@ -143,12 +153,14 @@ const PlayerBar = () => {
     if (isMpv || isJukebox) return undefined; // MPV/jukebox: time comes from IPC or polling
     if (player.status === 'PLAYING') {
       const interval = setInterval(() => {
-        if (playQueue.currentPlayer === 1) {
-          setCurrentTime(playersRef.current?.player1.audioEl.current.currentTime || 0);
-        } else {
-          setCurrentTime(playersRef.current?.player2.audioEl.current.currentTime || 0);
-        }
-      }, 50);
+        startTransition(() => {
+          if (playQueue.currentPlayer === 1) {
+            setCurrentTime(playersRef.current?.player1?.audioEl.current?.currentTime || 0);
+          } else {
+            setCurrentTime(playersRef.current?.player2?.audioEl.current?.currentTime || 0);
+          }
+        });
+      }, 100);
 
       return () => clearInterval(interval);
     }
@@ -160,12 +172,16 @@ const PlayerBar = () => {
       const interval = setInterval(() => {
         const currentPlayerRef =
           playQueue.currentPlayer === 1
-            ? playersRef.current?.player1.audioEl.current
-            : playersRef.current?.player2.audioEl.current;
+            ? playersRef.current?.player1?.audioEl.current
+            : playersRef.current?.player2?.audioEl.current;
+
+        const progressMs = Math.floor(
+          (isMpv ? currentTimeRef.current : currentPlayerRef?.currentTime || 0) * 1000
+        );
 
         if (config.external.obs.type === 'web') {
-          try {
-            axios.post(
+          axios
+            .post(
               config.external.obs.url,
               {
                 data: {
@@ -176,7 +192,7 @@ const PlayerBar = () => {
                     ? undefined
                     : playQueue.current?.image.replaceAll('150', '350'),
                   duration: Math.floor((playQueue.current?.duration || 0) * 1000),
-                  progress: Math.floor((currentPlayerRef.currentTime || 0) * 1000),
+                  progress: progressMs,
                   status: player.status === 'PLAYING' ? 'playing' : 'stopped',
                   title: playQueue.current?.title,
                 },
@@ -191,10 +207,9 @@ const PlayerBar = () => {
                   'Access-Control-Allow-Origin': '*',
                 },
               }
-            );
-          } catch (e) {
-            console.log(e);
-          }
+            )
+            // eslint-disable-next-line no-console
+            .catch((e) => console.error(e));
         } else if (config.external.obs.path) {
           writeOBSFiles(config.external.obs.path, {
             album: playQueue.current?.album,
@@ -204,7 +219,7 @@ const PlayerBar = () => {
               ? undefined
               : playQueue.current?.image,
             duration: Math.floor((playQueue.current?.duration || 0) * 1000),
-            progress: Math.floor((currentPlayerRef.currentTime || 0) * 1000),
+            progress: progressMs,
             status: player.status === 'PLAYING' ? 'playing' : 'stopped',
             title: playQueue.current?.title,
           });
@@ -221,6 +236,7 @@ const PlayerBar = () => {
     config.external.obs.pollingInterval,
     config.external.obs.type,
     config.external.obs.url,
+    isMpv,
     playQueue,
     player.status,
   ]);
@@ -334,11 +350,12 @@ const PlayerBar = () => {
         if (isJukebox) {
           if (!muted) jukebox.setGain(localVolume);
         } else {
-          if (playQueue.currentPlayer === 1) {
-            playersRef.current.player1.audioEl.current.volume = localVolume ** 2;
-          } else {
-            playersRef.current.player2.audioEl.current.volume = localVolume ** 2;
-          }
+          const audioEl = (
+            playQueue.currentPlayer === 1
+              ? playersRef.current?.player1
+              : playersRef.current?.player2
+          )?.audioEl.current;
+          if (audioEl) audioEl.volume = localVolume ** 2;
         }
         settings.set('volume', localVolume);
       }
@@ -363,21 +380,25 @@ const PlayerBar = () => {
     if (isMpv || isJukebox) return;
     // Set the seek back to 0 when the player is incremented/decremented, otherwise the
     // slider bar will temporarily stick to the current time of the previous track before resetting to 0
-    playersRef.current.player1.audioEl.current.pause();
-    playersRef.current.player2.audioEl.current.pause();
-    playersRef.current.player1.audioEl.current.currentTime = 0;
-    playersRef.current.player2.audioEl.current.currentTime = 0;
+    const p1El = playersRef.current?.player1?.audioEl.current;
+    const p2El = playersRef.current?.player2?.audioEl.current;
+    p1El?.pause();
+    p2El?.pause();
+    if (p1El) p1El.currentTime = 0;
+    if (p2El) p2El.currentTime = 0;
   }, [isMpv, isJukebox, playQueue.playerUpdated]);
 
   useEffect(() => {
     if (isMpv || isJukebox) return;
     // Restart the current song from the beginning without pausing — fired when next/prev
     // wraps back to the same song (single-song queue) or hits the start of the queue.
-    playersRef.current.player1.audioEl.current.currentTime = 0;
-    playersRef.current.player2.audioEl.current.currentTime = 0;
-    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    const rp1El = playersRef.current?.player1?.audioEl.current;
+    const rp2El = playersRef.current?.player2?.audioEl.current;
+    if (rp1El) rp1El.currentTime = 0;
+    if (rp2El) rp2El.currentTime = 0;
+
     if (player.status === 'PLAYING') {
-      playersRef.current.player1.audioEl.current.play().catch(() => {});
+      rp1El?.play().catch(() => {});
     }
     // player.status intentionally omitted from deps — this effect should only fire on
     // playerRestartCurrent, not on every play/pause toggle.
@@ -387,59 +408,61 @@ const PlayerBar = () => {
   const { handleFavorite } = useFavorite();
   const { handleRating } = useRating();
 
+  // enableOnFormTags: ['slider', 'radio'] — react-slider's thumb has
+  // role="slider" and RSuite's Rate (star rating) renders each star as
+  // role="radio"; both take DOM focus on click (sliders intentionally, so
+  // arrow keys can nudge the value afterward) but react-hotkeys-hook's
+  // default ignore list treats both as form elements and silently suppresses
+  // every hotkey while either has focus. These are global player controls,
+  // not text entry, so they should keep working regardless of which slider
+  // (seek/volume) or rating star was just clicked — unlike input/textarea/
+  // select, which are deliberately left off this list so typing still
+  // suppresses them as expected.
   const hk = config.hotkeys;
   useHotkeys(
     hk.playPause,
-    (e) => {
-      e.preventDefault();
-      effectiveHandlePlayPause();
-    },
+    () => effectiveHandlePlayPause(),
+    { preventDefault: true, enableOnFormTags: ['slider', 'radio'] },
     [hk.playPause, effectiveHandlePlayPause]
   );
   useHotkeys(
     hk.nextTrack,
-    (e) => {
-      e.preventDefault();
-      effectiveHandleNext();
-    },
+    () => effectiveHandleNext(),
+    { preventDefault: true, enableOnFormTags: ['slider', 'radio'] },
     [hk.nextTrack, effectiveHandleNext]
   );
   useHotkeys(
     hk.prevTrack,
-    (e) => {
-      e.preventDefault();
-      effectiveHandlePrev();
-    },
+    () => effectiveHandlePrev(),
+    { preventDefault: true, enableOnFormTags: ['slider', 'radio'] },
     [hk.prevTrack, effectiveHandlePrev]
   );
   useHotkeys(
     hk.volumeUp,
-    (e) => {
-      e.preventDefault();
+    () => {
       const v = Math.min(1, Math.round((localVolume + 0.05) * 100) / 100);
       setLocalVolume(v);
       dispatch(setVolume(v));
       if (isJukebox && !muted) jukebox.setGain(v);
     },
+    { preventDefault: true, enableOnFormTags: ['slider', 'radio'] },
     [hk.volumeUp, localVolume, isJukebox, muted, jukebox.setGain]
   );
   useHotkeys(
     hk.volumeDown,
-    (e) => {
-      e.preventDefault();
+    () => {
       const v = Math.max(0, Math.round((localVolume - 0.05) * 100) / 100);
       setLocalVolume(v);
       dispatch(setVolume(v));
       if (isJukebox && !muted) jukebox.setGain(v);
     },
+    { preventDefault: true, enableOnFormTags: ['slider', 'radio'] },
     [hk.volumeDown, localVolume, isJukebox, muted, jukebox.setGain]
   );
   useHotkeys(
     hk.mute,
-    (e) => {
-      e.preventDefault();
-      setMuted((m) => !m);
-    },
+    () => setMuted((m) => !m),
+    { preventDefault: true, enableOnFormTags: ['slider', 'radio'] },
     [hk.mute]
   );
 
@@ -511,10 +534,10 @@ const PlayerBar = () => {
   // In MPV mode: receive time updates from main process instead of polling the audio element
   useEffect(() => {
     if (!isMpv) return undefined;
-    const handler = (_: any, time: number) => setCurrentTime(time);
+    const handler = (_: unknown, time: number) => startTransition(() => setCurrentTime(time));
     ipcRenderer.on('renderer-player-current-time', handler);
     return () => {
-      ipcRenderer.removeListener('renderer-player-current-time', handler);
+      ipcRenderer.removeAllListeners('renderer-player-current-time');
     };
   }, [isMpv]);
 
@@ -576,7 +599,7 @@ const PlayerBar = () => {
           id: playQueue.current?.id,
           albumId: playQueue.current?.albumId,
           submission: false,
-          position: 5 * 1e7,
+          position: config.serverType === Server.Jellyfin ? 5 * 1e7 : 5000,
           event: 'start',
         },
       });
@@ -609,7 +632,14 @@ const PlayerBar = () => {
       return;
     const duration = playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0;
     if (!duration) return;
-    if (currentTime >= 240 || currentTime >= duration * (playQueue.scrobbleThreshold / 100)) {
+    if (
+      checkShouldScrobble({
+        currentTime,
+        duration,
+        threshold: playQueue.scrobbleThreshold,
+        hasScrobbled: mpvSubmissionScrobbledRef.current,
+      })
+    ) {
       mpvSubmissionScrobbledRef.current = true;
       incrementPlayCountInCache(playQueue.current?.id);
       if (playQueue.current?.id) dispatch(incrementEntryPlayCount(playQueue.current.id));
@@ -664,7 +694,7 @@ const PlayerBar = () => {
           id: playQueue.current?.id,
           albumId: playQueue.current?.albumId,
           submission: false,
-          position: 5 * 1e7,
+          position: config.serverType === Server.Jellyfin ? 5 * 1e7 : 5000,
           event: 'start',
         },
       });
@@ -690,7 +720,14 @@ const PlayerBar = () => {
     const duration = playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0;
     if (!duration) return;
     const position = jukebox.status.position;
-    if (position >= 240 || position >= duration * (playQueue.scrobbleThreshold / 100)) {
+    if (
+      checkShouldScrobble({
+        currentTime: position,
+        duration,
+        threshold: playQueue.scrobbleThreshold,
+        hasScrobbled: jukeboxSubmissionScrobbledRef.current,
+      })
+    ) {
       jukeboxSubmissionScrobbledRef.current = true;
       incrementPlayCountInCache(playQueue.current?.id);
       if (playQueue.current?.id) dispatch(incrementEntryPlayCount(playQueue.current.id));
@@ -717,7 +754,11 @@ const PlayerBar = () => {
     const songId = playQueue.current.id;
 
     const restore = async () => {
-      let bookmarks: any[];
+      interface Bookmark {
+        entry?: { id: string };
+        position?: number;
+      }
+      let bookmarks: unknown;
       try {
         bookmarks = await apiController({
           serverType: config.serverType,
@@ -727,8 +768,8 @@ const PlayerBar = () => {
         return;
       }
       if (cancelled) return;
-      const list = Array.isArray(bookmarks) ? bookmarks : [];
-      const bookmark = list.find((bm: any) => bm.entry?.id === songId);
+      const list: Bookmark[] = Array.isArray(bookmarks) ? (bookmarks as Bookmark[]) : [];
+      const bookmark = list.find((bm) => bm.entry?.id === songId);
       if (!bookmark?.position || bookmark.position < 5000) return;
       const positionSeconds = Math.floor(bookmark.position / 1000);
       if (isMpv) {
@@ -743,7 +784,23 @@ const PlayerBar = () => {
           playQueue.currentPlayer === 1
             ? playersRef.current?.player1?.audioEl?.current
             : playersRef.current?.player2?.audioEl?.current;
-        if (activePlayer) activePlayer.currentTime = positionSeconds;
+        if (activePlayer) {
+          // Setting currentTime before the browser has loaded metadata (readyState
+          // < HAVE_METADATA) is unreliable and can be silently ignored — wait for
+          // loadedmetadata first, mirroring the MPV branch above which already
+          // accounts for the player needing a moment before it'll accept a seek.
+          if (activePlayer.readyState < 1) {
+            await new Promise<void>((resolve) => {
+              const onReady = () => {
+                activePlayer.removeEventListener('loadedmetadata', onReady);
+                resolve();
+              };
+              activePlayer.addEventListener('loadedmetadata', onReady);
+            });
+          }
+          if (cancelled) return;
+          activePlayer.currentTime = positionSeconds;
+        }
       }
       setCurrentTime(positionSeconds);
       notifyToast('info', t('Resuming from {{time}}', { time: format(bookmark.position) }));
@@ -757,9 +814,9 @@ const PlayerBar = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playQueue.currentSongId]);
 
-  // Podcast bookmarks — save position when MPV pauses on a podcast episode
+  // Podcast bookmarks — save position when playback pauses on a podcast episode
   useEffect(() => {
-    if (!isMpv || isJukebox || config.serverType !== Server.Subsonic) return;
+    if (isJukebox || config.serverType !== Server.Subsonic) return;
     if (player.status !== 'PAUSED') return;
     if (!playQueue.current?.isPodcast) return;
     if (podcastStopPressedRef.current) {
@@ -767,8 +824,8 @@ const PlayerBar = () => {
       return;
     }
     const pos = currentTimeRef.current;
-    const duration = playQueue.current?.duration || Infinity;
-    if (pos <= 5 || pos >= duration - 10) return;
+    const duration = playQueue.current?.duration;
+    if (pos <= 5 || !duration || pos >= duration - 10) return;
     apiController({
       serverType: config.serverType,
       endpoint: 'createBookmark',
@@ -805,30 +862,36 @@ const PlayerBar = () => {
       {isMpv && <MpvPlayer />}
       <Player ref={playersRef} currentEntryList={currentEntryList} muted={isMpv ? true : muted}>
         {playQueue.showDebugWindow && <DebugWindow currentEntryList={currentEntryList} />}
-        <PlayerContainer aria-label="playback controls" role="complementary">
+        <PlayerContainer
+          data-testid="player-bar"
+          aria-label="playback controls"
+          role="complementary"
+        >
           <FlexboxGrid align="middle" style={{ height: '100%' }}>
             <FlexboxGrid.Item colspan={6} style={{ textAlign: 'left', paddingLeft: '10px' }}>
-              <PlayerColumn left height="80px">
+              <PlayerColumn $left $height="80px">
                 <Grid style={{ width: '100%' }}>
                   <Row
                     style={{
                       height: '70px',
                       display: 'flex',
                       alignItems: 'flex-start',
+                      flexWrap: 'nowrap',
                     }}
                   >
                     {(!config.lookAndFeel.sidebar.coverArt ||
                       !config.lookAndFeel.sidebar.expand) && (
                       <Col xs={2} style={{ height: '100%', width: '80px', paddingRight: '10px' }}>
-                        <CoverArtContainer expand={config.lookAndFeel.sidebar.expand}>
+                        <CoverArtContainer $expand={config.lookAndFeel.sidebar.expand}>
                           <LazyLoadImage
+                            data-testid="player-album-art"
                             src={
                               playQueue[currentEntryList][playQueue.currentIndex]?.image ||
                               placeholderImg
                             }
                             tabIndex={0}
                             onClick={() => setShowCoverArtModal(true)}
-                            onKeyDown={(e: any) => {
+                            onKeyDown={(e: React.KeyboardEvent) => {
                               if (e.key === ' ' || e.key === 'Enter') {
                                 setShowCoverArtModal(true);
                               }
@@ -847,13 +910,13 @@ const PlayerBar = () => {
                               settings.set('sidebar.coverArt', true);
                             }}
                           >
-                            <Icon icon="up" />
+                            <UpIcon />
                           </StyledButton>
                         </CoverArtContainer>
                       </Col>
                     )}
 
-                    <Col xs={2} style={{ minWidth: '120px', maxWidth: '450px', width: '100%' }}>
+                    <Col xs={2} style={{ minWidth: '120px', maxWidth: '450px', flex: 1 }}>
                       {playQueue.entry?.length > 0 && (
                         <>
                           <Row
@@ -861,28 +924,43 @@ const PlayerBar = () => {
                               height: '23px',
                               display: 'flex',
                               alignItems: 'flex-end',
+                              flexWrap: 'nowrap',
+                              overflow: 'hidden',
                             }}
                           >
-                            <CustomTooltip
-                              enterable
-                              placement="top"
-                              text={playQueue?.current?.title}
-                            >
-                              <LinkButton tabIndex={0} onClick={() => history.push(`/nowplaying`)}>
-                                {playQueue?.current?.title || t('Unknown Title')}
-                              </LinkButton>
-                            </CustomTooltip>
-                            {lyrics && (
+                            <div style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden' }}>
                               <CustomTooltip
                                 enterable
                                 placement="top"
-                                text={t('Lyrics')}
-                                onClick={() => setShowLyricsModal(true)}
+                                text={playQueue?.current?.title}
                               >
-                                <StyledButton size="xs" appearance="subtle">
-                                  <Icon icon="commenting-o" />
-                                </StyledButton>
+                                <LinkButton
+                                  data-testid="player-track-title"
+                                  tabIndex={0}
+                                  onClick={() => navigate(`/nowplaying`)}
+                                  style={{ display: 'block' }}
+                                >
+                                  {playQueue?.current?.title || t('Unknown Title')}
+                                </LinkButton>
                               </CustomTooltip>
+                            </div>
+                            {lyrics && (
+                              <div style={{ flexShrink: 0 }}>
+                                <CustomTooltip
+                                  enterable
+                                  placement="top"
+                                  text={t('Lyrics')}
+                                  onClick={() => setShowLyricsModal(true)}
+                                >
+                                  <StyledButton
+                                    data-testid="lyrics-bubble"
+                                    size="xs"
+                                    appearance="subtle"
+                                  >
+                                    <CommentingOIcon />
+                                  </StyledButton>
+                                </CustomTooltip>
+                              </div>
                             )}
                           </Row>
                           <Row
@@ -890,7 +968,7 @@ const PlayerBar = () => {
                               height: '23px',
                               display: 'flex',
                               alignItems: 'center',
-                              color: '#888e94',
+                              color: 'var(--rs-text-tertiary)',
                             }}
                           >
                             <span
@@ -900,10 +978,10 @@ const PlayerBar = () => {
                                 overflow: 'hidden',
                               }}
                             >
-                              {playQueue.current?.artist.length > 0 ? (
+                              {(playQueue.current?.artist?.length ?? 0) > 0 ? (
                                 playQueue.current?.artist?.map((artist: Artist, i: number) => (
                                   <React.Fragment key={`${artist.id}-link`}>
-                                    <SecondaryTextWrapper subtitle="true">
+                                    <SecondaryTextWrapper $subtitle="true">
                                       {i > 0 && <>{', '}</>}
                                     </SecondaryTextWrapper>
                                     <CustomTooltip
@@ -913,10 +991,10 @@ const PlayerBar = () => {
                                     >
                                       <LinkButton
                                         tabIndex={0}
-                                        subtitle="true"
+                                        $subtitle="true"
                                         onClick={() => {
                                           if (artist?.id) {
-                                            history.push(`/library/artist/${artist?.id}`);
+                                            navigate(`/library/artist/${artist?.id}`);
                                           }
                                         }}
                                       >
@@ -926,7 +1004,7 @@ const PlayerBar = () => {
                                   </React.Fragment>
                                 ))
                               ) : (
-                                <SecondaryTextWrapper subtitle="true">
+                                <SecondaryTextWrapper $subtitle="true">
                                   {t('Unknown Artist')}
                                 </SecondaryTextWrapper>
                               )}
@@ -947,10 +1025,10 @@ const PlayerBar = () => {
                               >
                                 <LinkButton
                                   tabIndex={0}
-                                  subtitle="true"
+                                  $subtitle="true"
                                   onClick={() => {
                                     if (playQueue?.current?.albumId) {
-                                      history.push(`/library/album/${playQueue?.current?.albumId}`);
+                                      navigate(`/library/album/${playQueue?.current?.albumId}`);
                                     }
                                   }}
                                 >
@@ -958,7 +1036,7 @@ const PlayerBar = () => {
                                 </LinkButton>
                               </CustomTooltip>
                             )) || (
-                              <SecondaryTextWrapper subtitle="true">
+                              <SecondaryTextWrapper $subtitle="true">
                                 {t('Unknown Album')}
                               </SecondaryTextWrapper>
                             )}
@@ -971,12 +1049,13 @@ const PlayerBar = () => {
               </PlayerColumn>
             </FlexboxGrid.Item>
             <FlexboxGrid.Item colspan={12} style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-              <PlayerColumn center height="45px">
+              <PlayerColumn $center $height="45px">
                 {/* Stop Button */}
                 {!isRadio && (
                   <CustomTooltip text={t('Stop')}>
                     <PlayerControlIcon
-                      aria-label={t('Seek forward')}
+                      data-testid="player-stop"
+                      aria-label={t('Stop')}
                       role="button"
                       tabIndex={0}
                       icon="stop"
@@ -984,7 +1063,7 @@ const PlayerBar = () => {
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
                       onClick={effectiveHandleStop}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ' || e.key === 'Enter') {
                           effectiveHandleStop();
                         }
@@ -996,6 +1075,7 @@ const PlayerBar = () => {
                 {!isRadio && (
                   <CustomTooltip text={t('Previous Track')}>
                     <PlayerControlIcon
+                      data-testid="player-previous"
                       aria-label={t('Previous Track')}
                       role="button"
                       tabIndex={0}
@@ -1004,7 +1084,7 @@ const PlayerBar = () => {
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
                       onClick={effectiveHandlePrev}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ' || e.key === 'Enter') {
                           effectiveHandlePrev();
                         }
@@ -1024,7 +1104,7 @@ const PlayerBar = () => {
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
                       onClick={effectiveHandleSeekBackward}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ' || e.key === 'Enter') {
                           effectiveHandleSeekBackward();
                         }
@@ -1035,6 +1115,8 @@ const PlayerBar = () => {
                 {/* Play/Pause Button */}
                 <CustomTooltip text={t('Play/Pause')}>
                   <PlayerControlIcon
+                    data-testid="player-play-pause"
+                    data-playing={player.status === 'PLAYING' ? 'true' : 'false'}
                     aria-label={t('Play')}
                     aria-pressed={player.status === 'PLAYING'}
                     role="button"
@@ -1043,7 +1125,7 @@ const PlayerBar = () => {
                     size="3x"
                     disabled={playQueue.entry.length === 0}
                     onClick={effectiveHandlePlayPause}
-                    onKeyDown={(e: any) => {
+                    onKeyDown={(e: React.KeyboardEvent) => {
                       if (e.key === ' ' || e.key === 'Enter') {
                         effectiveHandlePlayPause();
                       }
@@ -1063,7 +1145,7 @@ const PlayerBar = () => {
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
                       onClick={effectiveHandleSeekForward}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ' || e.key === 'Enter') {
                           effectiveHandleSeekForward();
                         }
@@ -1075,6 +1157,7 @@ const PlayerBar = () => {
                 {!isRadio && (
                   <CustomTooltip text={t('Next Track')}>
                     <PlayerControlIcon
+                      data-testid="player-next"
                       aria-label={t('Next Track')}
                       role="button"
                       tabIndex={0}
@@ -1083,7 +1166,7 @@ const PlayerBar = () => {
                       fixedWidth
                       disabled={playQueue.entry.length === 0}
                       onClick={effectiveHandleNext}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ' || e.key === 'Enter') {
                           effectiveHandleNext();
                         }
@@ -1107,7 +1190,7 @@ const PlayerBar = () => {
                   </CustomTooltip>
                 )}
               </PlayerColumn>
-              <PlayerColumn center height="35px">
+              <PlayerColumn $center $height="35px">
                 <FlexboxGrid
                   justify="center"
                   style={{
@@ -1125,32 +1208,36 @@ const PlayerBar = () => {
                       userSelect: 'none',
                     }}
                   >
-                    <DurationSpan>{isRadio ? '' : songCurrentTime}</DurationSpan>
+                    <DurationSpan data-testid="player-current-time">
+                      {isRadio ? '' : songCurrentTime}
+                    </DurationSpan>
                   </FlexboxGrid.Item>
                   <FlexboxGrid.Item colspan={16}>
                     {/* Seek Slider */}
-                    <Slider
-                      value={
-                        isRadio
-                          ? 0
-                          : isJukebox
-                          ? jukebox.status.position
-                          : isMpv
-                          ? currentTime
-                          : playQueue.currentPlayer === 1
-                          ? playersRef.current?.player1.audioEl.current.currentTime || 0
-                          : playersRef.current?.player2.audioEl.current.currentTime || 0
-                      }
-                      min={0}
-                      max={
-                        isRadio
-                          ? 1
-                          : playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0
-                      }
-                      onAfterChange={isRadio ? undefined : effectiveHandleSeek}
-                      toolTipType="time"
-                      disabled={isRadio}
-                    />
+                    <div data-testid="player-seek-bar">
+                      <Slider
+                        value={
+                          isRadio
+                            ? 0
+                            : isJukebox
+                              ? jukebox.status.position
+                              : isMpv
+                                ? currentTime
+                                : playQueue.currentPlayer === 1
+                                  ? playersRef.current?.player1?.audioEl.current?.currentTime || 0
+                                  : playersRef.current?.player2?.audioEl.current?.currentTime || 0
+                        }
+                        min={0}
+                        max={
+                          isRadio
+                            ? 1
+                            : playQueue[currentEntryList][playQueue.currentIndex]?.duration || 0
+                        }
+                        onAfterChange={isRadio ? undefined : effectiveHandleSeek}
+                        toolTipType="time"
+                        disabled={isRadio}
+                      />
+                    </div>
                   </FlexboxGrid.Item>
                   <FlexboxGrid.Item
                     colspan={4}
@@ -1160,19 +1247,22 @@ const PlayerBar = () => {
                       userSelect: 'none',
                     }}
                   >
-                    <DurationSpan>{isRadio ? 'LIVE' : songDuration}</DurationSpan>
+                    <DurationSpan data-testid="player-live-indicator">
+                      {isRadio ? 'LIVE' : songDuration}
+                    </DurationSpan>
                   </FlexboxGrid.Item>
                 </FlexboxGrid>
               </PlayerColumn>
             </FlexboxGrid.Item>
             <FlexboxGrid.Item colspan={6} style={{ textAlign: 'right', paddingRight: '10px' }}>
-              <PlayerColumn right height="80px" style={{ flexDirection: 'column' }}>
+              <PlayerColumn $right $height="80px" style={{ flexDirection: 'column' }}>
                 <div
                   style={{
                     height: '30px',
                     display: 'flex',
                     alignSelf: 'flex-end',
                     alignItems: 'flex-start',
+                    marginRight: '10px',
                   }}
                 >
                   {config.serverType === Server.Subsonic && (
@@ -1228,30 +1318,36 @@ const PlayerBar = () => {
                       onClick={() =>
                         handleFavorite(playQueue[currentEntryList][playQueue.currentIndex], {
                           custom: async () => {
-                            await queryClient.refetchQueries(['album'], {
-                              active: true,
+                            await queryClient.refetchQueries({
+                              queryKey: ['album'],
+                              type: 'active',
                             });
-                            await queryClient.refetchQueries(['starred'], {
-                              active: true,
+                            await queryClient.refetchQueries({
+                              queryKey: ['starred'],
+                              type: 'active',
                             });
-                            await queryClient.refetchQueries(['playlist'], {
-                              active: true,
+                            await queryClient.refetchQueries({
+                              queryKey: ['playlist'],
+                              type: 'active',
                             });
                           },
                         })
                       }
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ') {
-                          handleFavorite(playQueue[currentEntryList][playQueue.currentIndex].id, {
+                          handleFavorite(playQueue[currentEntryList][playQueue.currentIndex], {
                             custom: async () => {
-                              await queryClient.refetchQueries(['album'], {
-                                active: true,
+                              await queryClient.refetchQueries({
+                                queryKey: ['album'],
+                                type: 'active',
                               });
-                              await queryClient.refetchQueries(['starred'], {
-                                active: true,
+                              await queryClient.refetchQueries({
+                                queryKey: ['starred'],
+                                type: 'active',
                               });
-                              await queryClient.refetchQueries(['playlist'], {
-                                active: true,
+                              await queryClient.refetchQueries({
+                                queryKey: ['playlist'],
+                                type: 'active',
                               });
                             },
                           });
@@ -1266,16 +1362,18 @@ const PlayerBar = () => {
                       playQueue.repeat === 'all'
                         ? t('Repeat all')
                         : playQueue.repeat === 'one'
-                        ? t('Repeat one')
-                        : t('Repeat')
+                          ? t('Repeat one')
+                          : t('Repeat')
                     }
                   >
                     <span
+                      data-testid="player-repeat"
+                      data-repeat-mode={playQueue.repeat}
                       role="button"
                       tabIndex={0}
                       style={{ position: 'relative', display: 'inline-block' }}
                       onClick={handleRepeat}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ') handleRepeat();
                       }}
                     >
@@ -1284,8 +1382,8 @@ const PlayerBar = () => {
                           playQueue.repeat === 'all'
                             ? t('Repeat all')
                             : playQueue.repeat === 'one'
-                            ? t('Repeat one')
-                            : t('Repeat')
+                              ? t('Repeat one')
+                              : t('Repeat')
                         }
                         aria-pressed={
                           playQueue.repeat === 'all' || playQueue.repeat === 'one'
@@ -1329,7 +1427,7 @@ const PlayerBar = () => {
                       size="lg"
                       fixedWidth
                       onClick={handleShuffle}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ') {
                           handleShuffle();
                         }
@@ -1351,7 +1449,7 @@ const PlayerBar = () => {
                         fixedWidth
                         active={isJukebox ? 'true' : 'false'}
                         onClick={() => (isJukebox ? jukebox.disable() : jukebox.enable())}
-                        onKeyDown={(e: any) => {
+                        onKeyDown={(e: React.KeyboardEvent) => {
                           if (e.key === ' ') {
                             if (isJukebox) jukebox.disable();
                             else jukebox.enable();
@@ -1373,6 +1471,7 @@ const PlayerBar = () => {
                           <div style={{ marginBottom: 8 }}>
                             <span style={{ marginRight: 8 }}>{t('Stop after current song')}</span>
                             <input
+                              data-testid="sleep-timer-stop-after-current-checkbox"
                               type="checkbox"
                               checked={playQueue.stopAfterCurrent}
                               onChange={(e) => dispatch(setStopAfterCurrent(e.target.checked))}
@@ -1381,6 +1480,7 @@ const PlayerBar = () => {
                         )}
                         <div>
                           <StyledButton
+                            data-testid="sleep-timer-off-button"
                             size="xs"
                             appearance={sleepTimerSeconds === null ? 'primary' : 'default'}
                             onClick={() => {
@@ -1394,6 +1494,7 @@ const PlayerBar = () => {
                           {SLEEP_PRESETS.map((mins) => (
                             <StyledButton
                               key={mins}
+                              data-testid={`sleep-timer-preset-${mins}`}
                               size="xs"
                               appearance={sleepTimerSeconds === mins * 60 ? 'primary' : 'default'}
                               onClick={() => {
@@ -1410,15 +1511,17 @@ const PlayerBar = () => {
                           style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 8 }}
                         >
                           <StyledInputNumber
+                            data-testid="sleep-timer-custom-input"
                             size="xs"
                             min={1}
                             max={999}
                             width={70}
                             value={sleepTimerCustom}
-                            onChange={(e: any) => setSleepTimerCustom(e)}
+                            onChange={(e: string | number) => setSleepTimerCustom(String(e))}
                             placeholder={t('min')}
                           />
                           <StyledButton
+                            data-testid="sleep-timer-custom-apply-button"
                             size="xs"
                             onClick={() => {
                               const mins = parseInt(sleepTimerCustom, 10);
@@ -1436,6 +1539,7 @@ const PlayerBar = () => {
                     }
                   >
                     <span
+                      data-testid="sleep-timer-button"
                       role="button"
                       tabIndex={0}
                       style={{ display: 'inline-block', position: 'relative' }}
@@ -1453,6 +1557,7 @@ const PlayerBar = () => {
                       />
                       {sleepTimerSeconds !== null && (
                         <span
+                          data-testid="sleep-timer-remaining-label"
                           style={{
                             fontSize: '9px',
                             position: 'absolute',
@@ -1471,6 +1576,7 @@ const PlayerBar = () => {
                   {/* Display Queue Button */}
                   <CustomTooltip text={t('Mini')}>
                     <PlayerControlIcon
+                      data-testid="player-queue-button"
                       aria-label="show play queue"
                       aria-pressed={playQueue.displayQueue ? 'true' : 'false'}
                       role="button"
@@ -1479,7 +1585,7 @@ const PlayerBar = () => {
                       size="lg"
                       fixedWidth
                       onClick={handleDisplayQueue}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent) => {
                         if (e.key === ' ') {
                           handleDisplayQueue();
                         }
@@ -1501,27 +1607,48 @@ const PlayerBar = () => {
                   onWheel={handleVolumeWheel}
                 >
                   {/* Volume Slider */}
-                  <Whisper
-                    trigger="hover"
-                    placement="top"
-                    delay={200}
-                    preventOverflow
-                    speaker={<Popup>{muted ? t('Muted') : Math.floor(localVolume * 100)}</Popup>}
-                  >
-                    <VolumeIcon
-                      icon={muted ? 'volume-off' : 'volume-down'}
-                      onClick={() => setMuted(!muted)}
-                      size="lg"
+                  <div style={{ marginTop: 4 }}>
+                    <Whisper
+                      trigger="hover"
+                      placement="top"
+                      delay={200}
+                      preventOverflow
+                      speaker={<Popup>{muted ? t('Muted') : Math.floor(localVolume * 100)}</Popup>}
+                    >
+                      <VolumeIcon
+                        icon={muted ? 'volume-off' : 'volume-down'}
+                        onClick={() => setMuted(!muted)}
+                        size="lg"
+                      />
+                    </Whisper>
+                  </div>
+                  <div style={{ position: 'relative', flex: 1, minWidth: 80 }}>
+                    <input
+                      data-testid="volume-slider"
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.floor(localVolume * 100)}
+                      onChange={(e) => handleVolumeSlider(Number(e.target.value))}
+                      style={{
+                        position: 'absolute',
+                        width: '1px',
+                        height: '1px',
+                        opacity: 0.01,
+                        top: 0,
+                        left: 0,
+                      }}
+                      aria-hidden="true"
+                      tabIndex={-1}
                     />
-                  </Whisper>
-
-                  <Slider
-                    value={Math.floor(localVolume * 100)}
-                    min={0}
-                    max={100}
-                    onChange={handleVolumeSlider}
-                    toolTipType="text"
-                  />
+                    <Slider
+                      value={Math.floor(localVolume * 100)}
+                      min={0}
+                      max={100}
+                      onChange={handleVolumeSlider}
+                      toolTipType="text"
+                    />
+                  </div>
                 </div>
               </PlayerColumn>
             </FlexboxGrid.Item>
@@ -1553,7 +1680,7 @@ const PlayerBar = () => {
           playerStatus={player.status}
           title={playQueue[currentEntryList][playQueue.currentIndex]?.title}
           artist={playQueue[currentEntryList][playQueue.currentIndex]?.artist
-            ?.map((a: any) => a.title)
+            ?.map((a: Artist) => a.title)
             .join(', ')}
           handlePlayPause={effectiveHandlePlayPause}
           handlePrevTrack={effectiveHandlePrev}

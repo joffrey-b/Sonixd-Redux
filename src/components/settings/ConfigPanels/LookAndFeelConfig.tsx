@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
 import _ from 'lodash';
-import { useQuery } from 'react-query';
-import { ipcRenderer } from 'electron';
-import { Nav, Icon, RadioGroup, Whisper, Divider } from 'rsuite';
-import { WhisperInstance } from 'rsuite/lib/Whisper';
+import { useQuery } from '@tanstack/react-query';
+import { ipcRenderer, settings } from '../../shared/bridge';
+import { Nav, RadioGroup, Whisper, Divider } from 'rsuite';
+import RefreshIcon from '@rsuite/icons/legacy/Refresh';
+import { WhisperInstance } from 'rsuite/Whisper';
 import { useTranslation } from 'react-i18next';
 import { ConfigOptionDescription, ConfigPanel } from '../styled';
 import {
@@ -11,7 +12,6 @@ import {
   StyledNavItem,
   StyledInputNumber,
   StyledInputPickerContainer,
-  StyledInputGroup,
   StyledRadio,
   StyledIconButton,
   StyledToggle,
@@ -21,7 +21,7 @@ import {
 } from '../../shared/styled';
 import ListViewConfig from './ListViewConfig';
 import Fonts from '../Fonts';
-import { ALBUM_SORT_TYPES } from '../../library/AlbumList';
+import { getAlbumSortTypes } from '../../library/AlbumList';
 import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
 import {
   setTheme,
@@ -32,16 +32,16 @@ import {
   setDefaultWindowHeight,
 } from '../../../redux/miscSlice';
 import {
-  songColumnPicker,
-  songColumnListAuto,
-  albumColumnPicker,
-  albumColumnListAuto,
-  playlistColumnPicker,
-  playlistColumnListAuto,
-  artistColumnPicker,
-  artistColumnListAuto,
-  genreColumnPicker,
-  genreColumnListAuto,
+  getSongColumnPicker,
+  getSongColumnListAuto,
+  getAlbumColumnPicker,
+  getAlbumColumnListAuto,
+  getPlaylistColumnPicker,
+  getPlaylistColumnListAuto,
+  getArtistColumnPicker,
+  getArtistColumnListAuto,
+  getGenreColumnPicker,
+  getGenreColumnListAuto,
 } from '../ListViewColumns';
 import {
   setActive,
@@ -50,18 +50,19 @@ import {
   setGridCardSize,
   setGridGapSize,
   setSidebar,
+  type SidebarList,
 } from '../../../redux/configSlice';
 import { Item, Playlist, Server } from '../../../types';
+import type { Column } from '../../shared/setDefaultSettings';
 import ConfigOption from '../ConfigOption';
 import i18n, { Languages } from '../../../i18n/i18n';
 import { notifyToast } from '../../shared/toast';
 import { setPagination } from '../../../redux/viewSlice';
-import { MUSIC_SORT_TYPES } from '../../library/MusicList';
+import { getMusicSortTypes } from '../../library/MusicList';
 import Popup from '../../shared/Popup';
 import { apiController } from '../../../api/controller';
-import { settings } from '../../shared/setDefaultSettings';
 
-export const ListViewConfigPanel = ({ bordered }: any) => {
+export const ListViewConfigPanel = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -70,19 +71,19 @@ export const ListViewConfigPanel = ({ bordered }: any) => {
     Boolean(settings.get('highlightOnRowHover'))
   );
 
-  const songCols: any = settings.get('musicListColumns');
-  const albumCols: any = settings.get('albumListColumns');
-  const playlistCols: any = settings.get('playlistListColumns');
-  const artistCols: any = settings.get('artistListColumns');
-  const miniCols: any = settings.get('miniListColumns');
-  const genreCols: any = settings.get('genreListColumns');
+  const songCols = settings.get('musicListColumns');
+  const albumCols = settings.get('albumListColumns');
+  const playlistCols = settings.get('playlistListColumns');
+  const artistCols = settings.get('artistListColumns');
+  const miniCols = settings.get('miniListColumns');
+  const genreCols = settings.get('genreListColumns');
 
-  const currentSongColumns = songCols?.map((column: any) => column.label) || [];
-  const currentAlbumColumns = albumCols?.map((column: any) => column.label) || [];
-  const currentPlaylistColumns = playlistCols?.map((column: any) => column.label) || [];
-  const currentArtistColumns = artistCols?.map((column: any) => column.label) || [];
-  const currentMiniColumns = miniCols?.map((column: any) => column.label) || [];
-  const currentGenreColumns = genreCols?.map((column: any) => column.label) || [];
+  const currentSongColumns = songCols?.map((column: Column) => column.label) || [];
+  const currentAlbumColumns = albumCols?.map((column: Column) => column.label) || [];
+  const currentPlaylistColumns = playlistCols?.map((column: Column) => column.label) || [];
+  const currentArtistColumns = artistCols?.map((column: Column) => column.label) || [];
+  const currentMiniColumns = miniCols?.map((column: Column) => column.label) || [];
+  const currentGenreColumns = genreCols?.map((column: Column) => column.label) || [];
 
   return (
     <ConfigPanel header={t('List View Layout Editor')} bordered={bordered}>
@@ -106,8 +107,8 @@ export const ListViewConfigPanel = ({ bordered }: any) => {
         <ListViewConfig
           type={t('Songs')}
           defaultColumns={currentSongColumns}
-          columnPicker={songColumnPicker}
-          columnList={songColumnListAuto}
+          columnPicker={getSongColumnPicker(t)}
+          columnList={getSongColumnListAuto(t)}
           settingsConfig={{
             columnList: 'musicListColumns',
             rowHeight: 'musicListRowHeight',
@@ -121,8 +122,8 @@ export const ListViewConfigPanel = ({ bordered }: any) => {
         <ListViewConfig
           type={t('Albums')}
           defaultColumns={currentAlbumColumns}
-          columnPicker={albumColumnPicker}
-          columnList={albumColumnListAuto}
+          columnPicker={getAlbumColumnPicker(t)}
+          columnList={getAlbumColumnListAuto(t)}
           settingsConfig={{
             columnList: 'albumListColumns',
             rowHeight: 'albumListRowHeight',
@@ -138,8 +139,8 @@ export const ListViewConfigPanel = ({ bordered }: any) => {
         <ListViewConfig
           type={t('Playlists')}
           defaultColumns={currentPlaylistColumns}
-          columnPicker={playlistColumnPicker}
-          columnList={playlistColumnListAuto}
+          columnPicker={getPlaylistColumnPicker(t)}
+          columnList={getPlaylistColumnListAuto(t)}
           settingsConfig={{
             columnList: 'playlistListColumns',
             rowHeight: 'playlistListRowHeight',
@@ -157,8 +158,8 @@ export const ListViewConfigPanel = ({ bordered }: any) => {
         <ListViewConfig
           type={t('Artists')}
           defaultColumns={currentArtistColumns}
-          columnPicker={artistColumnPicker}
-          columnList={artistColumnListAuto}
+          columnPicker={getArtistColumnPicker(t)}
+          columnList={getArtistColumnListAuto(t)}
           settingsConfig={{
             columnList: 'artistListColumns',
             rowHeight: 'artistListRowHeight',
@@ -176,8 +177,8 @@ export const ListViewConfigPanel = ({ bordered }: any) => {
         <ListViewConfig
           type={t('Genres')}
           defaultColumns={currentGenreColumns}
-          columnPicker={genreColumnPicker}
-          columnList={genreColumnListAuto}
+          columnPicker={getGenreColumnPicker(t)}
+          columnList={getGenreColumnListAuto(t)}
           settingsConfig={{
             columnList: 'genreListColumns',
             rowHeight: 'genreListRowHeight',
@@ -193,8 +194,8 @@ export const ListViewConfigPanel = ({ bordered }: any) => {
         <ListViewConfig
           type={t('Mini-player')}
           defaultColumns={currentMiniColumns}
-          columnPicker={songColumnPicker}
-          columnList={songColumnListAuto}
+          columnPicker={getSongColumnPicker(t)}
+          columnList={getSongColumnListAuto(t)}
           settingsConfig={{
             columnList: 'miniListColumns',
             rowHeight: 'miniListRowHeight',
@@ -209,7 +210,6 @@ export const ListViewConfigPanel = ({ bordered }: any) => {
         description={t('Highlights the list view row when hovering it with the mouse.')}
         option={
           <StyledToggle
-            defaultChecked={highlightOnRowHoverChk}
             checked={highlightOnRowHoverChk}
             onChange={(e: boolean) => {
               settings.set('highlightOnRowHover', e);
@@ -228,7 +228,7 @@ export const ListViewConfigPanel = ({ bordered }: any) => {
   );
 };
 
-export const GridViewConfigPanel = ({ bordered }: any) => {
+export const GridViewConfigPanel = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -244,8 +244,8 @@ export const GridViewConfigPanel = ({ bordered }: any) => {
             step={1}
             min={100}
             max={350}
-            width={125}
-            onChange={(e: any) => {
+            $width={125}
+            onChange={(e: string | number) => {
               settings.set('gridCardSize', Number(e));
               dispatch(setGridCardSize({ size: Number(e) }));
             }}
@@ -262,8 +262,8 @@ export const GridViewConfigPanel = ({ bordered }: any) => {
             step={1}
             min={0}
             max={100}
-            width={125}
-            onChange={(e: any) => {
+            $width={125}
+            onChange={(e: string | number) => {
               settings.set('gridGapSize', Number(e));
               dispatch(setGridGapSize({ size: Number(e) }));
             }}
@@ -280,9 +280,9 @@ export const GridViewConfigPanel = ({ bordered }: any) => {
             inline
             defaultValue={config.lookAndFeel.gridView.alignment}
             value={config.lookAndFeel.gridView.alignment}
-            onChange={(e: string) => {
-              dispatch(setGridAlignment({ alignment: e }));
-              settings.set('gridAlignment', e);
+            onChange={(e) => {
+              dispatch(setGridAlignment({ alignment: e as string }));
+              settings.set('gridAlignment', e as string);
             }}
           >
             <StyledRadio value="flex-start">{t('Left')}</StyledRadio>
@@ -294,7 +294,7 @@ export const GridViewConfigPanel = ({ bordered }: any) => {
   );
 };
 
-export const ThemeConfigPanel = ({ bordered }: any) => {
+export const ThemeConfigPanel = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -320,14 +320,15 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
   const albumSortDefaultPickerContainerRef = useRef(null);
   const musicSortDefaultPickerContainerRef = useRef(null);
   const sidebarPickerContainerRef = useRef(null);
-  const titleBarRestartWhisper = React.createRef<WhisperInstance>();
+  const titleBarRestartWhisper = useRef<WhisperInstance>(null);
   const [themeList, setThemeList] = useState(
-    _.concat(settings.get('themes'), settings.get('themesDefault'))
+    _.compact(_.concat(settings.get('themes'), settings.get('themesDefault')))
   );
 
-  const { data: playlists }: any = useQuery(['playlists'], () =>
-    apiController({ serverType: config.serverType, endpoint: 'getPlaylists' })
-  );
+  const { data: playlists } = useQuery<Playlist[]>({
+    queryKey: ['playlists'],
+    queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getPlaylists' }),
+  });
 
   return (
     <ConfigPanel header={t('Look & Feel')} bordered={bordered}>
@@ -337,16 +338,17 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
         option={
           <StyledInputPickerContainer ref={languagePickerContainerRef}>
             <StyledInputPicker
-              container={() => languagePickerContainerRef.current}
+              container={() => languagePickerContainerRef.current as unknown as HTMLElement}
               data={Languages}
               width={200}
+              searchable={false}
               cleanable={false}
               defaultValue={String(settings.get('language'))}
               placeholder={t('Select')}
               onChange={(e: string) => {
                 i18n.changeLanguage(e, (err) => {
                   if (err) {
-                    notifyToast('error', 'Error while changing the language');
+                    notifyToast('error', t('Error while changing the language'));
                   }
                 });
                 settings.set('language', e);
@@ -362,24 +364,55 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
             {t('Theme')}{' '}
             <StyledIconButton
               size="xs"
-              icon={<Icon icon="refresh" />}
+              icon={<RefreshIcon />}
               onClick={() => {
                 dispatch(setTheme('defaultDark'));
                 dispatch(setTheme(selectedTheme));
-                setThemeList(_.concat(settings.get('themes'), settings.get('themesDefault')));
+                setThemeList(
+                  _.compact(_.concat(settings.get('themes'), settings.get('themesDefault')))
+                );
               }}
             />
           </>
         }
         description={t('The application theme.')}
         option={
-          <StyledInputPickerContainer ref={themePickerContainerRef}>
-            <StyledInputGroup>
+          <div style={{ position: 'relative' }}>
+            {/* Hidden native select — same e2e-testability workaround as
+                player-backend-select/replaygain-mode-select in PlaybackConfig.tsx. */}
+            <select
+              data-testid="theme-select"
+              value={selectedTheme}
+              onChange={(e) => {
+                settings.set('theme', e.target.value);
+                setSelectedTheme(e.target.value);
+                dispatch(setTheme(e.target.value));
+              }}
+              style={{
+                position: 'absolute',
+                width: '1px',
+                height: '1px',
+                opacity: 0.01,
+                top: 0,
+                left: 0,
+              }}
+              aria-hidden="true"
+              tabIndex={-1}
+            >
+              <option value="followSystem">{t('Follow System')}</option>
+              {(themeList as { label: string; value: string }[]).map((t2) => (
+                <option key={t2.value} value={t2.value}>
+                  {t2.label}
+                </option>
+              ))}
+            </select>
+            <StyledInputPickerContainer ref={themePickerContainerRef}>
               <StyledInputPicker
-                container={() => themePickerContainerRef.current}
+                container={() => themePickerContainerRef.current as unknown as HTMLElement}
                 data={[{ label: t('Follow System'), value: 'followSystem' }, ...themeList]}
                 labelKey="label"
                 valueKey="value"
+                searchable={false}
                 cleanable={false}
                 width={200}
                 defaultValue={selectedTheme}
@@ -390,8 +423,8 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
                   dispatch(setTheme(e));
                 }}
               />
-            </StyledInputGroup>
-          </StyledInputPickerContainer>
+            </StyledInputPickerContainer>
+          </div>
         }
       />
 
@@ -401,10 +434,11 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
         option={
           <StyledInputPickerContainer ref={fontPickerContainerRef}>
             <StyledInputPicker
-              container={() => fontPickerContainerRef.current}
+              container={() => fontPickerContainerRef.current as unknown as HTMLElement}
               data={Fonts}
               groupBy="role"
               width={200}
+              searchable={false}
               cleanable={false}
               defaultValue={String(settings.get('font'))}
               placeholder={t('Select')}
@@ -445,32 +479,36 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
                 </Popup>
               }
             >
-              <StyledInputPicker
-                container={() => titleBarPickerContainerRef.current}
-                data={[
-                  {
-                    label: 'macOS',
-                    value: 'mac',
-                  },
-                  {
-                    label: 'Windows',
-                    value: 'windows',
-                  },
-                  {
-                    label: t('Native'),
-                    value: 'native',
-                  },
-                ]}
-                cleanable={false}
-                defaultValue={String(settings.get('titleBarStyle'))}
-                width={200}
-                placeholder={t('Select')}
-                onChange={(e: string) => {
-                  settings.set('titleBarStyle', e);
-                  dispatch(setMiscSetting({ setting: 'titleBar', value: e }));
-                  titleBarRestartWhisper.current?.open();
-                }}
-              />
+              {/* Wrap in div so Whisper gets a plain HTMLElement ref, not a picker component */}
+              <div>
+                <StyledInputPicker
+                  container={() => titleBarPickerContainerRef.current as unknown as HTMLElement}
+                  searchable={false}
+                  data={[
+                    {
+                      label: 'macOS',
+                      value: 'mac',
+                    },
+                    {
+                      label: 'Windows',
+                      value: 'windows',
+                    },
+                    {
+                      label: t('Native'),
+                      value: 'native',
+                    },
+                  ]}
+                  cleanable={false}
+                  defaultValue={String(settings.get('titleBarStyle'))}
+                  width={200}
+                  placeholder={t('Select')}
+                  onChange={(e: string) => {
+                    settings.set('titleBarStyle', e);
+                    dispatch(setMiscSetting({ setting: 'titleBar', value: e }));
+                    titleBarRestartWhisper.current?.open();
+                  }}
+                />
+              </div>
             </Whisper>
           </StyledInputPickerContainer>
         }
@@ -481,7 +519,6 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
         description={t('Sets a dynamic background based on the currently playing song.')}
         option={
           <StyledToggle
-            defaultChecked={dynamicBackgroundChk}
             checked={dynamicBackgroundChk}
             onChange={(e: boolean) => {
               settings.set('dynamicBackground', e);
@@ -499,7 +536,6 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
         )}
         option={
           <StyledToggle
-            defaultChecked={retainWindowSizeChk}
             checked={retainWindowSizeChk}
             onChange={(e: boolean) => {
               settings.set('retainWindowSize', e);
@@ -513,7 +549,7 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
       <ConfigOption
         name={t('Default Window Width')}
         description={t(
-          'The default width to use when Retain Window Size is disabled. Default: 1024'
+          'The default width to use when Retain Window Size is disabled. Default: 1600'
         )}
         option={
           <StyledInputNumber
@@ -522,7 +558,7 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
             step={1}
             min={768}
             max={7680}
-            width={125}
+            $width={125}
             onChange={(e: number) => {
               settings.set('defaultWindowWidth', Number(e));
               dispatch(setDefaultWindowWidth(Number(e)));
@@ -535,7 +571,7 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
       <ConfigOption
         name={t('Default Window Height')}
         description={t(
-          'The default height to use when Retain Window Size is disabled. Default: 728'
+          'The default height to use when Retain Window Size is disabled. Default: 900'
         )}
         option={
           <StyledInputNumber
@@ -544,7 +580,7 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
             step={1}
             min={600}
             max={7680}
-            width={125}
+            $width={125}
             onChange={(e: number) => {
               settings.set('defaultWindowHeight', Number(e));
               dispatch(setDefaultWindowHeight(Number(e)));
@@ -562,53 +598,56 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
         option={
           <StyledInputPickerContainer ref={startPagePickerContainerRef}>
             <StyledInputPicker
-              container={() => startPagePickerContainerRef.current}
-              data={_.concat(
-                [
-                  {
-                    label: t('Now Playing'),
-                    value: '/nowplaying',
-                    role: 'Default',
-                  },
-                  {
-                    label: t('Dashboard'),
-                    value: '/',
-                    role: 'Default',
-                  },
-                  {
-                    label: t('Playlists'),
-                    value: '/playlist',
-                    role: 'Default',
-                  },
-                  {
-                    label: t('Favorites'),
-                    value: '/starred',
-                    role: 'Default',
-                  },
-                  {
-                    label: t('Albums'),
-                    value: '/library/album',
-                    role: 'Default',
-                  },
-                  {
-                    label: t('Artists'),
-                    value: '/library/artist',
-                    role: 'Default',
-                  },
-                  {
-                    label: t('Genres'),
-                    value: '/library/genre',
-                    role: 'Default',
-                  },
-                  {
-                    label: t('Folders'),
-                    value: '/library/folder',
-                    role: 'Default',
-                  },
-                ],
-                playlists?.map((pl: Playlist) => {
-                  return { label: pl.title, value: `/playlist/${pl.id}`, role: t('Playlists') };
-                })
+              container={() => startPagePickerContainerRef.current as unknown as HTMLElement}
+              searchable={false}
+              data={_.compact(
+                _.concat(
+                  [
+                    {
+                      label: t('Now Playing'),
+                      value: '/nowplaying',
+                      role: 'Default',
+                    },
+                    {
+                      label: t('Dashboard'),
+                      value: '/',
+                      role: 'Default',
+                    },
+                    {
+                      label: t('Playlists'),
+                      value: '/playlist',
+                      role: 'Default',
+                    },
+                    {
+                      label: t('Favorites'),
+                      value: '/starred',
+                      role: 'Default',
+                    },
+                    {
+                      label: t('Albums'),
+                      value: '/library/album',
+                      role: 'Default',
+                    },
+                    {
+                      label: t('Artists'),
+                      value: '/library/artist',
+                      role: 'Default',
+                    },
+                    {
+                      label: t('Genres'),
+                      value: '/library/genre',
+                      role: 'Default',
+                    },
+                    {
+                      label: t('Folders'),
+                      value: '/library/folder',
+                      role: 'Default',
+                    },
+                  ],
+                  playlists?.map((pl: Playlist) => {
+                    return { label: pl.title, value: `/playlist/${pl.id}`, role: t('Playlists') };
+                  })
+                )
               )}
               cleanable={false}
               groupBy="role"
@@ -629,11 +668,12 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
         option={
           <StyledInputPickerContainer ref={albumSortDefaultPickerContainerRef}>
             <StyledInputPicker
-              container={() => albumSortDefaultPickerContainerRef.current}
-              data={ALBUM_SORT_TYPES}
+              container={() => albumSortDefaultPickerContainerRef.current as unknown as HTMLElement}
+              data={getAlbumSortTypes(t)}
               disabledItemValues={
                 config.serverType === Server.Jellyfin ? ['frequent', 'recent'] : []
               }
+              searchable={false}
               cleanable={false}
               defaultValue={String(settings.get('albumSortDefault'))}
               width={200}
@@ -651,8 +691,11 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
           option={
             <StyledInputPickerContainer ref={musicSortDefaultPickerContainerRef}>
               <StyledInputPicker
-                container={() => musicSortDefaultPickerContainerRef.current}
-                data={MUSIC_SORT_TYPES}
+                container={() =>
+                  musicSortDefaultPickerContainerRef.current as unknown as HTMLElement
+                }
+                data={getMusicSortTypes(t)}
+                searchable={false}
                 cleanable={false}
                 defaultValue={String(settings.get('musicSortDefault'))}
                 width={200}
@@ -683,7 +726,7 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
         option={
           <StyledInputPickerContainer ref={sidebarPickerContainerRef}>
             <StyledCheckPicker
-              container={() => sidebarPickerContainerRef.current}
+              container={() => sidebarPickerContainerRef.current as unknown as HTMLElement}
               data={[
                 {
                   label: i18n.t('Dashboard'),
@@ -748,9 +791,9 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
               defaultValue={config.lookAndFeel.sidebar.selected}
               width={250}
               disabledItemValues={[]}
-              onChange={(e: string) => {
+              onChange={(e) => {
                 settings.set('sidebar.selected', e);
-                dispatch(setSidebar({ selected: e }));
+                dispatch(setSidebar({ selected: e as SidebarList[] }));
               }}
             />
           </StyledInputPickerContainer>
@@ -760,7 +803,7 @@ export const ThemeConfigPanel = ({ bordered }: any) => {
   );
 };
 
-export const PaginationConfigPanel = ({ bordered }: any) => {
+export const PaginationConfigPanel = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const view = useAppSelector((state) => state.view);
@@ -782,7 +825,7 @@ export const PaginationConfigPanel = ({ bordered }: any) => {
                 defaultValue={view.music.pagination.recordsPerPage}
                 step={1}
                 min={0}
-                width={125}
+                $width={125}
                 onChange={(e: number) => {
                   dispatch(
                     setPagination({
@@ -797,7 +840,7 @@ export const PaginationConfigPanel = ({ bordered }: any) => {
                 <StyledCheckbox
                   defaultChecked={settings.get('pagination.music.serverSide')}
                   checked={view.music.pagination.serverSide}
-                  onChange={(_v: any, e: boolean) => {
+                  onChange={(_v: unknown, e: boolean) => {
                     settings.set('pagination.music.serverSide', e);
                     dispatch(setPagination({ listType: Item.Music, data: { serverSide: e } }));
                   }}
@@ -818,7 +861,7 @@ export const PaginationConfigPanel = ({ bordered }: any) => {
               defaultValue={view.album.pagination.recordsPerPage}
               step={1}
               min={0}
-              width={125}
+              $width={125}
               onChange={(e: number) => {
                 dispatch(
                   setPagination({
@@ -833,7 +876,7 @@ export const PaginationConfigPanel = ({ bordered }: any) => {
               <StyledCheckbox
                 defaultChecked={settings.get('pagination.album.serverSide')}
                 checked={view.album.pagination.serverSide}
-                onChange={(_v: any, e: boolean) => {
+                onChange={(_v: unknown, e: boolean) => {
                   settings.set('pagination.album.serverSide', e);
                   dispatch(setPagination({ listType: Item.Album, data: { serverSide: e } }));
                 }}
@@ -848,7 +891,7 @@ export const PaginationConfigPanel = ({ bordered }: any) => {
   );
 };
 
-const LookAndFeelConfig = ({ bordered }: any) => {
+const LookAndFeelConfig = ({ bordered }: { bordered?: boolean }) => {
   return (
     <>
       <ThemeConfigPanel bordered={bordered} />

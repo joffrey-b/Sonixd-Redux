@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, settings } from '../shared/bridge';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import {
@@ -7,13 +7,13 @@ import {
   setCurrentIndex,
   setStopAfterCurrent,
   getNextPlayerIndex,
+  PlayQueue,
 } from '../../redux/playQueueSlice';
 import { setStatus } from '../../redux/playerSlice';
 import { setMpvAudioDeviceId } from '../../redux/configSlice';
 import { EqState } from '../../redux/eqSlice';
 import { PeqState } from '../../redux/peqSlice';
 import { buildMpvAfChain } from '../../shared/mpvEqFilter';
-import { settings } from '../shared/setDefaultSettings';
 import cacheSong from '../shared/cacheSong';
 import { notifyToast } from '../shared/toast';
 import { apiController } from '../../api/controller';
@@ -21,7 +21,7 @@ import { Server } from '../../types';
 
 const EQ_DEBOUNCE_MS = 150;
 
-const entryListKey = (pq: any) => {
+const entryListKey = (pq: PlayQueue) => {
   if (pq.sortedEntry?.length > 0) return 'sortedEntry';
   if (pq.shuffle) return 'shuffledEntry';
   return 'entry';
@@ -33,9 +33,9 @@ const MpvPlayer = () => {
   const playQueue = useAppSelector((state) => state.playQueue);
   const player = useAppSelector((state) => state.player);
   const config = useAppSelector((state) => state.config);
-  const isJukebox = useAppSelector((state: any) => state.jukebox?.enabled ?? false);
-  const eq = useAppSelector((state: any) => state.eq as EqState);
-  const peq = useAppSelector((state: any) => state.peq as PeqState);
+  const isJukebox = useAppSelector((state) => state.jukebox?.enabled ?? false);
+  const eq = useAppSelector((state) => state.eq as EqState);
+  const peq = useAppSelector((state) => state.peq as PeqState);
   // Counter instead of boolean — increment on each successful init/restart to re-trigger
   // the play/pause and volume effects that depend on it.
   const [mpvReady, setMpvReady] = useState(0);
@@ -81,7 +81,7 @@ const MpvPlayer = () => {
     const base = fromIndex ?? pq.currentIndex;
     // Don't wrap around at the end when repeat is off
     if (pq.repeat === 'none' && base >= list.length - 1) return null;
-    const nextIndex = getNextPlayerIndex(list.length, pq.repeat, base);
+    const nextIndex = getNextPlayerIndex(list.length, pq.repeat, base) ?? 0;
     return list[nextIndex]?.streamUrl || null;
   };
 
@@ -95,7 +95,7 @@ const MpvPlayer = () => {
     if (mpvAudioDeviceId) extraParameters.push(`--audio-device=${mpvAudioDeviceId}`);
 
     const initialAf = buildMpvAfChain(eq, peq);
-    const properties: Record<string, any> = {};
+    const properties: Record<string, unknown> = {};
     if (initialAf) properties.af = initialAf;
 
     ipcRenderer
@@ -105,27 +105,9 @@ const MpvPlayer = () => {
         properties,
       })
       .then(async () => {
-        // Verify the saved MPV audio device before marking as initialized.
-        // Doing this first prevents the track-change effect from firing while
-        // the device fix is still in progress (race condition on next-track press).
-        const savedDeviceId = config.playback.mpvAudioDeviceId;
-        if (savedDeviceId) {
-          try {
-            const devices = await ipcRenderer.invoke('player-get-audio-devices');
-            if (devices?.length > 0 && !devices.find((d: any) => d.value === savedDeviceId)) {
-              await ipcRenderer.invoke('player-set-audio-device', 'auto');
-              dispatch(setMpvAudioDeviceId(undefined));
-              settings.set('mpvAudioDeviceId', null);
-              notifyToast(
-                'warning',
-                t('Selected MPV audio device is no longer available. Using system default.')
-              );
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-
+        // Mark as initialized and load the queue immediately so that pressing
+        // play during startup works. Audio device validation runs afterward
+        // as a non-blocking background task.
         initializedRef.current = true;
 
         // Load initial queue if a song is already selected
@@ -145,6 +127,30 @@ const MpvPlayer = () => {
         }
         // Increment to re-trigger the play/pause and volume effects
         setMpvReady((v) => v + 1);
+
+        // Validate the saved audio device in the background — if it no longer
+        // exists, fall back to 'auto' and notify the user.
+        const savedDeviceId = config.playback.mpvAudioDeviceId;
+        if (savedDeviceId) {
+          try {
+            const devices = await ipcRenderer.invoke('player-get-audio-devices');
+            if (
+              devices?.length > 0 &&
+              !devices.find((d: { value: string }) => d.value === savedDeviceId)
+            ) {
+              await ipcRenderer.invoke('player-set-audio-device', 'auto');
+              dispatch(setMpvAudioDeviceId(undefined));
+              settings.set('mpvAudioDeviceId', null);
+              notifyToast(
+                'warning',
+                t('Selected MPV audio device is no longer available. Using system default.')
+              );
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
         return null;
       })
       .catch(() => {});
@@ -176,7 +182,7 @@ const MpvPlayer = () => {
         return;
       }
 
-      const nextIndex = getNextPlayerIndex(list.length, pq.repeat, pq.currentIndex);
+      const nextIndex = getNextPlayerIndex(list.length, pq.repeat, pq.currentIndex) ?? 0;
       const nextSong = list[nextIndex];
 
       // Compute next-next from OLD state before dispatching, to avoid stale playQueueRef
@@ -212,23 +218,26 @@ const MpvPlayer = () => {
     };
 
     const onPlay = () => dispatch(setStatus('PLAYING'));
-    const onPause = () => dispatch(setStatus('PAUSED'));
     const onStop = () => dispatch(setStatus('PAUSED'));
     const onFallback = () => {
       initializedRef.current = false;
-      notifyToast('error', t('MPV failed to start. Check the binary path in settings.'));
+      notifyToast(
+        'error',
+        t(
+          'player.mpvNotFound',
+          'MPV not found. Install MPV and set its path in Settings → Playback, or add it to your system PATH.'
+        )
+      );
     };
 
     ipcRenderer.on('renderer-player-auto-next', onAutoNext);
     ipcRenderer.on('renderer-player-play', onPlay);
-    ipcRenderer.on('renderer-player-pause', onPause);
     ipcRenderer.on('renderer-player-stop', onStop);
     ipcRenderer.on('renderer-player-fallback', onFallback);
 
     return () => {
       ipcRenderer.removeListener('renderer-player-auto-next', onAutoNext);
       ipcRenderer.removeListener('renderer-player-play', onPlay);
-      ipcRenderer.removeListener('renderer-player-pause', onPause);
       ipcRenderer.removeListener('renderer-player-stop', onStop);
       ipcRenderer.removeListener('renderer-player-fallback', onFallback);
       ipcRenderer.send('player-quit');
@@ -281,7 +290,6 @@ const MpvPlayer = () => {
     if (nextUrl === preloadedNextUrlRef.current) return;
     preloadedNextUrlRef.current = nextUrl;
     ipcRenderer.send('player-set-queue-next', { url: nextUrl });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     playQueue.currentIndex,
     playQueue.repeat,
@@ -303,7 +311,6 @@ const MpvPlayer = () => {
   useEffect(() => {
     if (isJukebox || !initializedRef.current) return;
     ipcRenderer.send('player-seek-to', 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isJukebox]);
 
   // Play / pause — also fires when mpvReady flips so a click during init is not lost
@@ -363,7 +370,7 @@ const MpvPlayer = () => {
     ];
     if (mpvAudioDeviceId) extraParameters.push(`--audio-device=${mpvAudioDeviceId}`);
     const afString = buildMpvAfChain(eq, peq);
-    const properties: Record<string, any> = {};
+    const properties: Record<string, unknown> = {};
     if (afString) properties.af = afString;
 
     const pq = playQueueRef.current;
@@ -371,6 +378,7 @@ const MpvPlayer = () => {
     const currentUrl = list[pq.currentIndex]?.streamUrl;
     const nextUrl = getNextUrl();
 
+    let cancelled = false;
     ipcRenderer
       .invoke('player-restart', {
         binaryPath: mpvPath || undefined,
@@ -378,6 +386,7 @@ const MpvPlayer = () => {
         properties,
       })
       .then(() => {
+        if (cancelled) return null;
         initializedRef.current = true;
         setMpvReady((v) => v + 1);
         if (currentUrl) {
@@ -391,6 +400,9 @@ const MpvPlayer = () => {
         return null;
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.playback.mpvPath, config.playback.mpvGapless, config.playback.mpvReplayGain]);
 

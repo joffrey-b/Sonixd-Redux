@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   Button,
   InputGroup,
@@ -7,7 +8,6 @@ import {
   IconButton,
   Radio,
   Nav,
-  Icon,
   Rate,
   Slider,
   InputPicker,
@@ -27,46 +27,48 @@ export const HeaderButton = styled(Button)`
   margin-right: 5px;
 `;
 
-export const StyledButton = styled(Button)<{ width: number; $circle: boolean }>`
-  border-radius: ${(props) =>
-    props.$circle ? '100px' : props.theme.other?.button?.borderRadius} !important;
+export const StyledButton = styled(Button)<{ $width?: number; $circle: boolean }>`
+  border-radius: ${(props) => (props.$circle ? '100px' : 'var(--app-btn-radius)')} !important;
+  /* RSuite Button sets height but not width, so icon-only circle buttons render as ovals.
+     aspect-ratio forces width = height to produce a true circle. */
+  ${(props) => props.$circle && 'aspect-ratio: 1; justify-content: center;'}
   background: ${(props) =>
     props.appearance === 'primary'
-      ? `${props.theme.colors.primary}`
+      ? 'var(--app-primary)'
       : props.appearance === 'subtle' || props.appearance === 'link'
-      ? undefined
-      : `${props.theme.colors.button.default.background}`} !important;
+        ? undefined
+        : 'var(--app-btn-default-bg)'} !important;
   color: ${(props) =>
     props.loading
       ? 'transparent'
       : props.appearance === 'primary'
-      ? `${props.theme.colors.button.primary.color}`
-      : props.appearance === 'subtle'
-      ? `${props.theme.colors.button.subtle.color}`
-      : props.appearance === 'link'
-      ? undefined
-      : `${props.theme.colors.button.default.color}`} !important;
+        ? 'var(--app-btn-primary-color)'
+        : props.appearance === 'subtle'
+          ? 'var(--app-btn-subtle-color)'
+          : props.appearance === 'link'
+            ? undefined
+            : 'var(--app-btn-default-color)'} !important;
 
   filter: ${(props) => (props.disabled ? 'brightness(0.65)' : 'none')};
   transition: 0s;
-  width: ${(props) => `${props.width}px`};
+  width: ${(props) => props.$width && `${props.$width}px`};
 
   &:hover {
     color: ${(props) =>
       props.appearance === 'primary'
-        ? `${props.theme.colors.button.primary.colorHover}`
+        ? 'var(--app-btn-primary-color-hover)'
         : props.appearance !== 'subtle'
-        ? `${props.theme.colors?.button?.default.colorHover}`
-        : `${props.theme.colors.button.subtle.colorHover}`} !important;
+          ? 'var(--app-btn-default-color-hover)'
+          : 'var(--app-btn-subtle-color-hover)'} !important;
 
     background: ${(props) =>
       props.appearance === 'primary'
-        ? `${props.theme.colors.button.primary.backgroundHover}`
+        ? 'var(--app-btn-primary-bg-hover)'
         : props.appearance === 'subtle'
-        ? `${props.theme.colors.button.subtle.backgroundHover}`
-        : props.appearance === 'link'
-        ? undefined
-        : `${props.theme.colors.button.default.backgroundHover}`} !important;
+          ? 'var(--app-btn-subtle-bg-hover)'
+          : props.appearance === 'link'
+            ? undefined
+            : 'var(--app-btn-default-bg-hover)'} !important;
   }
 
   &:focus {
@@ -74,13 +76,12 @@ export const StyledButton = styled(Button)<{ width: number; $circle: boolean }>`
       props.loading
         ? 'transparent'
         : props.appearance === 'primary'
-        ? `${props.theme.colors.button.primary.color}`
-        : props.appearance === 'subtle'
-        ? `${props.theme.colors.button.subtle.color}`
-        : props.appearance === 'link'
-        ? undefined
-        : `${props.theme.colors.button.default.color}`};
-    brightness: ${(props) => props.appearance === 'subtle' && 'unset'} !important;
+          ? 'var(--app-btn-primary-color)'
+          : props.appearance === 'subtle'
+            ? 'var(--app-btn-subtle-color)'
+            : props.appearance === 'link'
+              ? undefined
+              : 'var(--app-btn-default-color)'};
     background: ${(props) => props.appearance === 'subtle' && 'unset'} !important;
   }
 
@@ -90,64 +91,74 @@ export const StyledButton = styled(Button)<{ width: number; $circle: boolean }>`
 `;
 
 export const StyledInputGroup = styled(InputGroup)`
-  border-radius: ${(props) => props.theme.other.input.borderRadius};
+  border-radius: var(--app-input-radius);
+  --rs-focus-ring-color: transparent;
+
+  /* inside=true groups (search bars): the group IS the visual container, keep its border */
+
+  /* non-inside groups (track filter + Add, cache path + Clear, etc.):
+     remove the outer border so only the inner StyledInput's own border is visible.
+     rsuite sets data-inside=true for inside=true groups. */
+  &:not([data-inside='true']) {
+    border: none !important;
+    --rs-input-focus-border: transparent;
+  }
 `;
 
-export const StyledInputGroupButton = styled(InputGroup.Button)<{ height?: number }>`
-  height: ${(props) => `${props.height}px`} !important;
+export const StyledInputGroupButton = styled(InputGroup.Button)<{ $height?: number }>`
+  height: ${(props) => props.$height && `${props.$height}px`} !important;
   background: ${(props) =>
     props.appearance === 'primary'
-      ? `${props.theme.colors.primary}`
+      ? 'var(--app-primary)'
       : props.appearance === 'subtle' || props.appearance === 'link'
-      ? undefined
-      : `${props.theme.colors.button.default.background}`} !important;
+        ? undefined
+        : 'var(--app-btn-default-bg)'} !important;
   color: ${(props) =>
     props.appearance === 'primary'
-      ? `${props.theme.colors.button.primary.color}`
+      ? 'var(--app-btn-primary-color)'
       : props.appearance === 'subtle'
-      ? `${props.theme.colors.button.subtle.color}`
-      : props.appearance === 'link'
-      ? 'none'
-      : `${props.theme.colors.button.default.color}`} !important;
+        ? 'var(--app-btn-subtle-color)'
+        : props.appearance === 'link'
+          ? 'none'
+          : 'var(--app-btn-default-color)'} !important;
 
   &:active,
   &:focus,
   &:hover {
     background: ${(props) =>
       props.appearance === 'primary'
-        ? `${props.theme.colors.button.primary.backgroundHover}`
+        ? 'var(--app-btn-primary-bg-hover)'
         : props.appearance === 'subtle' || props.appearance === 'link'
-        ? `none !important`
-        : `${props.theme.colors.button.default.backgroundHover} !important`};
+          ? `none !important`
+          : `var(--app-btn-default-bg-hover) !important`};
   }
 
   &:hover {
     color: ${(props) =>
       props.appearance === 'primary'
-        ? `${props.theme.colors.button.primary.colorHover}`
+        ? 'var(--app-btn-primary-color-hover)'
         : props.appearance !== 'subtle'
-        ? `${props.theme.colors.button.default.colorHover}`
-        : `${props.theme.colors.button.subtle.colorHover} !important`};
+          ? 'var(--app-btn-default-color-hover)'
+          : 'var(--app-btn-subtle-color-hover) !important'};
   }
-  border-radius: ${(props) => props.theme.other.input.borderRadius} !important;
-  border-bottom-right-radius: ${(props) => props.theme.other.input.borderRadius} !important;
-  border-top-right-radius: ${(props) => props.theme.other.input.borderRadius} !important;
+  border-radius: var(--app-input-radius) !important;
+  border-bottom-right-radius: var(--app-input-radius) !important;
+  border-top-right-radius: var(--app-input-radius) !important;
 `;
 
-export const StyledInputNumber = styled(InputNumber)<{ width: number }>`
-  border: 1px #3c3f43 solid !important;
-  border-radius: ${(props) => props.theme.other.input.borderRadius} !important;
+export const StyledInputNumber = styled(InputNumber)<{ $width: number }>`
+  border: 1px var(--rs-border-secondary) solid !important;
+  border-radius: var(--app-input-radius) !important;
   box-shadow: none !important;
   outline: none !important;
 
   input {
-    background-color: ${(props) => props.theme.colors.input.background};
     box-shadow: none !important;
     outline: none !important;
   }
 
   .rs-input {
-    border-radius: ${(props) => props.theme.other.input.borderRadius} !important;
+    border-radius: var(--app-input-radius) !important;
     box-shadow: none !important;
   }
 
@@ -158,104 +169,99 @@ export const StyledInputNumber = styled(InputNumber)<{ width: number }>`
     outline: none !important;
   }
 
-  &:hover,
-  &:active,
-  &:focus,
-  &:focus-within {
-    border-color: ${(props) => props.theme.colors.primary} !important;
+  &:not([data-disabled='true']):hover,
+  &:not([data-disabled='true']):active,
+  &:not([data-disabled='true']):focus,
+  &:not([data-disabled='true']):focus-within {
+    border-color: var(--app-primary) !important;
     box-shadow: none !important;
     outline: none !important;
   }
 
-  width: ${(props) => `${props.width}px`};
+  /* !important needed: rsuite 6 sets .rs-number-input.rs-input-group{width:auto}
+     at specificity (0,2,0) which overrides our styled class at (0,1,0) */
+  width: ${(props) => `${props.$width}px`} !important;
+
+  /* Match StyledInputPicker's 36px height (line-height 20px + padding 8px × 2) */
+  height: 36px !important;
+  .rs-input {
+    height: 100% !important;
+  }
 `;
 
-export const StyledInput = styled(Input)<{ width: number; opacity?: number }>`
-  border: 1px #3c3f43 solid !important;
-  border-radius: ${(props) => props.theme.other.input.borderRadius} !important;
+export const StyledInput = styled(Input)<{ $width?: number; $opacity?: number }>`
+  border: 1px var(--rs-border-secondary) solid !important;
+  border-radius: var(--app-input-radius) !important;
 
-  color: ${(props) => props.theme.colors.input.color} !important;
-  background: ${(props) => props.theme.colors.input.background} !important;
-  width: ${(props) => `${props.width}px`};
-  border-radius: ${(props) => props.theme.other.input.borderRadius};
-  opacity: ${(props) => props.opacity};
+  color: var(--app-input-color) !important;
+  width: ${(props) => props.$width && `${props.$width}px`};
+  border-radius: var(--app-input-radius);
+  opacity: ${(props) => props.$opacity};
+
+  &:not(:disabled):hover,
+  &:not(:disabled):focus,
+  &:not(:disabled):focus-within {
+    border-color: var(--app-primary) !important;
+  }
 `;
 
 export const StyledCheckbox = styled(Checkbox)`
   user-select: none;
-  div {
-    label {
-      span {
-        span {
-          &:before {
-            background-color: ${(props) =>
-              props.checked || props.defaultChecked
-                ? `${props.theme.colors.primary} !important`
-                : undefined};
-          }
-          &:after {
-            border: transparent !important;
-          }
-        }
-      }
-    }
+  display: block !important;
+  margin-bottom: 4px;
+  /* Hide rsuite 6's ripple animation */
+  .rs-checkbox-control::before {
+    display: none !important;
   }
 `;
 
 export const StyledToggle = styled(Toggle)`
-  background-color: ${(props) => (props.checked ? props.theme.colors.primary : '')} !important;
-
-  .rs-btn-toggle-inner {
-    color: ${(props) => (props.checked ? props.theme.colors.button.primary.color : '')} !important;
+  &[data-checked='true'] .rs-toggle-track {
+    background-color: var(--app-primary) !important;
   }
 
-  .rs-btn-toggle,
-  .rs-btn-toggle:focus,
-  .rs-btn-toggle:focus-visible,
-  .rs-btn-toggle:active,
-  .rs-btn-toggle-checked,
-  .rs-btn-toggle-checked:focus,
-  .rs-btn-toggle-checked:focus-visible {
+  /* Disabled checked: use native --rs-toggle-checked-disabled-bg instead of primary */
+  &[data-checked='true'][data-disabled='true'] .rs-toggle-track {
+    background-color: var(--rs-toggle-checked-disabled-bg) !important;
+  }
+
+  .rs-toggle-inner {
+    color: var(--app-btn-primary-color);
+  }
+
+  &:focus-visible .rs-toggle-track {
     outline: none !important;
     box-shadow: none !important;
   }
 `;
 
 export const StyledRadio = styled(Radio)`
-  div {
-    label {
-      span {
-        span {
-          &:before {
-            background-color: transparent !important;
-          }
-          &:after {
-            background: ${(props) => `${props.theme.colors.primary} !important`};
-          }
-        }
-      }
-    }
+  user-select: none;
+  /* Checked fill colour handled natively via --rs-radio-checked-bg on RootContainer.
+     Hide rsuite 6's ripple animation same as StyledCheckbox. */
+  .rs-radio-control::before {
+    display: none !important;
   }
 `;
 
 export const StyledIconButton = styled(IconButton)`
-  border-radius: ${(props) => props.theme.other.button.borderRadius};
+  border-radius: var(--app-btn-radius);
   background: ${(props) =>
     props.appearance === 'primary'
-      ? `${props.theme.colors.primary}`
+      ? 'var(--app-primary)'
       : props.appearance === 'subtle' || props.appearance === 'link'
-      ? undefined
-      : `${props.theme.colors.button.default.background}`} !important;
+        ? undefined
+        : 'var(--app-btn-default-bg)'} !important;
   color: ${(props) =>
     props.loading
       ? 'transparent'
       : props.appearance === 'primary'
-      ? `${props.theme.colors.button.primary.color}`
-      : props.appearance === 'subtle'
-      ? `${props.theme.colors.button.subtle.color}`
-      : props.appearance === 'link'
-      ? undefined
-      : `${props.theme.colors.button.default.color}`} !important;
+        ? 'var(--app-btn-primary-color)'
+        : props.appearance === 'subtle'
+          ? 'var(--app-btn-subtle-color)'
+          : props.appearance === 'link'
+            ? undefined
+            : 'var(--app-btn-default-color)'} !important;
 
   filter: ${(props) => (props.disabled ? 'brightness(0.65)' : 'none')};
   transition: 0s;
@@ -266,19 +272,19 @@ export const StyledIconButton = styled(IconButton)`
   &:hover {
     color: ${(props) =>
       props.appearance === 'primary'
-        ? `${props.theme.colors.button.primary.colorHover}`
+        ? 'var(--app-btn-primary-color-hover)'
         : props.appearance !== 'subtle'
-        ? `${props.theme.colors.button.default.colorHover}`
-        : `${props.theme.colors.button.subtle.colorHover}`};
+          ? 'var(--app-btn-default-color-hover)'
+          : 'var(--app-btn-subtle-color-hover)'};
 
     background: ${(props) =>
       props.appearance === 'primary'
-        ? `${props.theme.colors.button.primary.backgroundHover}`
+        ? 'var(--app-btn-primary-bg-hover)'
         : props.appearance === 'subtle'
-        ? `${props.theme.colors.button.subtle.backgroundHover}`
-        : props.appearance === 'link'
-        ? undefined
-        : `${props.theme.colors.button.default.backgroundHover}`} !important;
+          ? 'var(--app-btn-subtle-bg-hover)'
+          : props.appearance === 'link'
+            ? undefined
+            : 'var(--app-btn-default-bg-hover)'} !important;
   }
 
   &:focus-visible {
@@ -289,22 +295,30 @@ export const StyledIconButton = styled(IconButton)`
 `;
 
 export const StyledNavItem = styled(Nav.Item)`
-  a {
-    text-align: center;
-    border-radius: 0px !important;
-    color: ${(props) =>
-      props.active ? props.theme.colors.primary : props.theme.colors.nav.color} !important;
+  /* rsuite 6: NavItem renders as <a> directly (no li > a), apply styles to element itself */
+  text-align: center;
+  border-radius: 6px !important;
+  color: var(--app-nav-color) !important;
 
-    &:focus-visible {
-      background: rgba(0, 0, 0, 0.3) !important;
-    }
+  &:hover {
+    background: rgba(128, 128, 128, 0.15) !important;
+  }
+
+  &[data-active='true'] {
+    color: var(--app-primary) !important;
+  }
+
+  &:focus-visible {
+    background: rgba(0, 0, 0, 0.3) !important;
   }
 `;
 
-export const StyledIconToggle = styled(Icon)<{ active: string }>`
+export const StyledIconToggle = styled.span<{ $active: string }>`
   cursor: pointer;
-  color: ${(props) =>
-    props.active === 'true' ? props.theme.colors.primary : props.theme.colors.layout.page.color};
+  color: ${(props) => (props.$active === 'true' ? 'var(--app-primary)' : 'var(--app-text)')};
+  font-size: 1.2em;
+  display: inline-flex;
+  align-items: center;
 
   &:focus-visible {
     outline: none;
@@ -313,28 +327,24 @@ export const StyledIconToggle = styled(Icon)<{ active: string }>`
 `;
 
 export const StyledRate = styled(Rate)`
-  color: ${(props) => props.theme.colors.primary};
+  color: var(--app-primary);
 `;
 
-export const StyledSlider = styled(Slider)`
-  div {
-    div {
-      border: '2px solid #000 !important';
-    }
-  }
-`;
+export const StyledSlider = styled(Slider)``;
 
 export const StyledInputPickerContainer = styled.div`
-  .rs-picker-menu {
-    background: ${(props) => props.theme.colors.input.background};
-    border-radius: ${(props) => props.theme.other.input.borderRadius};
+  position: relative;
+
+  .rs-picker-popup {
+    background: var(--app-input-bg);
+    border-radius: var(--app-input-radius);
   }
 
   .rs-picker-select-menu-item-active {
-    background: ${(props) => props.theme.colors.input.backgroundActive};
+    background: var(--app-input-bg-active);
 
     &:hover {
-      background: ${(props) => props.theme.colors.input.backgroundActive};
+      background: var(--app-input-bg-active);
     }
   }
 
@@ -343,54 +353,54 @@ export const StyledInputPickerContainer = styled.div`
   }
 
   .rs-picker-select-menu-item-focus {
-    color: ${(props) => props.theme.colors.input.color};
-    background: ${(props) => props.theme.colors.input.backgroundHover};
+    color: var(--app-input-color);
+    background: var(--app-input-bg-hover);
   }
 
   .rs-picker-select-menu-item,
   .rs-picker-select-menu-group-title {
-    color: ${(props) => props.theme.colors.input.color};
+    color: var(--app-input-color);
 
     &:hover {
-      color: ${(props) => props.theme.colors.input.color};
+      color: var(--app-input-color);
       &:hover {
-        background: ${(props) => props.theme.colors.input.backgroundHover};
+        background: var(--app-input-bg-hover);
       }
     }
   }
 
   .rs-picker-select-menu-group-title {
-    color: ${(props) => props.theme.colors.input.color};
+    color: var(--app-input-color);
 
     &:hover {
-      color: ${(props) => props.theme.colors.input.color};
+      color: var(--app-input-color);
     }
   }
 
   .rs-check-item {
-    background: ${(props) => props.theme.colors.input.background} !important;
-    border-radius: ${(props) => props.theme.other.input.borderRadius};
+    background: var(--app-input-bg) !important;
+    border-radius: var(--app-input-radius);
 
     &:hover {
-      color: ${(props) => props.theme.colors.input.color};
-      background-color: ${(props) => props.theme.colors.input.backgroundHover} !important;
+      color: var(--app-input-color);
+      background-color: var(--app-input-bg-hover) !important;
     }
   }
 
   .rs-check-item-focus {
-    color: ${(props) => props.theme.colors.input.color};
-    background: ${(props) => props.theme.colors.input.backgroundActive} !important;
+    color: var(--app-input-color);
+    background: var(--app-input-bg-active) !important;
   }
 
   .rs-checkbox-checked {
     .rs-checkbox-checker {
       span {
         &:before {
-          border: ${(props) => `1px solid ${props.theme.colors.primary}`};
+          border: 1px solid var(--app-primary);
         }
         span {
           &:before {
-            background-color: ${(props) => `${props.theme.colors.primary} !important`};
+            background-color: var(--app-primary) !important;
           }
           &:after {
             border: transparent !important;
@@ -401,72 +411,71 @@ export const StyledInputPickerContainer = styled.div`
   }
 
   .rs-picker-search-bar-input {
-    background-color: ${(props) => props.theme.colors.input.background} !important;
+    background-color: var(--app-input-bg) !important;
     border-color: #383838 !important;
   }
 `;
 
-export const StyledInputPicker = styled(InputPicker)<{ width?: number }>`
-  width: ${(props) => `${props.width}px`};
+const StyledInputPickerBase = styled(InputPicker)<{ width?: number }>`
+  width: ${(props) => (props.width ? `${props.width}px` : undefined)};
+  /* Border on the root (matches StyledInput / StyledInputNumber visual pattern) */
+  border: 1px var(--rs-border-secondary) solid !important;
+  border-radius: var(--app-input-radius) !important;
+  background: var(--app-input-bg) !important;
+  vertical-align: top !important;
+  --rs-focus-ring-color: transparent;
 
-  &.rs-picker-toggle-wrapper {
-    vertical-align: top !important;
-  }
-
+  /* Toggle has no separate border — the root border is the visual boundary */
   .rs-picker-toggle {
     box-sizing: border-box;
     height: 32px;
-    border: 1px #3c3f43 solid !important;
-    border-radius: ${(props) => props.theme.other.input.borderRadius};
-    outline: none !important;
+    border: none !important;
+    border-radius: 0 !important;
     box-shadow: none !important;
-
-    &:hover,
-    &:active,
-    &:focus,
-    &:focus-visible {
-      border-color: ${(props) => props.theme.colors.primary} !important;
-      outline: none !important;
-      box-shadow: none !important;
-    }
+    background: transparent !important;
   }
 
-  .rs-picker-toggle.rs-picker-toggle-active,
-  .rs-picker-toggle.rs-picker-toggle-active:focus {
-    outline: none !important;
-    box-shadow: none !important;
+  /* Hover/open: change root border to primary, matching text input hover */
+  &:not([data-disabled='true']):hover,
+  &[data-focus='true'] {
+    border-color: var(--app-primary) !important;
   }
 
   .rs-picker-toggle-value {
-    color: ${(props) => `${props.theme.colors.layout.page.color} !important`};
-  }
-
-  .rs-btn-default {
-    background: ${(props) => `${props.theme.colors.input.background} !important`};
+    color: var(--app-text) !important;
   }
 `;
 
-export const StyledIcon = styled(Icon)`
-  color: ${(props) => `${props.theme.colors.primary} !important`};
-`;
+// rsuite 4 defaulted InputPicker to searchable=false; rsuite 6 defaults to true.
+// React 19 removed defaultProps for function components so we use a wrapper.
+// forwardRef is required because Whisper (rsuite) uses cloneElement+ref on its child.
+const StyledInputPickerInner = React.forwardRef<
+  unknown,
+  React.ComponentPropsWithoutRef<typeof StyledInputPickerBase>
+>(({ searchable = false, ...props }, ref) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- styled-components createElement requires any cast; safe as this is a thin prop-forwarding wrapper
+  React.createElement(StyledInputPickerBase as any, { searchable, ref, ...props })
+);
+StyledInputPickerInner.displayName = 'StyledInputPicker';
+export const StyledInputPicker = StyledInputPickerInner as unknown as typeof StyledInputPickerBase;
 
 export const ContextMenuWindow = styled.div<{
-  yPos: number;
-  xPos: number;
-  numOfButtons: number;
-  numOfDividers: number;
-  minWidth: number;
-  maxWidth: number;
-  hasTitle: boolean;
+  $yPos: number;
+  $xPos: number;
+  $numOfButtons: number;
+  $numOfDividers: number;
+  $minWidth: number;
+  $maxWidth: number;
+  $hasTitle: boolean;
 }>`
-  background: ${(props) => props.theme.colors.contextMenu.background};
+  background: var(--app-context-bg);
   position: absolute;
-  top: ${(props) => `${props.yPos}px`};
-  left: ${(props) => `${props.xPos}px`};
+  top: ${(props) => `${props.$yPos}px`};
+  left: ${(props) => `${props.$xPos}px`};
   height: ${(props) =>
-    `${props.numOfButtons * 30 + props.numOfDividers * 1.5 + (props.hasTitle ? 16 : 0)}px`};
-  min-width: ${(props) => `${props.minWidth}px`};
-  max-width: ${(props) => `${props.maxWidth}px`};
+    `${props.$numOfButtons * 30 + props.$numOfDividers * 1.5 + (props.$hasTitle ? 16 : 0)}px`};
+  min-width: ${(props) => `${props.$minWidth}px`};
+  max-width: ${(props) => `${props.$maxWidth}px`};
   margin: 0px;
   white-space: normal;
   overflow: hidden;
@@ -478,15 +487,13 @@ export const ContextMenuWindow = styled.div<{
 
 export const StyledContextMenuButton = styled(Button)`
   color: ${(props) =>
-    props.disabled
-      ? props.theme.colors.contextMenu.colorDisabled
-      : props.theme.colors.contextMenu.color} !important;
+    props.disabled ? 'var(--app-context-color-disabled)' : 'var(--app-context-color)'} !important;
   transition: none;
   &:hover,
   &:active,
   &:focus {
-    color: ${(props) => props.theme.colors.contextMenu.color};
-    background: ${(props) => props.theme.colors.contextMenu.backgroundHover};
+    color: var(--app-context-color);
+    background: var(--app-context-bg-hover);
   }
 
   text-align: left;
@@ -499,73 +506,71 @@ export const ContextMenuDivider = styled.hr`
 `;
 
 export const ContextMenuTitle = styled.div`
-  color: ${(props) => props.theme.colors.layout.page.color};
+  color: var(--app-text);
   margin: 5px 0 5px 5px;
   user-select: none;
 `;
 
 export const ContextMenuPopover = styled(Popover)`
-  color: ${(props) => props.theme.colors.contextMenu.color} !important;
-  background: ${(props) => props.theme.colors.contextMenu.background};
+  color: var(--app-context-color) !important;
+  background: var(--app-context-bg);
   position: absolute;
   border: 1px #3c4043 solid;
   z-index: 2000;
 `;
 
-export const StyledPopover = styled(Popover)<{ width?: string; font?: string }>`
-  color: ${(props) => props.theme.colors.popover.color};
-  background: ${(props) => props.theme.colors.popover.background};
+export const StyledPopover = styled(Popover)<{ $width?: string; $font?: string }>`
+  color: var(--app-popover-color);
+  background: var(--app-popover-bg);
   border: 1px #3c4043 solid;
   position: absolute;
   z-index: 1000;
-  width: ${(props) => props.width};
-  font-family: ${(props) => props.font};
+  width: ${(props) => props.$width};
+  font-family: ${(props) => props.$font};
 `;
 
-export const SectionTitleWrapper = styled.div<{ maxWidth?: string }>`
+export const SectionTitleWrapper = styled.div<{ $maxWidth?: string }>`
   margin-left: 10px;
   margin-bottom: 10px;
-  max-width: ${(props) => props.maxWidth};
+  max-width: ${(props) => props.$maxWidth};
 `;
 
 export const SectionTitle = styled.a`
   user-select: none;
   vertical-align: middle;
-  font-size: ${(props) => props.theme.fonts.size.panelTitle};
-  color: ${(props) => props.theme.colors.layout.page.color};
+  font-size: var(--app-font-panel);
+  color: var(--app-text);
   cursor: ${(props) => (props.onClick ? 'pointer' : 'default')};
 
   &:hover {
     text-decoration: none;
-    color: ${(props) =>
-      !props.onClick ? props.theme.colors.layout.page.color : props.theme.colors.primary};
+    color: ${(props) => (!props.onClick ? 'var(--app-text)' : 'var(--app-primary)')};
   }
 
   &:active,
   &:focus {
     text-decoration: none;
-    color: ${(props) =>
-      !props.onClick ? props.theme.colors.layout.page.color : props.theme.colors.primary};
+    color: ${(props) => (!props.onClick ? 'var(--app-text)' : 'var(--app-primary)')};
   }
 `;
 
-export const LinkWrapper = styled.span<{ maxWidth: string }>`
+export const LinkWrapper = styled.span<{ $maxWidth: string }>`
   display: inline-block;
-  max-width: ${(props) => props.maxWidth};
+  max-width: ${(props) => props.$maxWidth};
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   vertical-align: bottom;
 `;
 
-export const StyledLink = styled.a<{ underline?: boolean; color?: string }>`
-  color: ${(props) => props?.color || props.theme.colors.layout.page.color};
+export const StyledLink = styled.a<{ $underline?: boolean; $color?: string }>`
+  color: ${(props) => props?.$color || 'var(--app-text)'};
   cursor: pointer;
-  text-decoration: ${(props) => (props.underline ? 'underline' : undefined)};
+  text-decoration: ${(props) => (props.$underline ? 'underline' : undefined)};
   font-weight: bold;
 
   &:hover {
-    color: ${(props) => props?.color || props.theme.colors.layout.page.color};
+    color: ${(props) => props?.$color || 'var(--app-text)'};
   }
 
   &:focus-visible {
@@ -574,15 +579,15 @@ export const StyledLink = styled.a<{ underline?: boolean; color?: string }>`
 `;
 
 export const StyledPanel = styled(Panel)<{ $maxWidth?: string }>`
-  color: ${(props) => props.theme.colors.layout.page.color};
-  border-radius: ${(props) => props.theme.other.panel.borderRadius};
+  color: var(--app-text);
+  border-radius: var(--app-panel-radius);
   max-width: ${(props) => props.$maxWidth};
   margin-bottom: 15px;
 
-  .rs-panel-heading {
+  .rs-panel-header {
     user-select: none;
     margin-left: 10px;
-    font-size: ${(props) => props.theme.fonts.size.panelTitle};
+    font-size: var(--app-font-panel);
 
     .rs-panel-title {
       align-items: flex-end;
@@ -591,84 +596,83 @@ export const StyledPanel = styled(Panel)<{ $maxWidth?: string }>`
 `;
 
 export const StyledTagPicker = styled(TagPicker)`
-  border: 1px #3c3f43 solid !important;
-  border-radius: ${(props) => props.theme.other.input.borderRadius} !important;
+  border: 1px var(--rs-border-secondary) solid !important;
+  border-radius: var(--app-input-radius) !important;
 
   &:hover,
   &:active,
   &:focus {
-    border-color: ${(props) => props.theme.colors.primary} !important;
+    border-color: var(--app-primary) !important;
   }
 
   .rs-picker-input {
     &:hover {
-      border-color: ${(props) => props.theme.colors.primary};
+      border-color: var(--app-primary);
     }
   }
 
   .rs-tag {
-    color: ${(props) => props.theme.colors.tag.text};
-    background: ${(props) => props.theme.colors.tag.background};
-    border-radius: ${(props) => props.theme.other.tag.borderRadius};
+    color: var(--app-tag-color);
+    background: var(--app-tag-bg);
+    border-radius: var(--app-tag-radius);
   }
 `;
 
-export const StyledCheckPicker = styled(CheckPicker)<{ width?: number }>`
-  border: 1px #3c3f43 solid !important;
-  border-radius: ${(props) => props.theme.other.input.borderRadius} !important;
-  width: ${(props) => props.width}px;
+export const StyledCheckPicker = styled(CheckPicker)<{ $width?: number }>`
+  /* rsuite 6: CheckPicker root div has no border; put border on toggle like StyledInputPicker */
+  border: none !important;
+  background: transparent !important;
+  width: ${(props) => (props.$width ? `${props.$width}px` : undefined)};
 
-  &:hover,
-  &:active,
-  &:focus {
-    border-color: ${(props) => props.theme.colors.primary} !important;
+  &:not([data-disabled='true']):hover,
+  &:not([data-disabled='true']):active,
+  &:not([data-disabled='true']):focus,
+  &[data-focus='true'] {
+    .rs-picker-toggle {
+      border-color: var(--app-primary) !important;
+    }
   }
 
-  a {
-    background: ${(props) => props.theme.colors.input.background} !important;
+  .rs-picker-toggle:hover {
+    background: var(--app-input-bg-hover) !important;
+  }
 
-    :hover {
-      background: ${(props) => props.theme.colors.input.backgroundHover} !important;
-    }
-
-    :active {
-      background: ${(props) => props.theme.colors.input.backgroundActive} !important;
-    }
+  .rs-picker-toggle:active {
+    background: var(--app-input-bg-active) !important;
   }
 
   .rs-picker-toggle {
-    border-radius: ${(props) => props.theme.other.input.borderRadius};
+    border: 1px var(--rs-border-secondary) solid !important;
+    border-radius: var(--app-input-radius) !important;
+    box-sizing: border-box;
+    width: 100%;
   }
 
-  .hover {
-    border: ${(props) => `1px solid ${props.theme.colors.primary} !important`};
-  }
-
-  a {
+  .rs-picker-toggle {
     span {
-      color: ${(props) => props.theme.colors.layout.page.color} !important;
+      color: var(--app-text) !important;
     }
   }
 
   .rs-picker-value-count {
-    background: ${(props) => props.theme.colors.primary};
-    color: ${(props) => props.theme.colors.button.primary.color} !important;
+    background: var(--app-primary);
+    color: var(--app-btn-primary-color) !important;
   }
 `;
 
 export const StyledTag = styled(Tag)`
-  color: ${(props) => props.theme.colors.tag.text} !important;
-  background: ${(props) => props.theme.colors.tag.background};
-  border-radius: ${(props) => props.theme.other.tag.borderRadius};
+  color: var(--app-tag-color) !important;
+  background: var(--app-tag-bg);
+  border-radius: var(--app-tag-radius);
   font-weight: 200;
 
   cursor: pointer;
 `;
 
 export const StyledTagLink = styled(TagLink)`
-  color: ${(props) => props.theme.colors.tag.text} !important;
-  background: ${(props) => props.theme.colors.tag.background};
-  border-radius: ${(props) => props.theme.other.tag.borderRadius};
+  color: var(--app-tag-color) !important;
+  background: var(--app-tag-bg);
+  border-radius: var(--app-tag-radius);
 
   max-width: 13rem;
   text-overflow: ellipsis;
@@ -677,34 +681,31 @@ export const StyledTagLink = styled(TagLink)`
 `;
 
 export const SecondaryTextWrapper = styled.span<{
-  subtitle?: string;
-  active?: boolean;
+  $subtitle?: string;
+  $active?: boolean;
 }>`
   color: ${(props) =>
-    props.subtitle === 'true'
-      ? props.theme.colors.layout.page.colorSecondary
-      : props.theme.colors.layout.page.color};
+    props.$subtitle === 'true' ? 'var(--app-text-secondary)' : 'var(--app-text)'};
 `;
 
 export const StyledPagination = styled(Pagination)`
   vertical-align: middle;
+  /* rsuite 6: pagination buttons render as <button>, not <a> */
   .rs-pagination-btn {
-    a {
-      transition: none;
-      &:hover {
-        color: ${(props) => props.theme.colors.button.subtle.colorHover} !important;
-        background-color: ${(props) => props.theme.colors.button.subtle.backgroundHover} !important;
-      }
+    transition: none;
+    &:hover {
+      color: var(--app-btn-subtle-color-hover) !important;
+      background-color: var(--app-btn-subtle-bg-hover) !important;
+    }
 
-      &:active {
-        background-color: none !important;
-      }
+    &:active {
+      background-color: transparent !important;
     }
   }
 
-  .rs-pagination-btn-active {
-    a {
-      color: ${(props) => props.theme.colors.primary} !important;
-    }
+  /* rsuite 6: active page button uses data-active attribute, not rs-pagination-btn-active class */
+  .rs-pagination-btn[data-active='true'] {
+    color: var(--app-primary) !important;
+    background-color: transparent !important;
   }
 `;

@@ -17,14 +17,17 @@ const LinkCell = ({
   onMouseUp,
   nowPlaying,
   sortColumn,
-  history,
   fontSize,
+  cacheImages: _cacheImages,
+  misc: _misc,
   ...rest
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table cell receives heterogeneous row data; full typing belongs in ListViewTable
 }: any) => {
   return (
     <TableCellWrapper
-      height={rowHeight}
-      onClick={(e: any) => {
+      $height={rowHeight}
+      $alignment={column.alignment}
+      onClick={(e: React.MouseEvent<HTMLElement>) => {
         if (!column.dataKey?.match(/starred|userRating|genre|columnResizable|columnDefaultSort/)) {
           handleRowClick(e, {
             ...rowData,
@@ -53,7 +56,7 @@ const LinkCell = ({
             {i > 0 && ', '}
             <CustomTooltip text={link.title}>
               <TableLinkButton
-                font={`${fontSize}px`}
+                $font={`${fontSize}px`}
                 onClick={(e: MouseEvent) => onClickLink(e, i)}
               >
                 {link.title}
@@ -63,7 +66,7 @@ const LinkCell = ({
         ))
       ) : rowData[linkProp] ? (
         <CustomTooltip text={rowData[linkProp]}>
-          <TableLinkButton font={`${fontSize}px`} onClick={onClickLink}>
+          <TableLinkButton $font={`${fontSize}px`} onClick={onClickLink}>
             {rowData[linkProp]}
           </TableLinkButton>
         </CustomTooltip>

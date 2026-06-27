@@ -1,7 +1,8 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { settings } from '../components/shared/setDefaultSettings';
+import { settings } from '../components/shared/bridge';
+import type { Settings } from '../components/shared/setDefaultSettings';
 
-const parsedSettings: any = process.env.NODE_ENV === 'test' ? {} : settings.store;
+const parsedSettings: Partial<Settings> = process.env.NODE_ENV === 'test' ? {} : settings.store;
 
 export interface PeqBand {
   enabled: boolean;
@@ -37,14 +38,19 @@ export const DEFAULT_PEQ_BANDS: PeqBand[] = [
   { enabled: true, type: 'peaking', freq: 16000, gain: 0, q: 1.0 },
 ];
 
+export const computeInitialPeqBands = (s: Partial<Settings>): PeqBand[] =>
+  (s.peqBands as PeqBand[])?.length === DEFAULT_PEQ_BANDS.length
+    ? (s.peqBands as PeqBand[])
+    : DEFAULT_PEQ_BANDS;
+
+export const computeInitialPeqPreamp = (s: Partial<Settings>): number =>
+  Math.max(-15, Math.min(15, (s.peqPreampDb as number) ?? 0));
+
 const initialState: PeqState = {
   enabled: Boolean(parsedSettings.peqEnabled ?? false),
-  bands:
-    (parsedSettings.peqBands as PeqBand[])?.length === DEFAULT_PEQ_BANDS.length
-      ? (parsedSettings.peqBands as PeqBand[])
-      : DEFAULT_PEQ_BANDS,
+  bands: computeInitialPeqBands(parsedSettings),
   customPresets: (parsedSettings.peqCustomPresets as PeqPreset[]) ?? [],
-  preampDb: (parsedSettings.peqPreampDb as number) ?? 0,
+  preampDb: computeInitialPeqPreamp(parsedSettings),
 };
 
 const peqSlice = createSlice({
@@ -59,9 +65,11 @@ const peqSlice = createSlice({
     },
     setPeqBandField: (
       state,
-      action: PayloadAction<{ index: number; field: keyof PeqBand; value: any }>
+      action: PayloadAction<{ index: number; field: keyof PeqBand; value: PeqBand[keyof PeqBand] }>
     ) => {
-      (state.bands[action.payload.index] as any)[action.payload.field] = action.payload.value;
+      (state.bands[action.payload.index] as Record<keyof PeqBand, PeqBand[keyof PeqBand]>)[
+        action.payload.field
+      ] = action.payload.value;
     },
     resetPeqBands: (state) => {
       // Deep copy — assigning DEFAULT_PEQ_BANDS directly would share the frozen reference
@@ -70,7 +78,7 @@ const peqSlice = createSlice({
     },
     loadPeqPreset: (state, action: PayloadAction<{ bands: PeqBand[]; preampDb: number }>) => {
       state.bands = action.payload.bands.map((b) => ({ ...b }));
-      state.preampDb = Math.max(-20, Math.min(0, action.payload.preampDb ?? 0));
+      state.preampDb = Math.max(-15, Math.min(15, action.payload.preampDb ?? 0));
     },
     addPeqCustomPreset: (state, action: PayloadAction<PeqPreset>) => {
       const idx = state.customPresets.findIndex((p) => p.name === action.payload.name);
@@ -84,7 +92,7 @@ const peqSlice = createSlice({
       state.customPresets = state.customPresets.filter((p) => p.name !== action.payload);
     },
     setPeqPreamp: (state, action: PayloadAction<number>) => {
-      state.preampDb = Math.max(-20, Math.min(0, action.payload));
+      state.preampDb = Math.max(-15, Math.min(15, action.payload));
     },
   },
 });

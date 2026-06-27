@@ -1,33 +1,35 @@
+import React from 'react';
 import { Panel, Button, IconButton } from 'rsuite';
 import styled from 'styled-components';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
+import { LazyLoadImage, type LazyLoadImageProps } from 'react-lazy-load-image-component';
 
 interface Card {
-  cardsize: number;
+  $cardsize: number;
+  $noInfoPanel?: boolean;
 }
 
 /* const getcardsize = (props: any) => {
-  return props.cardsize === 'xs'
+  return props.$cardsize === 'xs'
     ? props.theme.primary.cardXs
-    : props.cardsize === 'sm'
+    : props.$cardsize === 'sm'
     ? props.theme.primary.cardSm
-    : props.cardsize === 'md'
+    : props.$cardsize === 'md'
     ? props.theme.primary.cardMd
-    : props.cardsize === 'lg'
+    : props.$cardsize === 'lg'
     ? props.theme.primary.cardLg
     : props.theme.primary.cardSm;
 }; */
 
 export const CardPanel = styled(Panel)<Card>`
-  border-top-left-radius: ${(props) => props.theme.other.card.image.borderRadius} !important;
-  border-top-right-radius: ${(props) => props.theme.other.card.image.borderRadius} !important;
-  border-bottom-left-radius: ${(props) => props.theme.other.card.info.borderRadius} !important;
-  border-bottom-right-radius: ${(props) => props.theme.other.card.info.borderRadius} !important;
+  border-top-left-radius: var(--app-card-img-radius) !important;
+  border-top-right-radius: var(--app-card-img-radius) !important;
+  border-bottom-left-radius: var(--app-card-info-radius) !important;
+  border-bottom-right-radius: var(--app-card-info-radius) !important;
 
   text-align: center;
-  width: ${(props) => `${Number(props.cardsize) + 2}px`};
-  height: ${(props) => `${Number(props.cardsize) + (props.$noInfoPanel ? 5 : 55)}px`};
-  border: ${(props) => props.theme.other.card.border};
+  width: ${(props) => `${Number(props.$cardsize) + 2}px`};
+  height: ${(props) => `${Number(props.$cardsize) + (props.$noInfoPanel ? 5 : 55)}px`};
+  border: var(--app-card-border);
 
   /* Hover effects inspired from https://codepen.io/SabAsan/pen/bGNrmzq */
   /* &:after {
@@ -54,37 +56,37 @@ export const CardPanel = styled(Panel)<Card>`
   } */
 
   &:hover {
-    border-color: ${(props) => props.theme.colors.primary} !important;
-    transform: ${(props) => props.theme.other.card.hover.transform};
-    filter: ${(props) => props.theme.other.card.hover.filter};
-    transition: ${(props) => props.theme.other.card.hover.transition};
+    border-color: var(--app-primary) !important;
+    transform: var(--app-card-hover-transform);
+    filter: var(--app-card-hover-filter);
+    transition: var(--app-card-hover-transition);
   }
 `;
 
 export const InfoPanel = styled(Panel)<Card>`
   border-radius: 0px;
-  width: ${(props) => `${props.cardsize}px`};
-  border-radius: ${(props) => props.theme.other.card.info.borderRadius} !important;
-  border-top: ${(props) => props.theme.other.card.info.borderTop} !important;
-  border-right: ${(props) => props.theme.other.card.info.borderRight} !important;
-  border-bottom: ${(props) => props.theme.other.card.info.borderBottom} !important;
-  border-left: ${(props) => props.theme.other.card.info.borderLeft} !important;
+  width: ${(props) => `${props.$cardsize}px`};
+  border-radius: var(--app-card-info-radius) !important;
+  border-top: var(--app-card-info-top) !important;
+  border-right: var(--app-card-info-right) !important;
+  border-bottom: var(--app-card-info-bottom) !important;
+  border-left: var(--app-card-info-left) !important;
 `;
 
 export const ImgPanel = styled(Panel)<Card>`
-  border-top: ${(props) => props.theme.other.card.image.borderTop} !important;
-  border-right: ${(props) => props.theme.other.card.image.borderRight} !important;
-  border-bottom: ${(props) => props.theme.other.card.image.borderBottom} !important;
-  border-left: ${(props) => props.theme.other.card.image.borderLeft} !important;
-  border-radius: ${(props) => props.theme.other.card.image.borderRadius} !important;
+  border-top: var(--app-card-img-top) !important;
+  border-right: var(--app-card-img-right) !important;
+  border-bottom: var(--app-card-img-bottom) !important;
+  border-left: var(--app-card-img-left) !important;
+  border-radius: var(--app-card-img-radius) !important;
 
   &:focus-visible {
-    border-color: ${(props) => props.theme.colors.primary} !important;
+    border-color: var(--app-primary) !important;
     outline: none !important;
   }
 
   &:hover {
-    border-color: ${(props) => props.theme.colors.primary} !important;
+    border-color: var(--app-primary) !important;
 
     .rs-btn {
       display: block;
@@ -103,10 +105,12 @@ export const ImgPanel = styled(Panel)<Card>`
 `;
 
 export const InfoSpan = styled.div`
-  color: ${(props) => props.theme.colors.layout.page.colorSecondary};
+  color: var(--app-text-secondary);
 `;
 
 export const CardButton = styled(Button)`
+  display: inline-block !important;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -120,17 +124,16 @@ export const CardTitleWrapper = styled.span`
 `;
 
 export const CardTitleButton = styled(CardButton)`
-  padding-top: 5px;
-  padding-bottom: 2px;
-  color: ${(props) => props.theme.colors.layout.page.color};
+  padding-top: 10px;
+  padding-bottom: 0px;
+  height: auto;
+  line-height: 1.2;
+  color: var(--app-text) !important;
 
   &:hover,
   &:focus {
     text-decoration: none;
-    color: ${(props) =>
-      !props.onClick
-        ? props.theme.colors.layout.page.color
-        : props.theme.colors.primary} !important;
+    color: ${(props) => (!props.onClick ? 'var(--app-text)' : 'var(--app-primary)')} !important;
   }
 
   &:focus-visible {
@@ -139,16 +142,16 @@ export const CardTitleButton = styled(CardButton)`
 
 export const CardSubtitleButton = styled(CardButton)`
   padding-bottom: 5px;
-  color: ${(props) => props.theme.colors.layout.page.colorSecondary};
+  height: auto;
+  line-height: 1.2;
+  color: var(--app-text-secondary) !important;
 
   &:hover,
   &:focus,
   &:active {
     text-decoration: none;
     color: ${(props) =>
-      !props.onClick
-        ? props.theme.colors.layout.page.color
-        : props.theme.colors.primary} !important;
+      !props.onClick ? 'var(--app-text-secondary)' : 'var(--app-primary)'} !important;
   }
 `;
 
@@ -159,21 +162,24 @@ export const CardSubtitle = styled.div<Card>`
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  width: ${(props) => `${props.cardsize}px`};
+  width: ${(props) => `${props.$cardsize}px`};
 `;
 
 export const CardImg = styled.img<Card>`
-  height: ${(props) => `${props.cardsize}px`};
+  height: ${(props) => `${props.$cardsize}px`};
 `;
 
-export const LazyCardImg = styled(LazyLoadImage)<Card>`
-  height: ${(props) => `${props.cardsize}px`};
+// Cast required: @types/react-lazy-load-image-component bundles its own React 19 types
+// internally, making FunctionComponent<LazyLoadImageProps> incompatible with styled-components
+// v6's WebTarget which uses the project's React 18 types. The cast bridges the gap.
+export const LazyCardImg = styled(LazyLoadImage as React.ComponentType<LazyLoadImageProps>)<Card>`
+  height: ${(props) => `${props.$cardsize}px`};
 `;
 
 export const Overlay = styled.div<Card>`
   position: relative;
-  height: ${(props) => `${props.cardsize}px`};
-  width: ${(props) => `${props.cardsize}px`};
+  height: ${(props) => `${props.$cardsize}px`};
+  width: ${(props) => `${props.$cardsize}px`};
 
   &:hover {
     cursor: pointer;
@@ -181,7 +187,7 @@ export const Overlay = styled.div<Card>`
 
   .corner-triangle {
     position: absolute;
-    background-color: ${(props) => props.theme.colors.primary};
+    background-color: var(--app-primary);
     box-shadow: 0 0 10px 8px rgba(0, 0, 0, 0.8);
     height: 80px;
     left: -50px;
@@ -197,21 +203,18 @@ export const Overlay = styled.div<Card>`
 const OverlayButton = styled(IconButton)`
   display: none;
   position: absolute !important;
-  opacity: ${(props) => props.theme.colors.card.overlayButton.opacity};
-  width: 0px;
-  height: 0px;
+  opacity: var(--app-card-overlay-opacity);
   transform: translate(-50%, -50%);
   -ms-transform: translate(-50%, -50%);
-  background: ${(props) => props.theme.colors.card.overlayButton.background};
-  color: ${(props) => props.theme.colors.card.overlayButton.color};
-  border-radius: ${(props) => props.theme.other.button.borderRadius};
+  background: var(--app-card-overlay-bg);
+  color: var(--app-card-overlay-color);
+  border-radius: var(--app-btn-radius);
 
   &:hover {
     opacity: 1;
-    background: ${(props) => props.theme.colors.card.overlayButton.backgroundHover};
-    background-color: ${(props) =>
-      props.theme.colors.card.overlayButton.backgroundHover} !important;
-    color: ${(props) => props.theme.colors.card.overlayButton.colorHover};
+    background: var(--app-card-overlay-bg-hover);
+    background-color: var(--app-card-overlay-bg-hover) !important;
+    color: var(--app-card-overlay-color-hover);
   }
 `;
 
@@ -240,12 +243,12 @@ export const ModalViewOverlayButton = styled(OverlayButton)`
   left: 90%;
 `;
 
-export const CardImgWrapper = styled.div<{ size: number; opacity?: number }>`
+export const CardImgWrapper = styled.div<{ $size: number; opacity?: number }>`
   clip-path: inset(0 0);
-  height: ${(props) => props.size}px;
+  height: ${(props) => props.$size}px;
   display: flex;
   justify-content: center;
   align-items: center;
-  background: ${(props) => (props.opacity ? props.theme.colors.primary : 'unset')};
+  background: ${(props) => (props.opacity ? 'var(--app-primary)' : 'unset')};
   opacity: ${(props) => props.opacity};
 `;

@@ -1,12 +1,12 @@
 import React from 'react';
-import { ipcRenderer } from 'electron';
+import { ipcRenderer } from '../../shared/bridge';
 import { useTranslation } from 'react-i18next';
 import { ConfigPanel } from '../styled';
 import { StyledButton } from '../../shared/styled';
 import ConfigOption from '../ConfigOption';
 import { notifyToast } from '../../shared/toast';
 
-const BackupConfig = ({ bordered }: any) => {
+const BackupConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
 
   const handleExport = async () => {
@@ -34,7 +34,7 @@ const BackupConfig = ({ bordered }: any) => {
           'Save your current settings to a JSON file. Server credentials are not included.'
         )}
         option={
-          <StyledButton size="sm" onClick={handleExport}>
+          <StyledButton data-testid="settings-export-button" size="sm" onClick={handleExport}>
             {t('Export')}
           </StyledButton>
         }
@@ -45,7 +45,7 @@ const BackupConfig = ({ bordered }: any) => {
           'Restore settings from a previously exported file. The app will reload after importing.'
         )}
         option={
-          <StyledButton size="sm" onClick={handleImport}>
+          <StyledButton data-testid="settings-import-button" size="sm" onClick={handleImport}>
             {t('Import')}
           </StyledButton>
         }

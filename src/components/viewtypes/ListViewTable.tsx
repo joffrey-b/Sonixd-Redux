@@ -1,15 +1,16 @@
-/* eslint-disable import/no-cycle */
-/* eslint-disable jsx-a11y/click-events-have-key-events */
-/* eslint-disable jsx-a11y/no-static-element-interactions */
+import { useNavigate } from 'react-router-dom';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import _ from 'lodash';
 import styled from 'styled-components';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { nanoid } from 'nanoid';
-import { Table, Grid, Row, Col, Icon } from 'rsuite';
-import { useHistory } from 'react-router';
+import { Table } from 'rsuite';
+import BarsIcon from '@rsuite/icons/legacy/Bars';
+import FolderOpenIcon from '@rsuite/icons/legacy/FolderOpen';
+import HeartIcon from '@rsuite/icons/legacy/Heart';
+import HeartOIcon from '@rsuite/icons/legacy/HeartO';
+import Trash2Icon from '@rsuite/icons/legacy/Trash2';
+
 import useLongPress from 'react-use/lib/useLongPress';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
 import {
   CombinedTitleContainer,
   CombinedTitleTextWrapper,
@@ -19,12 +20,10 @@ import {
 } from './styled';
 import {
   formatSongDuration,
-  isCached,
   formatDate,
   convertByteToMegabyte,
   sliceRangeByUniqueId,
 } from '../../shared/utils';
-import cacheImage from '../shared/cacheImage';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import {
   fixPlayer2Index,
@@ -40,6 +39,7 @@ import {
   StyledRate,
 } from '../shared/styled';
 import { addModalPage, setContextMenu } from '../../redux/miscSlice';
+import type { ContextMenu as ContextMenuState } from '../../redux/miscSlice';
 import {
   clearSelected,
   setCurrentMouseOverId,
@@ -56,21 +56,25 @@ import {
   setColumnList,
   setPageSort,
   setPlaybackFilter,
+  ConfigPage,
+  ColumnList,
+  ColumnEntry,
 } from '../../redux/configSlice';
+import type { RowDataType, RowKeyType, TableInstance } from 'rsuite-table';
 import { setStatus } from '../../redux/playerSlice';
 import { GenericItem, Item } from '../../types';
-import { CoverArtWrapper } from '../layout/styled';
 import Paginator from '../shared/Paginator';
 import { setFilter, setPagination } from '../../redux/viewSlice';
 import CoverArtCell from './TableCells/CoverArtCell';
+import CachedCoverArt from './TableCells/CachedCoverArt';
 import TextCell from './TableCells/TextCell';
 import LinkCell from './TableCells/LinkCell';
 import CustomCell from './TableCells/CustomCell';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
 
-const StyledTable = styled(Table)<{ rowHeight: number; $isDragging: boolean }>`
+const StyledTable = styled(Table)<{ rowHeight: number; $isDragging?: boolean }>`
   .rs-table-row.selected {
-    background: ${(props) => props.theme.colors.table.selectedRow} !important;
+    background: var(--app-selected-row) !important;
     // Resolve bug from rsuite-table where certain scrollpoints show a horizontal border
     height: ${(props) => `${props.rowHeight + 1}px !important`};
   }
@@ -92,27 +96,32 @@ const StyledTable = styled(Table)<{ rowHeight: number; $isDragging: boolean }>`
   }
 
   .rs-table-row.dragover {
-    box-shadow: ${(props) => `inset 0px 5px 0px -3px ${props.theme.colors.primary}`};
+    box-shadow: inset 0px 5px 0px -3px var(--app-primary);
   }
 
   .rs-table-row.drop-after-last {
-    box-shadow: ${(props) => `inset 0px -5px 0px -3px ${props.theme.colors.primary}`};
+    box-shadow: inset 0px -5px 0px -3px var(--app-primary);
   }
 
   .rs-table-row.playing {
-    color: ${(props) => props.theme.colors.primary} !important;
+    color: var(--app-primary) !important;
 
     span {
-      color: ${(props) => props.theme.colors.primary} !important;
+      color: var(--app-primary) !important;
     }
 
     .rs-btn {
-      color: ${(props) => props.theme.colors.primary};
+      color: var(--app-primary);
     }
   }
 
-  .rs-table-cell {
+  .rs-table-cell:not(.rs-table-cell-header) {
     background: transparent;
+  }
+
+  /* Direct override — CSS variable cascade from RootContainer proved unreliable */
+  .rs-table-cell-header {
+    background-color: var(--app-table-header-bg) !important;
   }
 
   .rs-table-row,
@@ -165,6 +174,57 @@ const DropZone = styled.div`
   z-index: 2;
 `;
 
+interface CacheImages {
+  cacheType?: string;
+  cacheIdProperty?: string;
+  enabled: boolean;
+}
+
+interface ColumnPickerItem {
+  value: {
+    dataKey: string;
+    width?: number;
+    flexGrow?: number;
+  };
+}
+
+interface ListViewConfig {
+  option: ColumnList;
+  columnList: ColumnPickerItem[];
+}
+
+interface ListViewTableProps {
+  tableRef?: React.RefObject<TableInstance<RowDataType, RowKeyType> & { scrollY?: number }>;
+  height?: number;
+  data: RowDataType[];
+  virtualized?: boolean;
+  rowHeight: number;
+  fontSize: number;
+  columns: ColumnEntry[];
+  handleRowClick: (e: MouseEvent, rowData: RowDataType, tableData: RowDataType[]) => void;
+  handleRowDoubleClick: (rowData: RowDataType) => void;
+  cacheImages: CacheImages;
+  autoHeight?: boolean;
+  page?: string;
+  listType?: ColumnList;
+  isModal?: boolean;
+  nowPlaying?: boolean;
+  playlist?: boolean;
+  config?: ListViewConfig;
+  handleDragEnd?: (entries: RowDataType[]) => void;
+  miniView?: boolean;
+  dnd?: boolean;
+  disableRowClick?: boolean;
+  disableContextMenu?: boolean;
+  disabledContextMenuOptions?: ContextMenuState['disabledOptions'];
+  handleFavorite: (rowData: RowDataType) => void;
+  handleRating: (rowData: RowDataType, value: number) => void;
+  onScroll?: (offset: number) => void;
+  loading?: boolean;
+  paginationProps?: { recordsPerPage: number; [key: string]: unknown };
+  affixHeader?: boolean;
+}
+
 const ListViewTable = ({
   tableRef,
   height,
@@ -195,39 +255,45 @@ const ListViewTable = ({
   loading,
   paginationProps,
   affixHeader,
-}: any) => {
-  const history = useHistory();
+}: ListViewTableProps) => {
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const misc = useAppSelector((state) => state.misc);
   const configState = useAppSelector((state) => state.config);
   const playQueue = useAppSelector((state) => state.playQueue);
   const multiSelect = useAppSelector((state) => state.multiSelect);
-  const [sortColumn, setSortColumn] = useState<any>();
-  const [sortType, setSortType] = useState<any>();
+  const [sortColumn, setSortColumn] = useState<string | undefined>();
+  const [sortType, setSortType] = useState<'asc' | 'desc' | undefined>();
   const [sortedData, setSortedData] = useState(data);
   const [sortedCount, setSortedCount] = useState(0);
   const [isOverDropZone, setIsOverDropZone] = useState(false);
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const mouseYRef = useRef<number>(0);
   const dragScrollRafRef = useRef<number | null>(null);
-  const currentDragDataRef = useRef<any>(null);
+  const currentDragDataRef = useRef<RowDataType[] | null>(null);
   const isDragOriginRef = useRef(false);
 
   useHotkeys(
-    configState.hotkeys.selectAll,
-    (e: KeyboardEvent) => {
-      e.preventDefault();
+    configState.hotkeys.selectAll ?? '',
+    () => {
       if (multiSelect.selected.length === data.length) {
         dispatch(clearSelected());
       } else {
         dispatch(clearSelected());
-        dispatch(setSelected(sortColumn && !nowPlaying ? sortedData : data));
+        dispatch(
+          setSelected(
+            (sortColumn && !nowPlaying ? sortedData : data) as unknown as Parameters<
+              typeof setSelected
+            >[0]
+          )
+        );
       }
     },
+    { preventDefault: true },
     [multiSelect.selected, data, configState.hotkeys.selectAll]
   );
 
-  const handleSortColumn = (column: any, type: any) => {
+  const handleSortColumn = (column: string, type: 'asc' | 'desc' = 'asc') => {
     if (!config) {
       setSortColumn(column);
       setSortType(type);
@@ -241,7 +307,7 @@ const ListViewTable = ({
       } else if (page) {
         dispatch(
           setPageSort({
-            page,
+            page: page as Parameters<typeof setPageSort>[0]['page'],
             sort: {
               sortColumn: column,
               sortType: type,
@@ -264,7 +330,7 @@ const ListViewTable = ({
           } else if (page) {
             dispatch(
               setPageSort({
-                page,
+                page: page as Parameters<typeof setPageSort>[0]['page'],
                 sort: {
                   sortColumn: undefined,
                   sortType: 'asc',
@@ -284,13 +350,15 @@ const ListViewTable = ({
   };
 
   const handleSelectMouseDown = useCallback(
-    (e: any, rowData: any) => {
+    (e: React.MouseEvent, rowData: RowDataType) => {
       if (!disableRowClick) {
         dispatch(setContextMenu({ show: false }));
         // If ctrl or shift is used, we want to ignore this drag selection handler and use the ones
         // provided in handleRowClick
         if (e.button === 0 && !e.ctrlKey && !e.shiftKey) {
-          dispatch(toggleSelectedSingle(rowData));
+          dispatch(
+            toggleSelectedSingle(rowData as unknown as Parameters<typeof toggleSelectedSingle>[0])
+          );
         }
       }
     },
@@ -304,10 +372,16 @@ const ListViewTable = ({
   }, [dispatch]);
 
   const handleStartSelectDrag = useLongPress(
-    ({ e, rowData }: any) => {
+    (event: TouchEvent | MouseEvent) => {
+      // useLongPress.onMouseDown is typed as (e: any) => void; we pass { e, rowData }
+      // via handleStartSelectDrag.onMouseDown({ e, rowData }) so the event is the custom shape.
+      const { e, rowData } = event as unknown as {
+        e: React.MouseEvent;
+        rowData: RowDataType;
+      };
       // Only allow left click
       if (e.button === 0) {
-        dispatch(setSelectedSingle(rowData));
+        dispatch(setSelectedSingle(rowData as unknown as Parameters<typeof setSelectedSingle>[0]));
         dispatch(setIsSelectDragging(true));
         document.body.style.cursor = 'crosshair';
       }
@@ -317,15 +391,15 @@ const ListViewTable = ({
 
   const handleContinueSelectDrag = useMemo(
     () =>
-      _.debounce((rowData: any) => {
+      _.debounce((rowData: RowDataType) => {
         if (multiSelect.isSelectDragging) {
           dispatch(
             setSelected(
               sliceRangeByUniqueId(
-                sortColumn && !nowPlaying ? sortedData : data,
+                (sortColumn && !nowPlaying ? sortedData : data) as { uniqueId?: string }[],
                 multiSelect.lastSelected.uniqueId,
-                rowData.uniqueId
-              )
+                rowData.uniqueId as string
+              ) as unknown as Parameters<typeof setSelected>[0]
             )
           );
         }
@@ -343,34 +417,31 @@ const ListViewTable = ({
 
   useEffect(() => {
     if (!nowPlaying) {
-      if (page === 'favoritePage') {
-        setSortColumn(configState.sort[page.split('.')[0]][page.split('.')[1]]?.sortColumn);
-        setSortType(configState.sort[page.split('.')[0]][page.split('.')[1]]?.sortType);
-      } else if (page) {
-        setSortColumn(configState.sort[page]?.sortColumn);
-        setSortType(configState.sort[page]?.sortType);
+      if (page) {
+        setSortColumn(configState.sort[page as keyof ConfigPage['sort']]?.sortColumn);
+        setSortType(configState.sort[page as keyof ConfigPage['sort']]?.sortType);
       }
 
       if (sortColumn && sortType) {
         // Since the column title(id) won't always match the actual column dataKey, we need to match it
-        const actualSortColumn = columns.find((c: any) => c.id === sortColumn);
+        const actualSortColumn = columns.find((c) => c.id === sortColumn);
         if (actualSortColumn) {
           const sortColumnDataKey =
             actualSortColumn.dataKey === 'combinedtitle'
               ? 'title'
               : actualSortColumn.dataKey === 'artist'
-              ? 'albumArtist'
-              : actualSortColumn.dataKey === 'genre'
-              ? 'albumGenre'
-              : actualSortColumn.dataKey;
+                ? 'albumArtist'
+                : actualSortColumn.dataKey === 'genre'
+                  ? 'albumGenre'
+                  : actualSortColumn.dataKey;
 
           const sortData = _.orderBy(
             data,
             [
-              (entry: any) => {
+              (entry: RowDataType) => {
                 return typeof entry[sortColumnDataKey] === 'string'
-                  ? entry[sortColumnDataKey].toLowerCase() || ''
-                  : +entry[sortColumnDataKey] || '';
+                  ? (entry[sortColumnDataKey] as string).toLowerCase() || ''
+                  : +(entry[sortColumnDataKey] as number) || '';
               },
             ],
             sortType
@@ -386,16 +457,16 @@ const ListViewTable = ({
   useEffect(() => {
     if (nowPlaying) {
       if (playQueue.sortColumn && playQueue.sortType) {
-        const actualSortColumn = columns.find((c: any) => c.id === playQueue.sortColumn);
+        const actualSortColumn = columns.find((c) => c.id === playQueue.sortColumn);
         if (actualSortColumn) {
           const sortColumnDataKey =
             actualSortColumn?.dataKey === 'combinedtitle'
               ? 'title'
               : actualSortColumn?.dataKey === 'artist'
-              ? 'albumArtist'
-              : actualSortColumn?.dataKey === 'genre'
-              ? 'albumGenre'
-              : actualSortColumn?.dataKey;
+                ? 'albumArtist'
+                : actualSortColumn?.dataKey === 'genre'
+                  ? 'albumGenre'
+                  : actualSortColumn?.dataKey;
 
           dispatch(
             sortPlayQueue({
@@ -418,15 +489,16 @@ const ListViewTable = ({
       }
     } else if (playlist) {
       if (sortColumn && sortType) {
-        const actualSortColumn = columns.find((c: any) => c.id === sortColumn);
+        const actualSortColumn = columns.find((c) => c.id === sortColumn);
+        if (!actualSortColumn) return;
         const sortColumnDataKey =
           actualSortColumn.dataKey === 'combinedtitle'
             ? 'title'
             : actualSortColumn.dataKey === 'artist'
-            ? 'albumArtist'
-            : actualSortColumn.dataKey === 'genre'
-            ? 'albumGenre'
-            : actualSortColumn.dataKey;
+              ? 'albumArtist'
+              : actualSortColumn.dataKey === 'genre'
+                ? 'albumGenre'
+                : actualSortColumn.dataKey;
 
         dispatch(
           sortPlaylist({
@@ -438,7 +510,7 @@ const ListViewTable = ({
         dispatch(
           sortPlaylist({
             columnDataKey: '',
-            sortType,
+            sortType: sortType ?? 'asc',
           })
         );
       }
@@ -505,7 +577,7 @@ const ListViewTable = ({
           (dropTarget as Element)?.closest('.rs-table-header-row-wrapper') != null ||
           (dropTarget as Element)?.closest('.rs-table-affix-header') != null;
         if (droppedInTable && !droppedInHeader) {
-          handleDragEnd(currentDragDataRef.current);
+          handleDragEnd?.(currentDragDataRef.current ?? []);
           if (nowPlaying && playQueue.currentPlayer === 1) {
             dispatch(fixPlayer2Index());
           }
@@ -532,23 +604,31 @@ const ListViewTable = ({
         dragScrollRafRef.current = null;
       }
     };
-  }, [multiSelect.isDragging, dnd, tableRef, handleDragEnd, nowPlaying, dispatch]);
+  }, [
+    multiSelect.isDragging,
+    dnd,
+    tableRef,
+    handleDragEnd,
+    nowPlaying,
+    dispatch,
+    height,
+    rowHeight,
+    playQueue.currentPlayer,
+  ]);
 
   return (
     <>
       <div ref={tableContainerRef} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         <StyledTable
           draggable="false"
-          rowClassName={(rowData: any) => {
+          rowClassName={(rowData: RowDataType) => {
             const currentData = sortColumn && !nowPlaying ? sortedData : data;
             const isLastRow =
               dnd &&
               isOverDropZone &&
               rowData?.uniqueId === currentData[currentData.length - 1]?.uniqueId;
             return `${
-              multiSelect?.selected.find((e: any) => e?.uniqueId === rowData?.uniqueId)
-                ? 'selected'
-                : ''
+              multiSelect?.selected.find((e) => e?.uniqueId === rowData?.uniqueId) ? 'selected' : ''
             } ${
               multiSelect?.currentMouseOverId === rowData?.uniqueId &&
               multiSelect?.isDragging &&
@@ -581,12 +661,21 @@ const ListViewTable = ({
           sortColumn={nowPlaying ? playQueue.sortColumn : sortColumn}
           sortType={nowPlaying ? playQueue.sortType : sortType}
           onSortColumn={handleSortColumn}
-          onScroll={(_e: any, offset: number) => {
+          onRowClick={(rowData: RowDataType, e: React.MouseEvent) => {
+            if (!disableRowClick) {
+              handleRowClick(
+                e as unknown as MouseEvent,
+                { ...rowData },
+                sortColumn && !nowPlaying ? sortedData : data
+              );
+            }
+          }}
+          onScroll={(_scrollX: number, offset: number) => {
             if (onScroll) {
               onScroll(offset);
             }
           }}
-          onRowContextMenu={(rowData: any, e: any) => {
+          onRowContextMenu={(rowData: RowDataType, e: React.MouseEvent) => {
             e.preventDefault();
 
             if (!disableContextMenu) {
@@ -610,9 +699,10 @@ const ListViewTable = ({
 
               if (
                 (misc.contextMenu.show === false ||
-                  misc.contextMenu.details.uniqueId !== rowData.uniqueId) &&
-                multiSelect.selected.filter((entry: any) => entry.uniqueId === rowData.uniqueId)
-                  .length > 0
+                  (misc.contextMenu.details as { uniqueId?: string } | undefined)?.uniqueId !==
+                    rowData.uniqueId) &&
+                multiSelect.selected.filter((entry) => entry.uniqueId === rowData.uniqueId).length >
+                  0
               ) {
                 // Handle when right clicking a selected row
                 dispatch(
@@ -622,12 +712,14 @@ const ListViewTable = ({
                     yPos: pageY,
                     type: nowPlaying ? 'nowPlaying' : rowData.type,
                     details: rowData,
-                    disabledOptions: disabledContextMenuOptions || [],
+                    disabledOptions: disabledContextMenuOptions ?? [],
                   })
                 );
               } else {
                 // Handle when right clicking a non-selected row
-                dispatch(setSelectedSingle(rowData));
+                dispatch(
+                  setSelectedSingle(rowData as unknown as Parameters<typeof setSelectedSingle>[0])
+                );
                 dispatch(
                   setContextMenu({
                     show: true,
@@ -635,19 +727,18 @@ const ListViewTable = ({
                     yPos: pageY,
                     type: nowPlaying ? 'nowPlaying' : rowData.type,
                     details: rowData,
-                    disabledOptions: disabledContextMenuOptions || [],
+                    disabledOptions: disabledContextMenuOptions ?? [],
                   })
                 );
               }
             }
           }}
         >
-          {columns.map((column: any) => (
+          {columns.map((column) => (
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore - children does actually exist, but rsuite expects react 16.
-            // Upgrading to rsuite 5 will come with some new changes (namely, different icons), so I will leave this in for now
+            // @ts-ignore - rsuite Table.Column children typing mismatch with React 19
             <Table.Column
-              key={nanoid()}
+              key={column.dataKey}
               align={column.alignment}
               flexGrow={column.flexGrow}
               resizable={column.resizable}
@@ -655,10 +746,8 @@ const ListViewTable = ({
               fixed={column.fixed}
               verticalAlign="middle"
               sortable
-              onResize={(newWidth: any) => {
-                const resizedColumnIndex = columns.findIndex(
-                  (c: any) => c.dataKey === column.dataKey
-                );
+              onResize={(newWidth: number | undefined) => {
+                const resizedColumnIndex = columns.findIndex((c) => c.dataKey === column.dataKey);
 
                 if (!miniView) {
                   settings.set(`${listType}ListColumns[${resizedColumnIndex}].width`, newWidth);
@@ -667,8 +756,8 @@ const ListViewTable = ({
                 }
 
                 const newCols = configState.lookAndFeel.listView[
-                  miniView ? 'mini' : listType
-                ].columns.map((c: any) => {
+                  (miniView ? 'mini' : listType) as keyof typeof configState.lookAndFeel.listView
+                ].columns.map((c) => {
                   if (c.dataKey === column.dataKey) {
                     const { width, ...props } = c;
                     return { width: newWidth, ...props };
@@ -678,7 +767,7 @@ const ListViewTable = ({
                 });
                 dispatch(
                   setColumnList({
-                    listType: miniView ? 'mini' : listType,
+                    listType: (miniView ? 'mini' : listType) as ColumnList,
                     entries: newCols,
                   })
                 );
@@ -688,17 +777,18 @@ const ListViewTable = ({
 
               {column.dataKey === 'index' ? (
                 <Table.Cell dataKey={column.id}>
-                  {(rowData: any, rowIndex: any) => {
+                  {(rowData: RowDataType, rowIndex = 0) => {
                     return (
                       <TableCellWrapper
                         style={{
                           cursor: multiSelect.isDragging ? 'grabbing' : dnd ? 'grab' : undefined,
                         }}
-                        height={rowHeight}
-                        onClick={(e: any) => {
+                        $height={rowHeight}
+                        $alignment={column.alignment}
+                        onClick={(e: React.MouseEvent) => {
                           if (!dnd) {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -737,18 +827,22 @@ const ListViewTable = ({
                             );
                           }
                         }}
-                        onMouseDown={(e: any) => {
+                        onMouseDown={(e: React.MouseEvent) => {
                           if (dnd) {
                             document.body.style.cursor = 'grabbing';
 
                             if (e.button === 0) {
                               const isSelected = multiSelect.selected.find(
-                                (item: any) => item.uniqueId === rowData.uniqueId
+                                (item) => item.uniqueId === rowData.uniqueId
                               );
 
                               // Handle cases where we want to quickly drag/drop single rows
                               if (multiSelect.selected.length <= 1 || !isSelected) {
-                                dispatch(setSelectedSingle(rowData));
+                                dispatch(
+                                  setSelectedSingle(
+                                    rowData as unknown as Parameters<typeof setSelectedSingle>[0]
+                                  )
+                                );
                                 dispatch(
                                   setCurrentMouseOverId({
                                     uniqueId: rowData.uniqueId,
@@ -784,12 +878,14 @@ const ListViewTable = ({
                         }}
                       >
                         {rowData.isDir ? (
-                          <Icon size="lg" icon="folder-open" style={{ color: '#FFD662' }} />
+                          <FolderOpenIcon
+                            style={{ color: 'var(--rs-color-yellow)', fontSize: '1.20em' }}
+                          />
                         ) : dnd ? (
                           <DragHandleCell $isDragging={multiSelect.isDragging}>
                             <span className="row-index">{rowIndex + 1}</span>
                             <span className="drag-icon">
-                              <Icon icon="bars" />
+                              <BarsIcon />
                             </span>
                           </DragHandleCell>
                         ) : (
@@ -802,13 +898,13 @@ const ListViewTable = ({
                 </Table.Cell>
               ) : column.dataKey === 'combinedtitle' ? (
                 <Table.Cell dataKey={column.id}>
-                  {(rowData: any, rowIndex: any) => {
+                  {(rowData: RowDataType, rowIndex = 0) => {
                     return (
                       <CombinedTitleContainer
-                        height={rowHeight}
-                        onClick={(e: any) =>
+                        $height={rowHeight}
+                        onClick={(e: React.MouseEvent) =>
                           handleRowClick(
-                            e,
+                            e as unknown as MouseEvent,
                             {
                               ...rowData,
                               rowIndex,
@@ -823,7 +919,7 @@ const ListViewTable = ({
                             tableData: sortColumn && !nowPlaying ? sortedData : data,
                           })
                         }
-                        onMouseDown={(e: any) => {
+                        onMouseDown={(e: React.MouseEvent) => {
                           handleStartSelectDrag.onMouseDown({ e, rowData });
                           handleSelectMouseDown(e, rowData);
                         }}
@@ -833,105 +929,84 @@ const ListViewTable = ({
                           handleStartSelectDrag.onMouseUp();
                         }}
                       >
-                        <Grid fluid>
-                          <Row className="row-main">
-                            <Col className="col-cover">
-                              <CoverArtWrapper size={rowHeight - 10}>
-                                <LazyLoadImage
-                                  src={
-                                    isCached(
-                                      `${misc.imageCachePath}${cacheImages.cacheType}_${
-                                        rowData[cacheImages.cacheIdProperty]
-                                      }.jpg`
-                                    )
-                                      ? `${misc.imageCachePath}${cacheImages.cacheType}_${
-                                          rowData[cacheImages.cacheIdProperty]
-                                        }.jpg`
-                                      : rowData.image
+                        <div className="row-main">
+                          <div className="col-cover">
+                            <CachedCoverArt
+                              fileName={`${cacheImages.cacheType}_${
+                                rowData[cacheImages.cacheIdProperty as string]
+                              }.jpg`}
+                              fallbackSrc={rowData.image}
+                              cachePath={misc.imageCachePath}
+                              size={rowHeight - 10}
+                              cacheEnabled={cacheImages.enabled}
+                            />
+                          </div>
+                          <div className="col-text">
+                            <CombinedTitleTextWrapper
+                              tabIndex={0}
+                              onKeyDown={(e: React.KeyboardEvent) => {
+                                if (e.key === ' ' || e.key === 'Enter') {
+                                  e.preventDefault();
+                                  if (nowPlaying) {
+                                    dispatch(clearSelected());
+                                    dispatch(
+                                      setPlayerIndex(
+                                        rowData as unknown as Parameters<typeof setPlayerIndex>[0]
+                                      )
+                                    );
+                                    dispatch(fixPlayer2Index());
+                                    dispatch(setStatus('PLAYING'));
                                   }
-                                  alt="track-img"
-                                  effect="opacity"
-                                  width={rowHeight - 10}
-                                  height={rowHeight - 10}
-                                  visibleByDefault
-                                  afterLoad={() => {
-                                    if (cacheImages.enabled && settings.get('cacheImages')) {
-                                      cacheImage(
-                                        `${cacheImages.cacheType}_${
-                                          rowData[cacheImages.cacheIdProperty]
-                                        }.jpg`,
-                                        rowData.image.replaceAll(/=150/gi, '=350')
-                                      );
-                                    }
-                                  }}
-                                />
-                              </CoverArtWrapper>
-                            </Col>
-                            <Col className="col-text">
-                              <Row className="row-sub-text">
-                                <CombinedTitleTextWrapper
-                                  tabIndex={0}
-                                  onKeyDown={(e: any) => {
-                                    if (e.key === ' ' || e.key === 'Enter') {
-                                      e.preventDefault();
-                                      if (nowPlaying) {
-                                        dispatch(clearSelected());
-                                        dispatch(setPlayerIndex(rowData));
-                                        dispatch(fixPlayer2Index());
-                                        dispatch(setStatus('PLAYING'));
-                                      }
-                                    }
+                                }
+                              }}
+                            >
+                              {rowData.title || rowData.name}
+                            </CombinedTitleTextWrapper>
+                            <div className="row-sub-secondarytext">
+                              {rowData.artist?.map((artist: GenericItem, i: number) => (
+                                <SecondaryTextWrapper
+                                  $subtitle="true"
+                                  key={`${rowData.uniqueId}-${artist.id}`}
+                                  style={{
+                                    fontFamily: configState.lookAndFeel.font,
+                                    fontSize: `${fontSize}px`,
                                   }}
                                 >
-                                  {rowData.title || rowData.name}
-                                </CombinedTitleTextWrapper>
-                              </Row>
-                              <Row className="row-sub-secondarytext">
-                                {rowData.artist?.map((artist: GenericItem, i: number) => (
-                                  <SecondaryTextWrapper
-                                    subtitle="true"
-                                    key={`${rowData.uniqueId}-${artist.id}`}
-                                    style={{
-                                      fontFamily: configState.lookAndFeel.font,
-                                      fontSize: `${fontSize}px`,
-                                    }}
-                                  >
-                                    {i > 0 && ', '}
-                                    <CustomTooltip text={artist.title}>
-                                      <TableLinkButton
-                                        font={`${fontSize}px`}
-                                        subtitle="true"
-                                        onClick={(e: any) => {
-                                          if (!e.ctrlKey && !e.shiftKey) {
-                                            if (artist.id && !isModal) {
-                                              history.push(`/library/artist/${artist.id}`);
-                                            } else if (artist.id && isModal) {
-                                              dispatch(
-                                                addModalPage({
-                                                  pageType: 'artist',
-                                                  id: artist.id,
-                                                })
-                                              );
-                                            }
+                                  {i > 0 && ', '}
+                                  <CustomTooltip text={artist.title}>
+                                    <TableLinkButton
+                                      $font={`${fontSize}px`}
+                                      $subtitle="true"
+                                      onClick={(e: React.MouseEvent) => {
+                                        if (!e.ctrlKey && !e.shiftKey) {
+                                          if (artist.id && !isModal) {
+                                            navigate(`/library/artist/${artist.id}`);
+                                          } else if (artist.id && isModal) {
+                                            dispatch(
+                                              addModalPage({
+                                                pageType: 'artist',
+                                                id: artist.id,
+                                              })
+                                            );
                                           }
-                                        }}
-                                      >
-                                        {artist.title}
-                                      </TableLinkButton>
-                                    </CustomTooltip>
-                                  </SecondaryTextWrapper>
-                                ))}
-                              </Row>
-                            </Col>
-                          </Row>
-                        </Grid>
+                                        }
+                                      }}
+                                    >
+                                      {artist.title}
+                                    </TableLinkButton>
+                                  </CustomTooltip>
+                                </SecondaryTextWrapper>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
                       </CombinedTitleContainer>
                     );
                   }}
                 </Table.Cell>
               ) : (
                 <Table.Cell dataKey={column.id}>
-                  {(rowData: any, rowIndex: any) => {
+                  {(rowData: RowDataType, rowIndex = 0) => {
                     // Playback filter columns -------------------------------------------------------
                     if (column.dataKey === 'filter') {
                       return <div style={{ userSelect: 'text' }}>{rowData.filter}</div>;
@@ -942,7 +1017,7 @@ const ListViewTable = ({
                         <>
                           <StyledIconButton
                             appearance="subtle"
-                            icon={<Icon icon="trash2" />}
+                            icon={<Trash2Icon />}
                             onClick={() => {
                               dispatch(removePlaybackFilter({ filterName: rowData.filter }));
                             }}
@@ -956,23 +1031,21 @@ const ListViewTable = ({
                         <>
                           <StyledCheckbox
                             defaultChecked={
-                              configState.playback.filters.find(
-                                (f: any) => f.filter === rowData.filter
-                              )?.enabled === true
+                              configState.playback.filters.find((f) => f.filter === rowData.filter)
+                                ?.enabled === true
                             }
                             checked={
-                              configState.playback.filters.find(
-                                (f: any) => f.filter === rowData.filter
-                              )?.enabled === true
+                              configState.playback.filters.find((f) => f.filter === rowData.filter)
+                                ?.enabled === true
                             }
-                            onChange={(_v: any, e: boolean) => {
+                            onChange={(_v: unknown, e: boolean) => {
                               dispatch(
                                 setPlaybackFilter({
-                                  filterName: rowData.filter,
+                                  filterName: rowData.filter as string,
                                   newFilter: {
-                                    ...configState.playback.filters.find(
-                                      (f: any) => f.filter === rowData.filter
-                                    ),
+                                    ...(configState.playback.filters.find(
+                                      (f) => f.filter === rowData.filter
+                                    ) as { filter: string; enabled: boolean }),
                                     enabled: e,
                                   },
                                 })
@@ -985,35 +1058,52 @@ const ListViewTable = ({
                     // -------------------------------------------------------------------------------
 
                     // List-view column selector columns
-                    if (column.dataKey === 'columnResizable') {
+                    if (column.dataKey === 'columnResizable' && config) {
                       return (
                         <>
                           <StyledCheckbox
                             defaultChecked={
-                              configState.lookAndFeel.listView[config.option].columns[
-                                configState.lookAndFeel.listView[config.option].columns.findIndex(
-                                  (col: any) => col.dataKey === rowData.dataKey
-                                )
+                              configState.lookAndFeel.listView[
+                                config.option as keyof typeof configState.lookAndFeel.listView
+                              ].columns[
+                                configState.lookAndFeel.listView[
+                                  config.option as keyof typeof configState.lookAndFeel.listView
+                                ].columns.findIndex((col) => col.dataKey === rowData.dataKey)
                               ]?.resizable === true
                             }
                             checked={
-                              configState.lookAndFeel.listView[config.option].columns[
-                                configState.lookAndFeel.listView[config.option].columns.findIndex(
-                                  (col: any) => col.dataKey === rowData.dataKey
-                                )
+                              configState.lookAndFeel.listView[
+                                config.option as keyof typeof configState.lookAndFeel.listView
+                              ].columns[
+                                configState.lookAndFeel.listView[
+                                  config.option as keyof typeof configState.lookAndFeel.listView
+                                ].columns.findIndex((col) => col.dataKey === rowData.dataKey)
                               ]?.resizable === true
                             }
-                            onChange={(_v: any, e: any) => {
+                            onChange={(_v: unknown, e: boolean) => {
                               const cols = configState.lookAndFeel.listView[
-                                config.option
-                              ].columns.map((col: any) => {
+                                config.option as keyof typeof configState.lookAndFeel.listView
+                              ].columns.map((col) => {
                                 if (rowData.dataKey === col.dataKey) {
                                   if (e === true) {
                                     const { flexGrow, ...newCols } = col;
-                                    return { ...newCols, resizable: e };
+                                    // rsuite 6: resizable columns require an explicit width.
+                                    // col.width may be undefined if resizable was toggled off
+                                    // previously (disable strips width). Fall back to the
+                                    // original column definition's width from the column list.
+                                    const colPickerIdx = config.columnList.findIndex(
+                                      (picker) => picker.value.dataKey === rowData.dataKey
+                                    );
+                                    const defaultWidth =
+                                      config.columnList[colPickerIdx]?.value.width || 100;
+                                    return {
+                                      ...newCols,
+                                      resizable: e,
+                                      width: col.width || defaultWidth,
+                                    };
                                   }
                                   const columnPickerMatch = config.columnList.findIndex(
-                                    (picker: any) => picker.value.dataKey === rowData.dataKey
+                                    (picker) => picker.value.dataKey === rowData.dataKey
                                   );
                                   const matchedFlexGrowValue =
                                     config.columnList[columnPickerMatch]?.value.flexGrow || 1;
@@ -1040,7 +1130,9 @@ const ListViewTable = ({
 
                     // Misc --------------------------------------------------------------------------
                     if (column.dataKey === 'custom') {
-                      <div>{column.custom}</div>;
+                      return (
+                        <div>{(column as ColumnEntry & { custom?: React.ReactNode }).custom}</div>
+                      );
                     }
                     // -------------------------------------------------------------------------------
 
@@ -1054,9 +1146,9 @@ const ListViewTable = ({
                           misc={misc}
                           rowHeight={rowHeight}
                           cacheImages={cacheImages}
-                          handleRowClick={(e: any) => {
+                          handleRowClick={(e: React.MouseEvent) => {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -1071,7 +1163,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1088,10 +1180,10 @@ const ListViewTable = ({
                       return (
                         <LinkCell
                           linkProp="album"
-                          onClickLink={(e: any) => {
+                          onClickLink={(e: React.MouseEvent) => {
                             if (!e.ctrlKey && !e.shiftKey) {
                               if (rowData.albumId && !isModal) {
-                                history.push(`/library/album/${rowData.albumId}`);
+                                navigate(`/library/album/${rowData.albumId}`);
                               } else if (rowData[0]?.id && isModal) {
                                 dispatch(
                                   addModalPage({
@@ -1107,9 +1199,9 @@ const ListViewTable = ({
                           misc={misc}
                           rowHeight={rowHeight}
                           cacheImages={cacheImages}
-                          handleRowClick={(e: any) => {
+                          handleRowClick={(e: React.MouseEvent) => {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -1124,7 +1216,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1142,10 +1234,10 @@ const ListViewTable = ({
                       return (
                         <LinkCell
                           linkProp="albumArtist"
-                          onClickLink={(e: any) => {
+                          onClickLink={(e: React.MouseEvent) => {
                             if (!e.ctrlKey && !e.shiftKey) {
                               if (rowData.albumArtistId && !isModal) {
-                                history.push(`/library/artist/${rowData.albumArtistId}`);
+                                navigate(`/library/artist/${rowData.albumArtistId}`);
                               } else if (rowData[0]?.id && isModal) {
                                 dispatch(
                                   addModalPage({
@@ -1169,7 +1261,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1190,9 +1282,9 @@ const ListViewTable = ({
                           rowIndex={rowIndex}
                           column={column}
                           rowHeight={rowHeight}
-                          handleRowClick={(e: any) => {
+                          handleRowClick={(e: React.MouseEvent) => {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -1207,7 +1299,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1229,9 +1321,9 @@ const ListViewTable = ({
                           rowIndex={rowIndex}
                           column={column}
                           rowHeight={rowHeight}
-                          handleRowClick={(e: any) => {
+                          handleRowClick={(e: React.MouseEvent) => {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -1246,7 +1338,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1268,9 +1360,9 @@ const ListViewTable = ({
                           rowIndex={rowIndex}
                           column={column}
                           rowHeight={rowHeight}
-                          handleRowClick={(e: any) => {
+                          handleRowClick={(e: React.MouseEvent) => {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -1285,7 +1377,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1304,7 +1396,7 @@ const ListViewTable = ({
                       return (
                         <LinkCell
                           linkProp="genre"
-                          onClickLink={(e: any, index: number) => {
+                          onClickLink={(e: React.MouseEvent, index: number) => {
                             if (!e.ctrlKey && !e.shiftKey) {
                               dispatch(
                                 setFilter({
@@ -1322,9 +1414,7 @@ const ListViewTable = ({
                               localStorage.setItem('scroll_list_albumList', '0');
                               localStorage.setItem('scroll_grid_albumList', '0');
                               setTimeout(() => {
-                                history.push(
-                                  `/library/album?sortType=${rowData.genre[index].title}`
-                                );
+                                navigate(`/library/album?sortType=${rowData.genre[index].title}`);
                               }, 50);
                             }
                           }}
@@ -1333,9 +1423,9 @@ const ListViewTable = ({
                           misc={misc}
                           rowHeight={rowHeight}
                           cacheImages={cacheImages}
-                          handleRowClick={(e: any) => {
+                          handleRowClick={(e: React.MouseEvent) => {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -1350,7 +1440,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1371,9 +1461,9 @@ const ListViewTable = ({
                           rowIndex={rowIndex}
                           column={column}
                           rowHeight={rowHeight}
-                          handleRowClick={(e: any) => {
+                          handleRowClick={(e: React.MouseEvent) => {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -1388,7 +1478,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1410,9 +1500,9 @@ const ListViewTable = ({
                           rowIndex={rowIndex}
                           column={column}
                           rowHeight={rowHeight}
-                          handleRowClick={(e: any) => {
+                          handleRowClick={(e: React.MouseEvent) => {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -1427,7 +1517,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1442,12 +1532,12 @@ const ListViewTable = ({
                           ) : (
                             <StyledIconToggle
                               tabIndex={0}
-                              icon={rowData?.starred ? 'heart' : 'heart-o'}
-                              size="lg"
-                              fixedWidth
-                              active={rowData?.starred ? 'true' : 'false'}
+                              data-testid={`star-${rowData?.title ?? ''}`}
+                              $active={rowData?.starred ? 'true' : 'false'}
                               onClick={() => handleFavorite(rowData)}
-                            />
+                            >
+                              {rowData?.starred ? <HeartIcon /> : <HeartOIcon />}
+                            </StyledIconToggle>
                           )}
                         </CustomCell>
                       );
@@ -1460,9 +1550,9 @@ const ListViewTable = ({
                           rowIndex={rowIndex}
                           column={column}
                           rowHeight={rowHeight}
-                          handleRowClick={(e: any) => {
+                          handleRowClick={(e: React.MouseEvent) => {
                             handleRowClick(
-                              e,
+                              e as unknown as MouseEvent,
                               {
                                 ...rowData,
                                 rowIndex,
@@ -1477,7 +1567,7 @@ const ListViewTable = ({
                               rowIndex,
                             });
                           }}
-                          onMouseDown={(e: any) => {
+                          onMouseDown={(e: React.MouseEvent) => {
                             handleStartSelectDrag.onMouseDown({ e, rowData });
                             handleSelectMouseDown(e, rowData);
                           }}
@@ -1492,7 +1582,7 @@ const ListViewTable = ({
                             readOnly={false}
                             value={rowData.userRating ? rowData.userRating : 0}
                             defaultValue={rowData?.userRating ? rowData.userRating : 0}
-                            onChange={(e: any) => handleRating(rowData, e)}
+                            onChange={(value: number) => handleRating(rowData, value)}
                           />
                         </CustomCell>
                       );
@@ -1504,9 +1594,10 @@ const ListViewTable = ({
                         rowIndex={rowIndex}
                         column={column}
                         rowHeight={rowHeight}
-                        handleRowClick={(e: any) => {
+                        style={column.dataKey === 'title' ? { paddingLeft: 10 } : undefined}
+                        handleRowClick={(e: React.MouseEvent) => {
                           handleRowClick(
-                            e,
+                            e as unknown as MouseEvent,
                             {
                               ...rowData,
                               rowIndex,
@@ -1521,7 +1612,7 @@ const ListViewTable = ({
                             tableData: sortColumn && !nowPlaying ? sortedData : data,
                           });
                         }}
-                        onMouseDown={(e: any) => {
+                        onMouseDown={(e: React.MouseEvent) => {
                           handleStartSelectDrag.onMouseDown({ e, rowData });
                           handleSelectMouseDown(e, rowData);
                         }}

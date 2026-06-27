@@ -1,7 +1,9 @@
 export default class Store {
-  constructor(options={}) {
-    this.name = options.name || "config.json";
-    this.settings = options.defaults || {};
+  constructor(options = {}) {
+    this.name = options.name || 'config.json';
+    this.path = `/tmp/${this.name}`;
+    // Deep-clone so mutations in tests don't leak back into the defaults object
+    this.settings = JSON.parse(JSON.stringify(options.defaults || {}));
   }
 
   get store() {
@@ -17,7 +19,7 @@ export default class Store {
    * @param {string} key
    */
   _getParentObject(key) {
-    const path = key.split(".");
+    const path = key.split('.');
     const final = path.at(-1);
     let object = this.settings;
 
@@ -34,10 +36,10 @@ export default class Store {
 
   /**
    *
-   * @param {string} key 
+   * @param {string} key
    */
   has(key) {
-    if (key.indexOf(".") !== -1) {
+    if (key.indexOf('.') !== -1) {
       let [parent, final] = this._getParentObject(key);
       return parent !== undefined && key in parent;
     } else {
@@ -50,7 +52,7 @@ export default class Store {
    * @param {string} key
    */
   get(key) {
-    if (key.indexOf(".") !== -1) {
+    if (key.indexOf('.') !== -1) {
       let [parent, final] = this._getParentObject(key);
 
       return parent !== undefined ? parent[final] : undefined;
@@ -61,12 +63,12 @@ export default class Store {
 
   /**
    *
-   * @param {string} key 
+   * @param {string} key
    * @param {any} value
    */
   set(key, value) {
-    if (key.indexOf("." !== -1)) {
-      const path = key.split(".");
+    if (key.indexOf('.') !== -1) {
+      const path = key.split('.');
 
       let object = this.settings;
 

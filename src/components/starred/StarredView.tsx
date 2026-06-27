@@ -1,6 +1,7 @@
+import { useNavigate } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
-import { useHistory } from 'react-router';
-import { useQuery, useQueryClient } from 'react-query';
+
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Nav } from 'rsuite';
 import { useTranslation } from 'react-i18next';
 import useSearchQuery from '../../hooks/useSearchQuery';
@@ -15,18 +16,25 @@ import { StyledNavItem, StyledTag } from '../shared/styled';
 import { setActive, setSort } from '../../redux/favoriteSlice';
 import { apiController } from '../../api/controller';
 import useColumnSort from '../../hooks/useColumnSort';
-import { Item, Server } from '../../types';
+import { Album, Artist, Item, Server, Song } from '../../types';
+import type { RowDataType } from 'rsuite-table';
+
+interface StarredData {
+  song: Song[];
+  album: Album[];
+  artist: Artist[];
+}
 import { FilterButton } from '../shared/ToolbarButtons';
 import ColumnSortPopover from '../shared/ColumnSortPopover';
 import CenterLoader from '../loader/CenterLoader';
 import useListClickHandler from '../../hooks/useListClickHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
 
 const StarredView = () => {
   const { t } = useTranslation();
-  const history = useHistory();
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const queryClient = useQueryClient();
   const folder = useAppSelector((state) => state.folder);
@@ -34,7 +42,7 @@ const StarredView = () => {
   const config = useAppSelector((state) => state.config);
   const misc = useAppSelector((state) => state.misc);
   const [viewType, setViewType] = useState(settings.get('albumViewType') || 'list');
-  const [musicFolder, setMusicFolder] = useState(undefined);
+  const [musicFolder, setMusicFolder] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (folder.applied.starred) {
@@ -42,36 +50,38 @@ const StarredView = () => {
     }
   }, [folder]);
 
-  const { isLoading, isError, data, error }: any = useQuery(['starred', musicFolder], () =>
-    apiController({
-      serverType: config.serverType,
-      endpoint: 'getStarred',
-      args: { musicFolderId: musicFolder },
-    })
-  );
+  const { isLoading, isError, data, error } = useQuery<StarredData>({
+    queryKey: ['starred', musicFolder],
+    queryFn: () =>
+      apiController({
+        serverType: config.serverType,
+        endpoint: 'getStarred',
+        args: { musicFolderId: musicFolder },
+      }),
+  });
 
   const filteredData = useSearchQuery(
     misc.searchQuery,
-    favorite.active.tab === 'tracks'
+    (favorite.active.tab === 'tracks'
       ? data?.song
       : favorite.active.tab === 'albums'
-      ? data?.album
-      : data?.artist,
+        ? data?.album
+        : data?.artist) ?? [],
     favorite.active.tab === 'tracks'
       ? ['title', 'artist', 'album', 'genre']
       : favorite.active.tab === 'albums'
-      ? ['title', 'artist', 'genre', 'year']
-      : ['title']
+        ? ['title', 'artist', 'genre', 'year']
+        : ['title']
   );
 
   const { sortedData, sortColumns } = useColumnSort(
-    favorite.active.tab === 'albums' ? data?.album : data?.artist,
+    (favorite.active.tab === 'albums' ? data?.album : data?.artist) ?? [],
     favorite.active.tab === 'albums' ? Item.Album : Item.Artist,
     favorite.active.tab === 'albums' ? favorite.active.album.sort : favorite.active.artist.sort
   );
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
-    doubleClick: (rowData: any) => {
+    doubleClick: (rowData: RowDataType) => {
       if (favorite.active.tab === 'tracks') {
         dispatch(
           setPlayQueueByRowClick({
@@ -85,9 +95,9 @@ const StarredView = () => {
         dispatch(setStatus('PLAYING'));
         dispatch(fixPlayer2Index());
       } else if (favorite.active.tab === 'albums') {
-        history.push(`/library/album/${rowData.id}`);
+        navigate(`/library/album/${rowData.id}`);
       } else {
-        history.push(`/library/artist/${rowData.id}`);
+        navigate(`/library/artist/${rowData.id}`);
       }
     },
   });
@@ -104,13 +114,15 @@ const StarredView = () => {
   //   dispatch(setRate({ id: [rowData.id], rating: e }));
   //   dispatch(setPlaylistRate({ id: [rowData.id], rating: e }));
 
-  //   await queryClient.refetchQueries(['starred', musicFolder], {
-  //     active: true,
-  //   });
+  //   await queryClient.refetchQueries({ queryKey: ['starred', musicFolder], type: 'active' });
   // };
 
   if (isError) {
-    return <span>Error: {error.message}</span>;
+    return (
+      <span>
+        {t('Error')}: {error.message}
+      </span>
+    );
   }
 
   return (
@@ -149,8 +161,8 @@ const StarredView = () => {
                         ? ['playCount', 'userRating']
                         : ['albumCount', 'userRating']
                       : favorite.active.tab === 'albums'
-                      ? []
-                      : ['duration']
+                        ? []
+                        : ['duration']
                   }
                   clearSortType={() =>
                     dispatch(
@@ -169,7 +181,7 @@ const StarredView = () => {
                       })
                     )
                   }
-                  setSortType={(e: string) =>
+                  setSortType={(e: 'asc' | 'desc') =>
                     dispatch(
                       setSort({
                         type: favorite.active.tab === 'albums' ? 'album' : 'artist',
@@ -224,7 +236,7 @@ const StarredView = () => {
             <Nav activeKey={favorite.active.tab} onSelect={(e) => dispatch(setActive({ tab: e }))}>
               <StyledNavItem
                 eventKey="tracks"
-                onKeyDown={(e: any) => {
+                onKeyDown={(e: React.KeyboardEvent) => {
                   if (e.key === ' ' || e.key === 'Enter') {
                     dispatch(setActive({ tab: 'tracks' }));
                   }
@@ -235,7 +247,7 @@ const StarredView = () => {
               </StyledNavItem>
               <StyledNavItem
                 eventKey="albums"
-                onKeyDown={(e: any) => {
+                onKeyDown={(e: React.KeyboardEvent) => {
                   if (e.key === ' ' || e.key === 'Enter') {
                     dispatch(setActive({ tab: 'albums' }));
                   }
@@ -245,7 +257,7 @@ const StarredView = () => {
               </StyledNavItem>
               <StyledNavItem
                 eventKey="artists"
-                onKeyDown={(e: any) => {
+                onKeyDown={(e: React.KeyboardEvent) => {
                   if (e.key === ' ' || e.key === 'Enter') {
                     dispatch(setActive({ tab: 'artists' }));
                   }
@@ -271,12 +283,13 @@ const StarredView = () => {
               tableColumns={config.lookAndFeel.listView.music.columns}
               handleRowClick={handleRowClick}
               handleRowDoubleClick={handleRowDoubleClick}
-              handleRating={(rowData: any, rating: number) =>
+              handleRating={(rowData: RowDataType, rating: number) =>
                 handleRating(rowData, {
                   rating,
                   custom: async () =>
-                    queryClient.refetchQueries(['starred', musicFolder], {
-                      active: true,
+                    queryClient.refetchQueries({
+                      queryKey: ['starred', musicFolder],
+                      type: 'active',
                     }),
                 })
               }
@@ -296,11 +309,12 @@ const StarredView = () => {
                 'deletePlaylist',
                 'viewInModal',
               ]}
-              handleFavorite={(rowData: any) =>
+              handleFavorite={(rowData: RowDataType) =>
                 handleFavorite(rowData, {
                   custom: async () => {
-                    await queryClient.refetchQueries(['starred', musicFolder], {
-                      active: true,
+                    await queryClient.refetchQueries({
+                      queryKey: ['starred', musicFolder],
+                      type: 'active',
                     });
                   },
                 })
@@ -322,12 +336,13 @@ const StarredView = () => {
                   fontSize={config.lookAndFeel.listView.album.fontSize}
                   handleRowClick={handleRowClick}
                   handleRowDoubleClick={handleRowDoubleClick}
-                  handleRating={(rowData: any, rating: number) =>
+                  handleRating={(rowData: RowDataType, rating: number) =>
                     handleRating(rowData, {
                       rating,
                       custom: async () =>
-                        queryClient.refetchQueries(['starred', musicFolder], {
-                          active: true,
+                        queryClient.refetchQueries({
+                          queryKey: ['starred', musicFolder],
+                          type: 'active',
                         }),
                     })
                   }
@@ -344,11 +359,12 @@ const StarredView = () => {
                     'moveSelectedTo',
                     'deletePlaylist',
                   ]}
-                  handleFavorite={(rowData: any) =>
+                  handleFavorite={(rowData: RowDataType) =>
                     handleFavorite(rowData, {
                       custom: async () => {
-                        await queryClient.refetchQueries(['starred', musicFolder], {
-                          active: true,
+                        await queryClient.refetchQueries({
+                          queryKey: ['starred', musicFolder],
+                          type: 'active',
                         });
                       },
                     })
@@ -380,11 +396,12 @@ const StarredView = () => {
                   playClick={{ type: 'album', idProperty: 'id' }}
                   size={config.lookAndFeel.gridView.cardSize}
                   cacheType="album"
-                  handleFavorite={(rowData: any) =>
+                  handleFavorite={(rowData: RowDataType) =>
                     handleFavorite(rowData, {
                       custom: async () => {
-                        await queryClient.refetchQueries(['starred', musicFolder], {
-                          active: true,
+                        await queryClient.refetchQueries({
+                          queryKey: ['starred', musicFolder],
+                          type: 'active',
                         });
                       },
                     })
@@ -408,12 +425,13 @@ const StarredView = () => {
                   fontSize={config.lookAndFeel.listView.artist.fontSize}
                   handleRowClick={handleRowClick}
                   handleRowDoubleClick={handleRowDoubleClick}
-                  handleRating={(rowData: any, rating: number) =>
+                  handleRating={(rowData: RowDataType, rating: number) =>
                     handleRating(rowData, {
                       rating,
                       custom: async () =>
-                        queryClient.refetchQueries(['starred', musicFolder], {
-                          active: true,
+                        queryClient.refetchQueries({
+                          queryKey: ['starred', musicFolder],
+                          type: 'active',
                         }),
                     })
                   }
@@ -431,11 +449,12 @@ const StarredView = () => {
                     'addToPlaylist',
                     'deletePlaylist',
                   ]}
-                  handleFavorite={(rowData: any) =>
+                  handleFavorite={(rowData: RowDataType) =>
                     handleFavorite(rowData, {
                       custom: async () => {
-                        await queryClient.refetchQueries(['starred', musicFolder], {
-                          active: true,
+                        await queryClient.refetchQueries({
+                          queryKey: ['starred', musicFolder],
+                          type: 'active',
                         });
                       },
                     })
@@ -462,16 +481,17 @@ const StarredView = () => {
                   }}
                   cardSubtitle={{
                     property: 'albumCount',
-                    unit: ' albums',
+                    unit: ` ${t('albums')}`,
                   }}
                   playClick={{ type: 'artist', idProperty: 'id' }}
                   size={config.lookAndFeel.gridView.cardSize}
                   cacheType="artist"
-                  handleFavorite={(rowData: any) =>
+                  handleFavorite={(rowData: RowDataType) =>
                     handleFavorite(rowData, {
                       custom: async () => {
-                        await queryClient.refetchQueries(['starred', musicFolder], {
-                          active: true,
+                        await queryClient.refetchQueries({
+                          queryKey: ['starred', musicFolder],
+                          type: 'active',
                         });
                       },
                     })

@@ -1,0 +1,251 @@
+name: Release
+
+# Runs only on release tags and manual triggers. Continuous integration on
+# every push/PR is handled by the GitLab CI pipeline (.gitlab-ci.yml) — this
+# workflow exists solely to gate and produce release artifacts, with each
+# stage required to pass before the next starts:
+#   test -> e2e -> build-linux + build-windows + build-macos (parallel)
+# A tag push with broken code (or a passing build but a broken e2e suite)
+# can no longer slip through and publish artifacts, which the previous
+# independent publish-*.yml workflows allowed.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: # allow manual trigger for testing
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Mirrors the existing Test workflow's steps exactly. That workflow runs on
+  # an [ubuntu-latest, macos-latest] matrix for push/PR coverage breadth; a
+  # single platform is sufficient as a release gate.
+  # ---------------------------------------------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js, NPM and Yarn
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'yarn'
+
+      - name: yarn install
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          yarn install --frozen-lockfile --network-timeout 300000 --network-concurrency 1
+
+      - name: Download Electron binary
+        run: node node_modules/electron/install.js
+
+      - name: yarn test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          yarn package
+          yarn lint
+          yarn tsc-silent -p ./tsconfig.json --suppress 2702@/node_modules/react-chartjs-2/ 9006@/src/main.dev.mjs
+          yarn test
+
+  # ---------------------------------------------------------------------------
+  # Adapted from the e2e job in .gitlab-ci.yml. The GitLab runner is
+  # self-hosted and long-lived: Chromium's OS-level deps are installed once
+  # outside CI, and `docker compose pull` / Playwright browser install reuse a
+  # persistent cache. A GitHub-hosted runner is a fresh VM every run, so
+  # those steps are replaced with `apt-get install` and
+  # `playwright install --with-deps` here instead.
+  # ---------------------------------------------------------------------------
+  e2e:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'yarn'
+
+      - name: Install system dependencies (MPV, Xvfb, audio)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y mpv xvfb libasound2-dev libpulse-dev
+
+      - name: Generate TLS certificate for self-signed cert tests
+        run: bash e2e/scripts/setup-tls.sh
+
+      - name: Start Docker services
+        run: |
+          cd e2e
+          docker compose pull --quiet
+          docker compose up -d
+
+      - name: Wait for services
+        run: bash scripts/wait-for-services.sh
+        working-directory: e2e
+
+      - name: Setup Navidrome
+        run: bash scripts/setup-navidrome.sh
+        working-directory: e2e
+
+      - name: Setup Jellyfin
+        run: bash scripts/setup-jellyfin.sh
+        working-directory: e2e
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --network-timeout 300000
+
+      - name: Build app
+        run: yarn build
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        # GitHub's ubuntu-latest runners have no audio hardware, and MPV can
+        # fail to start entirely when no ALSA/PulseAudio sink exists at all.
+        # SONIXD_CI_AUDIO=null makes main.dev.mjs launch MPV with --ao=null —
+        # gated behind this CI-only env var so production playback is
+        # unaffected. The tests only assert UI/player state, not audio
+        # output, so silent playback is fine.
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" yarn e2e
+        env:
+          DISPLAY: ':99'
+          SONIXD_CI_AUDIO: 'null'
+
+      - name: Capture service logs
+        if: always()
+        run: |
+          cd e2e
+          docker compose logs navidrome > navidrome.log 2>&1 || true
+          docker compose logs jellyfin > jellyfin.log 2>&1 || true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report/
+            e2e/navidrome.log
+            e2e/jellyfin.log
+          retention-days: 14
+
+      - name: Tear down Docker services
+        if: always()
+        run: docker compose down -v
+        working-directory: e2e
+
+  # ---------------------------------------------------------------------------
+  # Build jobs — faithfully reproduced from publish-linux.yml,
+  # publish-windows.yml and publish-macos.yml. Only the trigger (now on the
+  # parent workflow only) and `needs: [e2e]` have changed; commands, flags
+  # and secrets are otherwise identical to the original workflows.
+  # ---------------------------------------------------------------------------
+  build-linux:
+    needs: [e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v4
+
+      - name: Install Node, NPM and Yarn
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: |
+          yarn install
+
+      - name: Publish Linux
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          yarn postinstall && yarn build && yarn electron-builder --publish always --linux
+
+      - name: Publish ARM64
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          yarn postinstall && yarn build && yarn electron-builder --publish always --arm64
+
+  build-windows:
+    needs: [e2e]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v4
+
+      - name: Install Node, NPM
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'yarn'
+
+      - name: Setup yarn
+        run: npm install -g yarn
+
+      - name: Install `src/` dependencies
+        uses: nick-invision/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_on: error
+          command: |
+            cd src && yarn --frozen-lockfile --ignore-scripts --network-concurrency 1 --network-timeout 300000
+          on_retry_command: npm cache clean --force && yarn cache clean --all
+          shell: cmd
+
+      - name: Install dependencies
+        uses: nick-invision/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_on: error
+          command: |
+            yarn install --frozen-lockfile --network-concurrency 1 --network-timeout 300000
+          on_retry_command: npm cache clean --force && yarn cache clean --all
+          shell: cmd
+
+      - name: Publish releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        uses: nick-invision/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_on: error
+          command: |
+            yarn postinstall && yarn build && yarn electron-builder --publish always --win
+          on_retry_command: npm cache clean --force && yarn cache clean --all
+          shell: cmd
+
+  build-macos:
+    needs: [e2e]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v4
+
+      - name: Install Node, NPM and Yarn
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          yarn install
+
+      - name: Publish releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          yarn postinstall && yarn build && yarn electron-builder --publish always --mac

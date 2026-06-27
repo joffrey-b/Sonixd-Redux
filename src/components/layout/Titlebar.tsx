@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ipcRenderer } from 'electron';
+import { ipcRenderer } from '../shared/bridge';
 import {
   TitleHeader,
   DragRegion,
@@ -13,7 +13,7 @@ import { useAppSelector } from '../../redux/hooks';
 import { getCurrentEntryList } from '../../shared/utils';
 import logo from '../../../assets/icon.png';
 
-const Titlebar = ({ font }: any) => {
+const Titlebar = () => {
   const { t } = useTranslation();
   const playQueue = useAppSelector((state) => state.playQueue);
   const player = useAppSelector((state) => state.player);
@@ -40,17 +40,15 @@ const Titlebar = ({ font }: any) => {
   }, [playQueue, player.status, t]);
 
   useEffect(() => {
-    ipcRenderer.on('maximize', () => {
-      document.body.classList.add('maximized');
-    });
+    const handleMaximize = () => document.body.classList.add('maximized');
+    const handleUnmaximize = () => document.body.classList.remove('maximized');
 
-    ipcRenderer.on('unmaximize', () => {
-      document.body.classList.remove('maximized');
-    });
+    ipcRenderer.on('maximize', handleMaximize);
+    ipcRenderer.on('unmaximize', handleUnmaximize);
 
     return () => {
-      ipcRenderer.removeAllListeners('maximize');
-      ipcRenderer.removeAllListeners('unmaximize');
+      ipcRenderer.removeListener('maximize', handleMaximize);
+      ipcRenderer.removeListener('unmaximize', handleUnmaximize);
     };
   }, []);
 
@@ -60,7 +58,7 @@ const Titlebar = ({ font }: any) => {
   }
 
   return (
-    <TitleHeader id="titlebar" font={font}>
+    <TitleHeader id="titlebar">
       <DragRegion id="drag-region">
         {misc.titleBar === 'mac' && (
           <>
@@ -70,7 +68,7 @@ const Titlebar = ({ font }: any) => {
 
             <MacControl id="window-controls">
               <MacControlButton
-                minButton
+                $minButton
                 className="button"
                 id="min-button"
                 onClick={() => ipcRenderer.send('minimize')}
@@ -85,7 +83,7 @@ const Titlebar = ({ font }: any) => {
                 />
               </MacControlButton>
               <MacControlButton
-                maxButton
+                $maxButton
                 className="button"
                 id="max-button"
                 onClick={() => ipcRenderer.send('maximize')}
@@ -100,7 +98,7 @@ const Titlebar = ({ font }: any) => {
                 />
               </MacControlButton>
               <MacControlButton
-                restoreButton
+                $restoreButton
                 className="button"
                 id="restore-button"
                 onClick={() => ipcRenderer.send('unmaximize')}
@@ -142,7 +140,7 @@ const Titlebar = ({ font }: any) => {
             </div>
             <WindowControl id="window-controls">
               <WindowControlButton
-                minButton
+                $minButton
                 className="button"
                 id="min-button"
                 onClick={() => ipcRenderer.send('minimize')}
@@ -155,7 +153,7 @@ const Titlebar = ({ font }: any) => {
                 />
               </WindowControlButton>
               <WindowControlButton
-                maxButton
+                $maxButton
                 className="button"
                 id="max-button"
                 onClick={() => ipcRenderer.send('maximize')}
@@ -168,7 +166,7 @@ const Titlebar = ({ font }: any) => {
                 />
               </WindowControlButton>
               <WindowControlButton
-                restoreButton
+                $restoreButton
                 className="button"
                 id="restore-button"
                 onClick={() => ipcRenderer.send('unmaximize')}

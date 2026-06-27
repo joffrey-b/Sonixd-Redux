@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ipcRenderer, shell } from 'electron';
+import { ipcRenderer, settings, shell } from '../../shared/bridge';
 import { Form, Whisper } from 'rsuite';
-import { WhisperInstance } from 'rsuite/lib/Whisper';
+import { WhisperInstance } from 'rsuite/Whisper';
 import { Trans, useTranslation } from 'react-i18next';
 import { ConfigOptionDescription, ConfigOptionName, ConfigPanel } from '../styled';
 import {
@@ -14,57 +14,46 @@ import {
   StyledToggle,
 } from '../../shared/styled';
 import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
-import i18n from '../../../i18n/i18n';
 import { setPlaybackSetting } from '../../../redux/playQueueSlice';
 import ListViewTable from '../../viewtypes/ListViewTable';
-import { appendPlaybackFilter } from '../../../redux/configSlice';
+import { appendPlaybackFilter, type ColumnList } from '../../../redux/configSlice';
 import ConfigOption from '../ConfigOption';
 import { Server } from '../../../types';
 import { isWindows, isWindows10 } from '../../../shared/utils';
 import Popup from '../../shared/Popup';
-import { settings } from '../../shared/setDefaultSettings';
 
-const playbackFilterColumns = [
-  {
-    id: '#',
-    dataKey: 'index',
-    alignment: 'center',
-    resizable: false,
-    width: 50,
-    label: '#',
-  },
-  {
-    id: 'Filter',
-    dataKey: 'filter',
-    alignment: 'left',
-    resizable: false,
-    flexGrow: 2,
-    label: i18n.t('Filter'),
-  },
-  {
-    id: 'Enabled',
-    dataKey: 'filterEnabled',
-    alignment: 'left',
-    resizable: false,
-    width: 100,
-    label: i18n.t('Enabled'),
-  },
-  {
-    id: 'Delete',
-    dataKey: 'filterDelete',
-    alignment: 'left',
-    resizable: false,
-    width: 100,
-    label: i18n.t('Delete'),
-  },
-];
-
-const PlayerConfig = ({ bordered }: any) => {
+const PlayerConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const playQueue = useAppSelector((state) => state.playQueue);
-  const multiSelect = useAppSelector((state) => state.multiSelect);
+  const playbackFilterColumns = [
+    { id: '#', dataKey: 'index', alignment: 'center', resizable: false, width: 50, label: '#' },
+    {
+      id: 'Filter',
+      dataKey: 'filter',
+      alignment: 'left',
+      resizable: false,
+      flexGrow: 2,
+      label: t('Filter'),
+    },
+    {
+      id: 'Enabled',
+      dataKey: 'filterEnabled',
+      alignment: 'left',
+      resizable: false,
+      width: 100,
+      label: t('Enabled'),
+    },
+    {
+      id: 'Delete',
+      dataKey: 'filterDelete',
+      alignment: 'left',
+      resizable: false,
+      width: 100,
+      label: t('Delete'),
+    },
+  ];
   const config = useAppSelector((state) => state.config);
+  const playQueue = useAppSelector((state) => state.playQueue);
   const [newFilter, setNewFilter] = useState({ string: '', valid: false });
   const [transcode, setTranscode] = useState(Boolean(settings.get('transcode')));
   const [globalMediaHotkeys, setGlobalMediaHotkeys] = useState(
@@ -74,8 +63,7 @@ const PlayerConfig = ({ bordered }: any) => {
     Boolean(settings.get('systemMediaTransportControls'))
   );
   const [resume, setResume] = useState(Boolean(settings.get('resume')));
-  const [scrobble, setScrobble] = useState(Boolean(settings.get('scrobble')));
-  const transcodingRestartWhisper = useRef<WhisperInstance>();
+  const transcodingRestartWhisper = useRef<WhisperInstance | null>(null);
 
   useEffect(() => {
     settings.set('playbackFilters', config.playback.filters);
@@ -95,7 +83,7 @@ const PlayerConfig = ({ bordered }: any) => {
             min={0}
             max={100}
             width={125}
-            onChange={(e: any) => {
+            onChange={(e: number | string) => {
               settings.set('seekForwardInterval', Number(e));
             }}
           />
@@ -113,7 +101,7 @@ const PlayerConfig = ({ bordered }: any) => {
             min={0}
             max={100}
             width={125}
-            onChange={(e: any) => {
+            onChange={(e: number | string) => {
               settings.set('seekBackwardInterval', Number(e));
             }}
           />
@@ -126,9 +114,9 @@ const PlayerConfig = ({ bordered }: any) => {
         )}
         option={
           <StyledToggle
+            data-testid="direct-previous-track-toggle"
             size="md"
-            defaultChecked={Boolean(settings.get('directPreviousTrack'))}
-            checked={Boolean(settings.get('directPreviousTrack'))}
+            checked={playQueue.directPreviousTrack}
             onChange={(e: boolean) => {
               settings.set('directPreviousTrack', e);
               dispatch(setPlaybackSetting({ setting: 'directPreviousTrack', value: e }));
@@ -143,9 +131,9 @@ const PlayerConfig = ({ bordered }: any) => {
         )}
         option={
           <StyledToggle
+            data-testid="preserve-play-next-order-toggle"
             size="md"
-            defaultChecked={Boolean(settings.get('preservePlayNextOrder'))}
-            checked={Boolean(settings.get('preservePlayNextOrder'))}
+            checked={playQueue.preservePlayNextOrder}
             onChange={(e: boolean) => {
               settings.set('preservePlayNextOrder', e);
               dispatch(setPlaybackSetting({ setting: 'preservePlayNextOrder', value: e }));
@@ -160,7 +148,6 @@ const PlayerConfig = ({ bordered }: any) => {
         )}
         option={
           <StyledToggle
-            defaultChecked={resume}
             checked={resume}
             onChange={(e: boolean) => {
               settings.set('resume', e);
@@ -201,7 +188,6 @@ const PlayerConfig = ({ bordered }: any) => {
                 }
               >
                 <StyledToggle
-                  defaultChecked={transcode}
                   checked={transcode}
                   onChange={(e: boolean) => {
                     settings.set('transcode', e);
@@ -236,7 +222,6 @@ const PlayerConfig = ({ bordered }: any) => {
         }
         option={
           <StyledToggle
-            defaultChecked={globalMediaHotkeys}
             checked={globalMediaHotkeys}
             onChange={(e: boolean) => {
               settings.set('globalMediaHotkeys', e);
@@ -246,7 +231,6 @@ const PlayerConfig = ({ bordered }: any) => {
 
                 settings.set('systemMediaTransportControls', !e);
                 setSystemMediaTransportControls(!e);
-                ipcRenderer.send('disableSystemMediaTransportControls');
               } else {
                 ipcRenderer.send('disableGlobalHotkeys');
               }
@@ -267,19 +251,14 @@ const PlayerConfig = ({ bordered }: any) => {
           }
           option={
             <StyledToggle
-              defaultChecked={systemMediaTransportControls}
               checked={systemMediaTransportControls}
               onChange={(e: boolean) => {
                 settings.set('systemMediaTransportControls', e);
                 setSystemMediaTransportControls(e);
                 if (e) {
-                  ipcRenderer.send('enableSystemMediaTransportControls');
-
                   settings.set('globalMediaHotkeys', !e);
                   setGlobalMediaHotkeys(!e);
                   ipcRenderer.send('disableGlobalHotkeys');
-                } else {
-                  ipcRenderer.send('disableSystemMediaTransportControls');
                 }
               }}
             />
@@ -294,12 +273,10 @@ const PlayerConfig = ({ bordered }: any) => {
         )}
         option={
           <StyledToggle
-            defaultChecked={scrobble}
-            checked={scrobble}
+            checked={playQueue.scrobble}
             onChange={(e: boolean) => {
               settings.set('scrobble', e);
               dispatch(setPlaybackSetting({ setting: 'scrobble', value: e }));
-              setScrobble(e);
             }}
           />
         }
@@ -311,13 +288,14 @@ const PlayerConfig = ({ bordered }: any) => {
         )}
         option={
           <StyledInputNumber
+            data-testid="scrobble-threshold-input"
             defaultValue={String(settings.get('scrobbleThreshold') ?? 90)}
             step={5}
             min={1}
             max={100}
             width={125}
-            disabled={!scrobble}
-            onChange={(e: any) => {
+            disabled={!playQueue.scrobble}
+            onChange={(e: number | string) => {
               const val = Math.min(100, Math.max(1, Number(e)));
               settings.set('scrobbleThreshold', val);
               dispatch(setPlaybackSetting({ setting: 'scrobbleThreshold', value: val }));
@@ -341,7 +319,6 @@ const PlayerConfig = ({ bordered }: any) => {
               onChange={(e: string) => {
                 let isValid = true;
                 try {
-                  // eslint-disable-next-line no-new
                   new RegExp(e);
                 } catch {
                   isValid = false;
@@ -359,7 +336,7 @@ const PlayerConfig = ({ bordered }: any) => {
                 settings.set(
                   'playbackFilters',
                   config.playback.filters.concat({
-                    filter: newFilter,
+                    filter: newFilter.string,
                     enabled: true,
                   })
                 );
@@ -377,17 +354,16 @@ const PlayerConfig = ({ bordered }: any) => {
           columns={playbackFilterColumns}
           rowHeight={35}
           fontSize={12}
-          listType="column"
+          listType={'column' as ColumnList}
           cacheImages={{ enabled: false }}
-          playQueue={playQueue}
-          multiSelect={multiSelect}
           isModal={false}
           miniView={false}
           disableContextMenu
           disableRowClick
           handleRowClick={() => {}}
           handleRowDoubleClick={() => {}}
-          config={[]}
+          handleFavorite={() => {}}
+          handleRating={() => {}}
         />
       </StyledPanel>
     </ConfigPanel>

@@ -1,7 +1,10 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { settings } from '../components/shared/setDefaultSettings';
+import { getParsedSettings } from '../components/shared/settingsAccess';
+import type { Settings } from '../components/shared/setDefaultSettings';
 
-const parsedSettings: any = process.env.NODE_ENV === 'test' ? {} : settings.store;
+const parsedSettings: Partial<Settings> = (
+  process.env.NODE_ENV === 'test' ? {} : getParsedSettings()
+) as Partial<Settings>;
 
 export interface EqPreset {
   name: string;
@@ -16,11 +19,17 @@ export interface EqState {
   preampDb: number;
 }
 
+export const computeInitialEqGains = (s: Partial<Settings>): number[] =>
+  Array.isArray(s.eqGains) && s.eqGains.length === 10 ? (s.eqGains as number[]) : Array(10).fill(0);
+
+export const computeInitialEqPreamp = (s: Partial<Settings>): number =>
+  Math.max(-15, Math.min(15, (s.eqPreampDb as number) ?? 0));
+
 const initialState: EqState = {
   enabled: Boolean(parsedSettings.eqEnabled ?? false),
-  gains: (parsedSettings.eqGains as number[]) ?? Array(10).fill(0),
+  gains: computeInitialEqGains(parsedSettings),
   customPresets: (parsedSettings.eqCustomPresets as EqPreset[]) ?? [],
-  preampDb: (parsedSettings.eqPreampDb as number) ?? 0,
+  preampDb: computeInitialEqPreamp(parsedSettings),
 };
 
 const eqSlice = createSlice({
@@ -51,10 +60,10 @@ const eqSlice = createSlice({
     },
     loadEqPreset: (state, action: PayloadAction<{ gains: number[]; preampDb: number }>) => {
       state.gains = action.payload.gains;
-      state.preampDb = Math.max(-12, Math.min(0, action.payload.preampDb ?? 0));
+      state.preampDb = Math.max(-15, Math.min(15, action.payload.preampDb ?? 0));
     },
     setEqPreamp: (state, action: PayloadAction<number>) => {
-      state.preampDb = Math.max(-12, Math.min(0, action.payload));
+      state.preampDb = Math.max(-15, Math.min(15, action.payload));
     },
   },
 });

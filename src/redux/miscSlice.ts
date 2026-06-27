@@ -1,10 +1,12 @@
-import fs from 'fs';
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { mockSettings } from '../shared/mockSettings';
 import { getImageCachePath, getSongCachePath } from '../shared/utils';
-import { settings } from '../components/shared/setDefaultSettings';
+import { getParsedSettings } from '../components/shared/settingsAccess';
+import type { Settings } from '../components/shared/setDefaultSettings';
 
-const parsedSettings: any = process.env.NODE_ENV === 'test' ? mockSettings : settings.store;
+const parsedSettings = (
+  process.env.NODE_ENV === 'test' ? mockSettings : getParsedSettings()
+) as Partial<Settings>;
 
 export interface ModalPage {
   pageType: string;
@@ -21,7 +23,7 @@ export interface ImgModal {
   src?: string;
 }
 
-type ContextMenuOptions =
+export type ContextMenuOptions =
   | 'play'
   | 'addToQueueNext'
   | 'addToQueueLast'
@@ -41,7 +43,7 @@ export interface ContextMenu {
   yPos?: number;
   rowId?: string;
   type?: string;
-  details?: any;
+  details?: unknown;
   disabledOptions?: ContextMenuOptions[];
 }
 
@@ -82,32 +84,14 @@ const initialState: General = {
   },
   dynamicBackground: Boolean(parsedSettings.dynamicBackground),
   retainWindowSize: Boolean(parsedSettings.retainWindowSize),
-  savedWindowSize: Array(parsedSettings.savedWindowSize),
-  savedWindowPos: Array(parsedSettings.savedWindowPos),
-  defaultWindowWidth: Number(parsedSettings.defaultWindowWidth),
-  defaultWindowHeight: Number(parsedSettings.defaultWindowHeight),
+  savedWindowSize: parsedSettings.savedWindowSize || [1600, 900],
+  savedWindowPos: parsedSettings.savedWindowPos || [0, 0],
+  defaultWindowWidth: Number(parsedSettings.defaultWindowWidth) || 1600,
+  defaultWindowHeight: Number(parsedSettings.defaultWindowHeight) || 900,
   highlightOnRowHover: Boolean(parsedSettings.highlightOnRowHover),
   imageCachePath: getImageCachePath(),
   songCachePath: getSongCachePath(),
-  // Ensure cache directories exist on startup so downloads never fail with ENOENT.
-  // Only runs when a server is configured — skipped before login and after disconnect
-  // to prevent spurious directories being created with 'undefined' or empty paths.
-  ...(() => {
-    if (process.env.NODE_ENV !== 'test' && settings.get('serverBase64')) {
-      try {
-        fs.mkdirSync(getImageCachePath(), { recursive: true });
-      } catch {
-        /* ignore */
-      }
-      try {
-        fs.mkdirSync(getSongCachePath(), { recursive: true });
-      } catch {
-        /* ignore */
-      }
-    }
-    return {};
-  })(),
-  titleBar: String(parsedSettings.titleBarStyle),
+  titleBar: String(parsedSettings.titleBarStyle ?? 'native'),
   searchQuery: '',
 };
 
@@ -135,19 +119,22 @@ const miscSlice = createSlice({
       state.defaultWindowHeight = action.payload;
     },
 
-    setMiscSetting: (state, action: PayloadAction<{ setting: string; value: any }>) => {
+    setMiscSetting: (
+      state,
+      action: PayloadAction<{ setting: string; value: string | boolean }>
+    ) => {
       switch (action.payload.setting) {
         case 'imageCachePath':
-          state.imageCachePath = action.payload.value;
+          state.imageCachePath = String(action.payload.value);
           break;
         case 'songCachePath':
-          state.songCachePath = action.payload.value;
+          state.songCachePath = String(action.payload.value);
           break;
         case 'titleBar':
-          state.titleBar = action.payload.value;
+          state.titleBar = String(action.payload.value);
           break;
         case 'highlightOnRowHover':
-          state.highlightOnRowHover = action.payload.value;
+          state.highlightOnRowHover = Boolean(action.payload.value);
           break;
         default:
           break;

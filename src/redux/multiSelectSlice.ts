@@ -1,12 +1,17 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
+interface Selectable {
+  uniqueId: string;
+  [key: string]: unknown;
+}
+
 interface MultiSelect {
-  lastSelected: Record<string, unknown>;
+  lastSelected: Selectable;
   lastRangeSelected: {
-    lastSelected: Record<string, unknown>;
-    lastRangeSelected: Record<string, unknown>;
+    lastSelected: Selectable;
+    lastRangeSelected: Selectable;
   };
-  selected: any[];
+  selected: Selectable[];
   currentMouseOverIndex?: number;
   currentMouseOverId?: string;
   isDragging: boolean;
@@ -14,10 +19,10 @@ interface MultiSelect {
 }
 
 const initialState: MultiSelect = {
-  lastSelected: {},
+  lastSelected: { uniqueId: '' },
   lastRangeSelected: {
-    lastSelected: {},
-    lastRangeSelected: {},
+    lastSelected: { uniqueId: '' },
+    lastRangeSelected: { uniqueId: '' },
   },
   selected: [],
   currentMouseOverId: undefined,
@@ -30,21 +35,6 @@ const multiSelectSlice = createSlice({
   name: 'multiSelect',
   initialState,
   reducers: {
-    /* updateSelected: (state, action: PayloadAction<any>) => {
-      const newSelected: any = [];
-      state.selected.map((entry: Entry) => {
-        const matchedEntry = action.payload.find(
-          (item: Entry) => item.uniqueId === entry.uniqueId
-        );
-        if (matchedEntry) {
-          newSelected.push(matchedEntry);
-        }
-        return undefined;
-      });
-
-      state.selected = newSelected;
-    }, */
-
     setIsDragging: (state, action: PayloadAction<boolean>) => {
       state.isDragging = action.payload;
     },
@@ -64,24 +54,24 @@ const multiSelectSlice = createSlice({
       state.currentMouseOverIndex = action.payload.index;
     },
 
-    setSelected: (state, action: PayloadAction<any>) => {
+    setSelected: (state, action: PayloadAction<Selectable[]>) => {
       state.selected = action.payload;
     },
 
-    setSelectedSingle: (state, action: PayloadAction<any>) => {
+    setSelectedSingle: (state, action: PayloadAction<Selectable>) => {
       state.selected = [];
-      state.lastSelected = {};
+      state.lastSelected = { uniqueId: '' };
       state.lastRangeSelected = {
-        lastSelected: {},
-        lastRangeSelected: {},
+        lastSelected: { uniqueId: '' },
+        lastRangeSelected: { uniqueId: '' },
       };
 
       state.lastSelected = action.payload;
       state.selected.push(action.payload);
     },
 
-    appendSelected: (state, action: PayloadAction<any>) => {
-      action.payload.forEach((entry: any) => {
+    appendSelected: (state, action: PayloadAction<Selectable[]>) => {
+      action.payload.forEach((entry) => {
         const alreadySelected = state.selected.find((item) => item.uniqueId === entry.uniqueId);
 
         if (!alreadySelected) {
@@ -90,20 +80,20 @@ const multiSelectSlice = createSlice({
       });
     },
 
-    setRangeSelected: (state, action: PayloadAction<any>) => {
+    setRangeSelected: (state, action: PayloadAction<Selectable>) => {
       state.lastRangeSelected.lastSelected = state.lastSelected;
       state.lastRangeSelected.lastRangeSelected = action.payload;
     },
 
-    toggleSelectedSingle: (state, action: PayloadAction<any>) => {
+    toggleSelectedSingle: (state, action: PayloadAction<Selectable>) => {
       if (action.payload.uniqueId === state.selected[0]?.uniqueId) {
         state.selected = [];
       } else {
         state.selected = [];
-        state.lastSelected = {};
+        state.lastSelected = { uniqueId: '' };
         state.lastRangeSelected = {
-          lastSelected: {},
-          lastRangeSelected: {},
+          lastSelected: { uniqueId: '' },
+          lastRangeSelected: { uniqueId: '' },
         };
 
         state.lastSelected = action.payload;
@@ -111,7 +101,7 @@ const multiSelectSlice = createSlice({
       }
     },
 
-    toggleSelected: (state, action: PayloadAction<any>) => {
+    toggleSelected: (state, action: PayloadAction<Selectable>) => {
       if (state.selected.find((item) => item.uniqueId === action.payload.uniqueId)) {
         const indexOfItem = state.selected.findIndex(
           (item) => item.uniqueId === action.payload.uniqueId
@@ -126,7 +116,7 @@ const multiSelectSlice = createSlice({
       }
     },
 
-    toggleRangeSelected: (state, action: PayloadAction<any[]>) => {
+    toggleRangeSelected: (state, action: PayloadAction<Selectable[]>) => {
       if (state.lastSelected.uniqueId === state.lastRangeSelected.lastSelected.uniqueId) {
         const beginningIndex = action.payload.findIndex(
           (e) => e.uniqueId === state.lastSelected.uniqueId
@@ -144,7 +134,13 @@ const multiSelectSlice = createSlice({
 
         state.selected = newSlice;
       } else {
-        action.payload.map((item) => state.selected.push(item));
+        const existingIds = new Set(state.selected.map((item) => item.uniqueId));
+        action.payload.forEach((item) => {
+          if (!existingIds.has(item.uniqueId)) {
+            state.selected.push(item);
+            existingIds.add(item.uniqueId);
+          }
+        });
       }
     },
 

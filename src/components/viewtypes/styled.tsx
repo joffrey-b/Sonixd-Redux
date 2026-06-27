@@ -2,29 +2,31 @@ import styled from 'styled-components';
 import { Button, Table } from 'rsuite';
 
 export const TableLinkButton = styled(Button)<{
-  subtitle?: string;
-  active?: boolean;
-  font?: string;
+  $subtitle?: string;
+  $active?: boolean;
+  $font?: string;
 }>`
-  font-size: ${(props) => props.font};
+  font-size: ${(props) => props.$font};
   background: transparent;
   max-width: 100%;
   padding: 0px;
+  /* RSuite Button sets height: 2.25rem (36px) by default which inflates the row.
+     height: auto + line-height: 1.2 reduce it to natural text height. */
+  height: auto;
+  line-height: 1.2;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
   color: ${(props) =>
-    props.subtitle === 'true'
-      ? props.theme.colors.layout.page.colorSecondary
-      : props.theme.colors.layout.page.color};
+    props.$subtitle === 'true' ? 'var(--rs-text-secondary)' : 'var(--rs-text-primary)'};
 
   &:hover,
   &:active,
   &:focus {
     color: ${(props) =>
-      props.subtitle === 'true'
-        ? props.theme.colors.layout.page.colorSecondary
-        : props.theme.colors.layout.page.color} !important;
+      props.$subtitle === 'true'
+        ? 'var(--rs-text-secondary)'
+        : 'var(--rs-text-primary)'} !important;
     background: transparent !important;
     text-decoration: underline;
     cursor: pointer;
@@ -32,61 +34,56 @@ export const TableLinkButton = styled(Button)<{
 `;
 
 export const TableCellWrapper = styled.div<{
-  height?: number;
+  $height?: number;
+  $alignment?: string;
 }>`
-  margin-right: 5px;
+  flex: 1;
+  min-width: 0;
+  padding-right: 5px;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
-  line-height: ${(props) => (props.height ? `${props.height}px` : undefined)};
+  text-align: ${(props) => props.$alignment || 'left'};
+  height: ${(props) => (props.$height ? `${props.$height}px` : undefined)};
+  line-height: ${(props) => (props.$height ? `${props.$height}px` : undefined)};
 `;
 
-export const CombinedTitleContainer = styled.div<{ height: number }>`
+export const CombinedTitleContainer = styled.div<{ $height: number }>`
+  width: 100%;
+
   .row-main {
-    height: ${(props) => props.height}px;
+    height: ${(props) => props.$height}px;
     display: flex;
     align-items: center;
 
     .col-cover {
+      flex: 0 0 ${(props) => props.$height}px;
+      width: ${(props) => props.$height}px;
       padding-right: 5px;
-      width: ${(props) => props.height}px;
     }
 
     .col-text {
-      width: 100%;
+      flex: 1 1 0;
+      min-width: 0;
       overflow: hidden;
-      padding-left: 10px;
+      padding-left: 2px;
       padding-right: 20px;
-
-      .row-sub-text {
-        height: ${(props) => props.height / 2}px;
-        overflow: hidden;
-        position: relative;
-
-        .span {
-          position: absolute;
-          top: 0;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-          overflow: hidden;
-          width: 100%;
-        }
-      }
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 1px;
 
       .row-sub-secondarytext {
-        height: ${(props) => props.height / 2}px;
         font-size: smaller;
         overflow: hidden;
-        position: relative;
-        width: 100%;
+        white-space: nowrap;
       }
     }
   }
 `;
 
 export const CombinedTitleTextWrapper = styled.span`
-  position: absolute;
-  bottom: 0;
+  display: block;
   width: 100%;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -99,19 +96,19 @@ export const CombinedTitleTextWrapper = styled.span`
 
 export const StyledTableHeaderCell = styled(Table.HeaderCell)`
   .rs-table-column-resize-spanner::before {
-    border-color: transparent #000 transparent transparent !important;
+    border-color: transparent var(--rs-text-primary) transparent transparent !important;
   }
 
   .rs-table-column-resize-spanner::after {
-    border-color: transparent transparent transparent #000 !important;
+    border-color: transparent transparent transparent var(--rs-text-primary) !important;
   }
 
   .rs-table-cell-content:hover .rs-table-column-resize-spanner:hover {
-    background-color: #000 !important;
+    background-color: var(--rs-text-primary) !important;
   }
 
-  .rs-table-cell-header-icon-sort-desc::after,
-  .rs-table-cell-header-icon-sort-asc::after {
-    color: ${(props) => `${props.theme.colors.primary} !important`};
+  /* rsuite 6: sort icon uses a single SVG with class .rs-table-cell-header-icon-sort */
+  .rs-table-cell-header-icon-sort {
+    color: var(--rs-table-sort) !important;
   }
 `;

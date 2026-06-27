@@ -1,6 +1,5 @@
 import React, { useRef } from 'react';
-import { useQuery } from 'react-query';
-import { CheckboxGroup } from 'rsuite';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ConfigOptionDescription, ConfigOptionInput, ConfigPanel } from '../styled';
 import { StyledCheckbox, StyledInputPicker, StyledInputPickerContainer } from '../../shared/styled';
@@ -10,16 +9,17 @@ import { apiController } from '../../../api/controller';
 import { Folder, Server } from '../../../types';
 import ConfigOption from '../ConfigOption';
 import CenterLoader from '../../loader/CenterLoader';
-import { settings } from '../../shared/setDefaultSettings';
+import { settings } from '../../shared/bridge';
 
-const ServerConfig = ({ bordered }: any) => {
+const ServerConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const folder = useAppSelector((state) => state.folder);
   const config = useAppSelector((state) => state.config);
-  const { isLoading, data: musicFolders } = useQuery(['musicFolders'], () =>
-    apiController({ serverType: config.serverType, endpoint: 'getMusicFolders' })
-  );
+  const { isLoading, data: musicFolders } = useQuery({
+    queryKey: ['musicFolders'],
+    queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getMusicFolders' }),
+  });
   const musicFolderPickerContainerRef = useRef(null);
 
   if (isLoading) {
@@ -37,6 +37,7 @@ const ServerConfig = ({ bordered }: any) => {
           <StyledInputPickerContainer ref={musicFolderPickerContainerRef}>
             <StyledInputPicker
               container={() => musicFolderPickerContainerRef.current}
+              searchable={false}
               data={musicFolders}
               defaultValue={folder.musicFolder}
               valueKey="id"
@@ -58,64 +59,64 @@ const ServerConfig = ({ bordered }: any) => {
         {t('Select which pages to apply media folder filtering to:')}
       </ConfigOptionDescription>
       <ConfigOptionInput>
-        <CheckboxGroup>
+        {/* CheckboxGroup removed: rsuite 6 group context interferes with
+            individual controlled checkboxes, causing all to appear checked */}
+        <StyledCheckbox
+          checked={folder.applied.albums}
+          onChange={(_v: unknown, e: boolean) => {
+            dispatch(setAppliedFolderViews({ ...folder.applied, albums: e }));
+            settings.set('musicFolder.albums', e);
+          }}
+        >
+          {t('Albums')}
+        </StyledCheckbox>
+        <StyledCheckbox
+          checked={folder.applied.artists}
+          onChange={(_v: unknown, e: boolean) => {
+            dispatch(setAppliedFolderViews({ ...folder.applied, artists: e }));
+            settings.set('musicFolder.artists', e);
+          }}
+        >
+          {t('Artists')}
+        </StyledCheckbox>
+        <StyledCheckbox
+          checked={folder.applied.dashboard}
+          onChange={(_v: unknown, e: boolean) => {
+            dispatch(setAppliedFolderViews({ ...folder.applied, dashboard: e }));
+            settings.set('musicFolder.dashboard', e);
+          }}
+        >
+          {t('Dashboard')}
+        </StyledCheckbox>
+        <StyledCheckbox
+          checked={folder.applied.starred}
+          onChange={(_v: unknown, e: boolean) => {
+            dispatch(setAppliedFolderViews({ ...folder.applied, starred: e }));
+            settings.set('musicFolder.starred', e);
+          }}
+        >
+          {t('Favorites')}
+        </StyledCheckbox>
+        <StyledCheckbox
+          checked={folder.applied.search}
+          onChange={(_v: unknown, e: boolean) => {
+            dispatch(setAppliedFolderViews({ ...folder.applied, search: e }));
+            settings.set('musicFolder.search', e);
+          }}
+        >
+          {t('Search')}
+        </StyledCheckbox>
+        {config.serverType === Server.Jellyfin && (
           <StyledCheckbox
-            defaultChecked={folder.applied.albums}
-            onChange={(_v: any, e: boolean) => {
-              dispatch(setAppliedFolderViews({ ...folder.applied, albums: e }));
-              settings.set('musicFolder.albums', e);
+            checked={folder.applied.music}
+            onChange={(_v: unknown, e: boolean) => {
+              dispatch(setAppliedFolderViews({ ...folder.applied, music: e }));
+              settings.set('musicFolder.music', e);
             }}
           >
-            {t('Albums')}
+            {t('Songs')}
           </StyledCheckbox>
-          <StyledCheckbox
-            defaultChecked={folder.applied.artists}
-            onChange={(_v: any, e: boolean) => {
-              dispatch(setAppliedFolderViews({ ...folder.applied, artists: e }));
-              settings.set('musicFolder.artists', e);
-            }}
-          >
-            {t('Artists')}
-          </StyledCheckbox>
-          <StyledCheckbox
-            defaultChecked={folder.applied.dashboard}
-            onChange={(_v: any, e: boolean) => {
-              dispatch(setAppliedFolderViews({ ...folder.applied, dashboard: e }));
-              settings.set('musicFolder.dashboard', e);
-            }}
-          >
-            {t('Dashboard')}
-          </StyledCheckbox>
-          <StyledCheckbox
-            defaultChecked={folder.applied.starred}
-            onChange={(_v: any, e: boolean) => {
-              dispatch(setAppliedFolderViews({ ...folder.applied, starred: e }));
-              settings.set('musicFolder.starred', e);
-            }}
-          >
-            {t('Favorites')}
-          </StyledCheckbox>
-          <StyledCheckbox
-            defaultChecked={folder.applied.search}
-            onChange={(_v: any, e: boolean) => {
-              dispatch(setAppliedFolderViews({ ...folder.applied, search: e }));
-              settings.set('musicFolder.search', e);
-            }}
-          >
-            {t('Search')}
-          </StyledCheckbox>
-          {config.serverType === Server.Jellyfin && (
-            <StyledCheckbox
-              defaultChecked={folder.applied.music}
-              onChange={(_v: any, e: boolean) => {
-                dispatch(setAppliedFolderViews({ ...folder.applied, music: e }));
-                settings.set('musicFolder.music', e);
-              }}
-            >
-              {t('Songs')}
-            </StyledCheckbox>
-          )}
-        </CheckboxGroup>
+        )}
       </ConfigOptionInput>
     </ConfigPanel>
   );

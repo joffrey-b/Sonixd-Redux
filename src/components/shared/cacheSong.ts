@@ -1,50 +1,49 @@
-import fs from 'fs';
-import path from 'path';
-import { getSongCachePath } from '../../shared/utils';
+import { cache } from './bridge';
+import { getSongCachePath, joinPath } from '../../shared/utils';
+import { evictCacheIfNeeded } from './cacheUtils';
 
 // Uses the renderer's built-in fetch (Chromium network stack).
 // This means the OS certificate store is used on all platforms, redirects are
 // handled automatically, and the acceptSelfSigned toggle applies here too.
-const downloadFile = async (url: string, dest: string): Promise<void> => {
+// The downloaded bytes are committed to disk through the bridge -- the renderer
+// can no longer reach fs directly (see C1 / nodeIntegration).
+const downloadFile = async (url: string): Promise<ArrayBuffer> => {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
-  const buffer = await response.arrayBuffer();
-  fs.writeFileSync(dest, Buffer.from(buffer));
+  return response.arrayBuffer();
 };
 
-const cacheSong = (fileName: string, url: string) => {
-  if (!fileName.includes('undefined')) {
-    const cachePath = getSongCachePath();
+const cacheSong = async (fileName: string, url: string): Promise<void> => {
+  if (fileName.includes('undefined')) {
+    return;
+  }
 
-    // We save the song to a temp path first so that React does not try to use the
-    // in-progress downloaded image which would cause the image to be cut off.
-    const tempSongPath = path.join(cachePath, `TEMP_${fileName}`);
-    const cachedSongPath = path.join(cachePath, fileName);
+  const cachePath = getSongCachePath();
 
-    // Remove any stale TEMP file left by a previously interrupted or failed download.
-    if (fs.existsSync(tempSongPath)) {
-      try {
-        fs.rmSync(tempSongPath);
-      } catch {
-        // ignore
-      }
-    }
+  // We save the song to a temp path first so that React does not try to use the
+  // in-progress downloaded image which would cause the image to be cut off.
+  const tempSongPath = joinPath(cachePath, `TEMP_${fileName}`);
+  const cachedSongPath = joinPath(cachePath, fileName);
 
-    if (!fs.existsSync(cachedSongPath)) {
-      if (!url.includes('placeholder')) {
-        downloadFile(url, tempSongPath)
-          .then(() => fs.renameSync(tempSongPath, cachedSongPath))
-          .catch(() => {
-            try {
-              if (fs.existsSync(tempSongPath)) fs.rmSync(tempSongPath);
-            } catch {
-              // ignore cleanup errors
-            }
-          });
-      }
-    }
+  // Remove any stale TEMP file left by a previously interrupted or failed download.
+  await cache.removeIfExists(tempSongPath);
+
+  if (await cache.exists(cachedSongPath)) {
+    return;
+  }
+
+  if (url.includes('placeholder')) {
+    return;
+  }
+
+  try {
+    const buffer = await downloadFile(url);
+    await cache.commitDownload(tempSongPath, cachedSongPath, buffer);
+    evictCacheIfNeeded(cachePath, 'songCacheSizeLimit').catch(() => {});
+  } catch {
+    await cache.removeIfExists(tempSongPath);
   }
 };
 

@@ -1,4 +1,4 @@
-import { useQuery } from 'react-query';
+import { useQuery } from '@tanstack/react-query';
 import { apiController } from '../api/controller';
 import { ConfigPage } from '../redux/configSlice';
 import { Server } from '../types';
@@ -14,15 +14,17 @@ export interface LyricsData {
 }
 
 // Strip LRC metadata tags like [ti:Title], [ar:Artist], [offset:+500], etc.
-// Time tags [MM:SS.xx] are left intact.
-const stripLrcMetadata = (line: string) => line.replace(/\[(?!\d{2}:\d{2}\.)[^\]]*\]/g, '');
+// Time tags [MM:SS] and [MM:SS.xx] are left intact.
+const stripLrcMetadata = (line: string) =>
+  line.replace(/\[(?!\d{2}:\d{2}(?:\.\d{2,3})?])[^\]]*\]/g, '');
 
-const parseLrc = (text: string): LyricsData | null => {
-  const timeRegex = /\[(\d{2}):(\d{2})\.(\d{2,3})\]/g;
+export const parseLrc = (text: string): LyricsData | null => {
+  const cleanedText = text.replace(/^﻿/, '');
+  const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
   const lines: LyricLine[] = [];
   let hasTimes = false;
 
-  for (const rawLine of text.split('\n')) {
+  for (const rawLine of cleanedText.split('\n')) {
     const cleaned = stripLrcMetadata(rawLine);
     const matches = [...cleaned.matchAll(timeRegex)];
     const lineText = cleaned.replace(timeRegex, '').trim();
@@ -33,7 +35,7 @@ const parseLrc = (text: string): LyricsData | null => {
         for (const m of matches) {
           const ms =
             (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) * 1000 +
-            (m[3].length === 2 ? parseInt(m[3], 10) * 10 : parseInt(m[3], 10));
+            (m[3] ? (m[3].length === 2 ? parseInt(m[3], 10) * 10 : parseInt(m[3], 10)) : 0);
           lines.push({ time: ms, text: lineText });
         }
       }
@@ -50,9 +52,9 @@ const useGetLyrics = (
   config: ConfigPage,
   options: { id?: string; artist?: string; title?: string }
 ) => {
-  const { data } = useQuery<LyricsData | null>(
-    ['lyrics', options.id, options.artist, options.title],
-    async () => {
+  const { data } = useQuery<LyricsData | null>({
+    queryKey: ['lyrics', options.id, options.artist, options.title],
+    queryFn: async () => {
       // Try OpenSubsonic getLyricsBySongId first — returns structured lines with ms timestamps
       if (options.id) {
         try {
@@ -63,7 +65,7 @@ const useGetLyrics = (
           });
           if (structured?.line?.length) {
             return {
-              lines: structured.line.map((l: any) => ({
+              lines: structured.line.map((l: { start?: number; value?: string }) => ({
                 time: structured.synced ? (l.start as number) : null,
                 text: l.value as string,
               })),
@@ -99,10 +101,8 @@ const useGetLyrics = (
 
       return null;
     },
-    {
-      enabled: (!!options.id || !!options.artist) && config.serverType === Server.Subsonic,
-    }
-  );
+    enabled: (!!options.id || !!options.artist) && config.serverType === Server.Subsonic,
+  });
 
   return { data };
 };

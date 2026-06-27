@@ -1,13 +1,13 @@
-/* eslint-disable import/no-cycle */
 import React, { useEffect, useRef, useState } from 'react';
 import _ from 'lodash';
-import { nanoid } from 'nanoid/non-secure';
-import FastAverageColor from 'fast-average-color';
-import { clipboard, shell } from 'electron';
-import { ButtonToolbar, Whisper, ButtonGroup, Icon } from 'rsuite';
-import { useQuery, useQueryClient } from 'react-query';
+import { FastAverageColor } from 'fast-average-color';
+import { clipboard, settings, shell } from '../shared/bridge';
+import { ButtonToolbar, Whisper, ButtonGroup } from 'rsuite';
+import InfoCircleIcon from '@rsuite/icons/legacy/InfoCircle';
+import MagicIcon from '@rsuite/icons/legacy/Magic';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useParams, useHistory, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   DownloadButton,
   FavoriteButton,
@@ -23,12 +23,14 @@ import GridViewType from '../viewtypes/GridViewType';
 import GenericPageHeader from '../layout/GenericPageHeader';
 import { fixPlayer2Index, setPlayQueueByRowClick } from '../../redux/playQueueSlice';
 import { notifyToast } from '../shared/toast';
-import { formatDuration, isCached } from '../../shared/utils';
+import { formatDuration } from '../../shared/utils';
+import useIsCached from '../../hooks/useIsCached';
 import { LinkWrapper, SectionTitle, StyledButton, StyledLink, StyledPanel } from '../shared/styled';
 import { setStatus } from '../../redux/playerSlice';
 import { GradientBackground, PageHeaderSubtitleDataLine } from '../layout/styled';
 import { apiController } from '../../api/controller';
-import { Album, GenericItem, Genre, Item, Play, Server } from '../../types';
+import { Album, Artist, GenericItem, Genre, Item, Play, Server, Song } from '../../types';
+import type { RowDataType } from 'rsuite-table';
 import ListViewTable from '../viewtypes/ListViewTable';
 import Card from '../card/Card';
 import ScrollingMenu from '../scrollingmenu/ScrollingMenu';
@@ -41,33 +43,36 @@ import Popup from '../shared/Popup';
 import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
-import { settings } from '../shared/setDefaultSettings';
 
 const fac = new FastAverageColor();
 
-interface ArtistParams {
-  id: string;
+interface ArtistViewProps {
+  id?: string;
+  isModal?: boolean;
 }
 
-const ArtistView = ({ ...rest }: any) => {
+const ArtistView = ({ ...rest }: ArtistViewProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const queryClient = useQueryClient();
-  const history = useHistory();
+  const navigate = useNavigate();
   const location = useLocation();
   const misc = useAppSelector((state) => state.misc);
   const config = useAppSelector((state) => state.config);
   const folder = useAppSelector((state) => state.folder);
   const [viewType, setViewType] = useState(settings.get('albumViewType') || 'list');
-  const [imageAverageColor, setImageAverageColor] = useState({ color: '', loaded: false });
+  const [imageAverageColor, setImageAverageColor] = useState({
+    color: 'rgba(50, 50, 50, .4)',
+    loaded: true,
+  });
   const [artistDurationTotal, setArtistDurationTotal] = useState('');
   const [artistSongTotal, setArtistSongTotal] = useState(0);
-  const [musicFolder, setMusicFolder] = useState(undefined);
+  const [musicFolder, setMusicFolder] = useState<string | undefined>(undefined);
   const [seeFullDescription, setSeeFullDescription] = useState(false);
   const [seeMoreTopSongs, setSeeMoreTopSongs] = useState(false);
-  const [albums, setAlbums] = useState([]);
-  const [compilationAlbums, setCompilationAlbums] = useState([]);
-  const genreLineRef = useRef<any>();
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [compilationAlbums, setCompilationAlbums] = useState<Album[]>([]);
+  const genreLineRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (folder.applied.artists) {
@@ -75,19 +80,21 @@ const ArtistView = ({ ...rest }: any) => {
     }
   }, [folder]);
 
-  const { id } = useParams<ArtistParams>();
+  const { id } = useParams();
   const artistId = rest.id ? rest.id : id;
-  const { isLoading, isError, data, error }: any = useQuery(['artist', artistId, musicFolder], () =>
-    apiController({
-      serverType: config.serverType,
-      endpoint: 'getArtist',
-      args: { id: artistId, musicFolderId: musicFolder },
-    })
-  );
+  const { isLoading, isError, data, error } = useQuery<Artist | undefined, Error>({
+    queryKey: ['artist', artistId, musicFolder],
+    queryFn: () =>
+      apiController({
+        serverType: config.serverType,
+        endpoint: 'getArtist',
+        args: { id: artistId, musicFolderId: musicFolder },
+      }),
+  });
 
-  const { isLoading: isLoadingTopSongs, data: topSongs } = useQuery(
-    ['artistTopSongs', data?.title],
-    () =>
+  const { isLoading: isLoadingTopSongs, data: topSongs } = useQuery({
+    queryKey: ['artistTopSongs', data?.title],
+    queryFn: () =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getTopSongs',
@@ -96,19 +103,19 @@ const ArtistView = ({ ...rest }: any) => {
           count: 100,
         },
       }),
-    { enabled: Boolean(data?.title || data?.id) }
-  );
+    enabled: Boolean(data?.title || data?.id),
+  });
 
-  const { data: allSongs } = useQuery(
-    ['artistSongs', artistId],
-    () =>
+  const { data: allSongs } = useQuery({
+    queryKey: ['artistSongs', artistId],
+    queryFn: () =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getArtistSongs',
         args: { id: artistId, musicFolderId: musicFolder },
       }),
-    { enabled: Boolean(location.pathname.match('/songs')) }
-  );
+    enabled: Boolean(location.pathname.match('/songs')),
+  });
 
   const { sortedData: albumsByYearDesc } = useColumnSort(albums, Item.Album, {
     column: 'year',
@@ -120,35 +127,40 @@ const ArtistView = ({ ...rest }: any) => {
     type: 'desc',
   });
 
-  const filteredData = useSearchQuery(misc.searchQuery, data?.album, [
+  const filteredData = useSearchQuery(misc.searchQuery, data?.album ?? [], [
     'title',
     'artist',
     'genre',
     'year',
   ]);
 
+  const artistImagePath = data?.id ? `${misc.imageCachePath}artist_${data.id}.jpg` : '';
+  const isArtistImageCached = useIsCached(artistImagePath);
+
   useEffect(() => {
     if (settings.get('artistPageLegacy') && !rest.isModal) {
-      history.replace(`/library/artist/${artistId}/albums`);
+      navigate(`/library/artist/${artistId}/albums`);
     }
-  }, [artistId, history, rest.isModal]);
+  }, [artistId, navigate, rest.isModal]);
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
-    doubleClick: (rowData: any, songs: any) => {
+    doubleClick: (rowData: RowDataType, injectedSongs?: MouseEvent) => {
+      // injectedSongs is actually Song[] | undefined smuggled via the event slot — see JSX wrappers below
+      const songs = injectedSongs as unknown as Song[] | undefined;
       if (rowData.type === Item.Album) {
-        history.push(`/library/album/${rowData.id}`);
+        navigate(`/library/album/${rowData.id}`);
       }
 
       if (rowData.type === Item.Music) {
         if (rowData.isDir) {
-          history.push(`/library/folder?folderId=${rowData.parent}`);
+          navigate(`/library/folder?folderId=${rowData.parent}`);
         } else {
           dispatch(
             setPlayQueueByRowClick({
-              entries: songs.filter((entry: any) => entry.isDir !== true),
-              currentIndex: rowData.rowIndex,
-              currentSongId: rowData.id,
-              uniqueSongId: rowData.uniqueId,
+              entries: (songs ?? []).filter((entry) => !entry.isDir),
+              currentIndex: rowData.rowIndex as number,
+              currentSongId: rowData.id as string,
+              uniqueSongId: rowData.uniqueId as string,
               filters: config.playback.filters,
             })
           );
@@ -170,12 +182,11 @@ const ArtistView = ({ ...rest }: any) => {
       const allArtistSongs = await apiController({
         serverType: config.serverType,
         endpoint: 'getArtistSongs',
-        args: { id: data.id, musicFolderId: musicFolder },
+        args: { id: data?.id, musicFolderId: musicFolder },
       });
 
       for (let i = 0; i < allArtistSongs.length; i += 1) {
         downloadUrls.push(
-          // eslint-disable-next-line no-await-in-loop
           await apiController({
             serverType: config.serverType,
             endpoint: 'getDownloadUrl',
@@ -185,22 +196,23 @@ const ArtistView = ({ ...rest }: any) => {
       }
 
       if (type === 'download') {
-        downloadUrls.forEach((link) => shell.openExternal(link));
+        downloadUrls.forEach((link) => {
+          if (/^https?:\/\//i.test(link)) shell.openExternal(link);
+        });
       }
 
       if (type === 'copy') {
         clipboard.writeText(downloadUrls.join('\n'));
         notifyToast('info', t('Download links copied!'));
       }
-    } else if (data.album[0]?.parent) {
+    } else if (data?.album?.[0]?.parent) {
       if (type === 'download') {
-        shell.openExternal(
-          await apiController({
-            serverType: config.serverType,
-            endpoint: 'getDownloadUrl',
-            args: { id: data.album[0].parent },
-          })
-        );
+        const dlUrl = await apiController({
+          serverType: config.serverType,
+          endpoint: 'getDownloadUrl',
+          args: { id: data.album[0].parent },
+        });
+        if (/^https?:\/\//i.test(dlUrl)) shell.openExternal(dlUrl);
       } else {
         clipboard.writeText(
           await apiController({
@@ -213,17 +225,15 @@ const ArtistView = ({ ...rest }: any) => {
       }
     } else {
       const downloadUrls: string[] = [];
-      for (let i = 0; i < data.album.length; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
+      for (let i = 0; i < (data?.album?.length ?? 0); i += 1) {
         const albumRes = await apiController({
           serverType: config.serverType,
           endpoint: 'getAlbum',
-          args: { id: data.album[i].id },
+          args: { id: data?.album?.[i].id },
         });
 
         if (albumRes.song[0]?.parent) {
           downloadUrls.push(
-            // eslint-disable-next-line no-await-in-loop
             await apiController({
               serverType: config.serverType,
               endpoint: 'getDownloadUrl',
@@ -239,7 +249,9 @@ const ArtistView = ({ ...rest }: any) => {
       }
 
       if (type === 'download') {
-        downloadUrls.forEach((link) => shell.openExternal(link));
+        downloadUrls.forEach((link) => {
+          if (/^https?:\/\//i.test(link)) shell.openExternal(link);
+        });
       }
 
       if (type === 'copy') {
@@ -251,14 +263,15 @@ const ArtistView = ({ ...rest }: any) => {
 
   useEffect(() => {
     if (!isLoading) {
-      const img = isCached(`${misc.imageCachePath}artist_${data?.id}.jpg`)
-        ? `${misc.imageCachePath}artist_${data?.id}.jpg`
+      const img = isArtistImageCached
+        ? artistImagePath
         : data?.image?.includes('placeholder')
-        ? data?.info?.imageUrl
           ? data?.info?.imageUrl
-          : data?.image
-        : data?.image;
+            ? data?.info?.imageUrl
+            : data?.image
+          : data?.image;
 
+      let colorAttempts = 0;
       const setAvgColor = (imgUrl: string) => {
         if (
           data?.image?.match('placeholder') ||
@@ -282,12 +295,27 @@ const ArtistView = ({ ...rest }: any) => {
                 loaded: true,
               });
             })
-            .catch(() => setAvgColor(imgUrl));
+            .catch(() => {
+              colorAttempts += 1;
+              if (colorAttempts < 3) {
+                setAvgColor(imgUrl);
+              } else {
+                setImageAverageColor({ color: 'rgba(50, 50, 50, .4)', loaded: true });
+              }
+            });
         }
       };
-      setAvgColor(img);
+      setAvgColor(img ?? '');
     }
-  }, [data?.id, data?.image, data?.info, isLoading, misc.imageCachePath]);
+  }, [
+    data?.id,
+    data?.image,
+    data?.info,
+    isLoading,
+    misc.imageCachePath,
+    artistImagePath,
+    isArtistImageCached,
+  ]);
 
   useEffect(() => {
     const allAlbumDurations = _.sum(_.map(data?.album, 'duration'));
@@ -300,14 +328,14 @@ const ArtistView = ({ ...rest }: any) => {
   useEffect(() => {
     setAlbums(
       data?.album?.filter(
-        (entry: Album) => entry.albumArtistId === data.id || entry.albumArtist === data.title
-      )
+        (entry: Album) => entry.albumArtistId === data?.id || entry.albumArtist === data?.title
+      ) ?? []
     );
 
     setCompilationAlbums(
       data?.album?.filter(
-        (entry: Album) => entry.albumArtistId !== data.id && entry.albumArtist !== data.title
-      )
+        (entry: Album) => entry.albumArtistId !== data?.id && entry.albumArtist !== data?.title
+      ) ?? []
     );
   }, [data?.album, data?.id, data?.title]);
 
@@ -319,6 +347,10 @@ const ArtistView = ({ ...rest }: any) => {
     return <span>Error: {error?.message}</span>;
   }
 
+  if (!data) {
+    return null;
+  }
+
   return (
     <>
       {!rest.isModal && (
@@ -326,7 +358,7 @@ const ArtistView = ({ ...rest }: any) => {
           $expanded={config.lookAndFeel.sidebar.expand}
           $color={imageAverageColor.color}
           $titleBar={misc.titleBar}
-          sidebarwidth={config.lookAndFeel.sidebar.width}
+          $sidebarwidth={config.lookAndFeel.sidebar.width}
         />
       )}
       <GenericPage
@@ -339,13 +371,13 @@ const ArtistView = ({ ...rest }: any) => {
                 title={t('None')}
                 subtitle=""
                 coverArt={
-                  isCached(`${misc.imageCachePath}artist_${data?.id}.jpg`)
-                    ? `${misc.imageCachePath}artist_${data?.id}.jpg`
+                  isArtistImageCached
+                    ? artistImagePath
                     : data?.image?.includes('placeholder')
-                    ? data?.info?.imageUrl
                       ? data?.info?.imageUrl
+                        ? data?.info?.imageUrl
+                        : data?.image
                       : data?.image
-                    : data?.image
                 }
                 size={
                   location.pathname.match('/songs|/albums|/compilationalbums|/topsongs') ? 180 : 225
@@ -360,7 +392,7 @@ const ArtistView = ({ ...rest }: any) => {
               />
             }
             cacheImages={{
-              enabled: settings.get('cacheImages'),
+              enabled: settings.get('cacheImages') ?? false,
               cacheType: 'artist',
               id: data.id,
             }}
@@ -370,22 +402,23 @@ const ArtistView = ({ ...rest }: any) => {
             title={data.title}
             showTitleTooltip
             subtitle={
-              <>
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                 <PageHeaderSubtitleDataLine $top $overflow>
-                  <StyledLink onClick={() => history.push(`/library/artist`)}>
+                  <StyledLink onClick={() => navigate(`/library/artist`)}>
                     <strong>{t('Artist')}</strong>
                   </StyledLink>{' '}
-                  • {data.albumCount} albums • {artistSongTotal} songs, {artistDurationTotal}
+                  • {t('{{count}} albums', { count: data.albumCount })} •{' '}
+                  {t('{{count}} songs', { count: artistSongTotal })}, {artistDurationTotal}
                 </PageHeaderSubtitleDataLine>
                 {!location.pathname.match('/songs|/albums|/compilationalbums|/topsongs') && (
                   <PageHeaderSubtitleDataLine
                     $wrap
                     ref={genreLineRef}
-                    onWheel={(e: any) => {
+                    onWheel={(e: React.WheelEvent<HTMLDivElement>) => {
                       if (!e.shiftKey) {
                         if (e.deltaY === 0) return;
-                        const position = genreLineRef.current.scrollLeft;
-                        genreLineRef.current.scrollTo({
+                        const position = genreLineRef.current?.scrollLeft ?? 0;
+                        genreLineRef.current?.scrollTo({
                           top: 0,
                           left: position + e.deltaY,
                           behavior: 'smooth',
@@ -395,9 +428,9 @@ const ArtistView = ({ ...rest }: any) => {
                   >
                     {data.genre?.map((d: Genre, i: number) => {
                       return (
-                        <span key={nanoid()}>
+                        <span key={d.id ?? d.title}>
                           {i > 0 && ', '}
-                          <LinkWrapper maxWidth="13vw">
+                          <LinkWrapper $maxWidth="13vw">
                             <StyledLink
                               tabIndex={0}
                               onClick={() => {
@@ -415,11 +448,11 @@ const ArtistView = ({ ...rest }: any) => {
                                   localStorage.setItem('scroll_list_albumList', '0');
                                   localStorage.setItem('scroll_grid_albumList', '0');
                                   setTimeout(() => {
-                                    history.push(`/library/album?sortType=${d.title}`);
+                                    navigate(`/library/album?sortType=${d.title}`);
                                   }, 50);
                                 }
                               }}
-                              onKeyDown={(e: any) => {
+                              onKeyDown={(e: React.KeyboardEvent) => {
                                 if (e.key === ' ' || e.key === 'Enter') {
                                   e.preventDefault();
                                   if (!rest.isModal) {
@@ -439,7 +472,7 @@ const ArtistView = ({ ...rest }: any) => {
                                     localStorage.setItem('scroll_list_albumList', '0');
                                     localStorage.setItem('scroll_grid_albumList', '0');
                                     setTimeout(() => {
-                                      history.push(`/library/album?sortType=${d.title}`);
+                                      navigate(`/library/album?sortType=${d.title}`);
                                     }, 50);
                                   }
                                 }
@@ -455,7 +488,7 @@ const ArtistView = ({ ...rest }: any) => {
                 )}
 
                 {!location.pathname.match('/songs|/albums|/compilationalbums|/topsongs') &&
-                  data?.info.biography
+                  data?.info?.biography
                     ?.replace(/<[^>]*>/g, '')
                     .replace('Read more on Last.fm</a>', '')
                     ?.trim() && (
@@ -471,11 +504,11 @@ const ArtistView = ({ ...rest }: any) => {
                       }}
                     >
                       <span>
-                        {data?.info.biography
+                        {data?.info?.biography
                           ?.replace(/<[^>]*>/g, '')
                           .replace('Read more on Last.fm</a>', '')
                           ?.trim()
-                          ? `${data?.info.biography
+                          ? `${data?.info?.biography
                               ?.replace(/<[^>]*>/g, '')
                               .replace('Read more on Last.fm</a>', '')}`
                           : ''}
@@ -483,12 +516,12 @@ const ArtistView = ({ ...rest }: any) => {
                     </PageHeaderSubtitleDataLine>
                   )}
 
-                <div style={{ marginTop: '10px' }}>
+                <div style={{ marginTop: 'auto' }}>
                   <ButtonToolbar>
                     <PlayButton
                       $circle
                       appearance="primary"
-                      size="lg"
+                      size="md"
                       onClick={() =>
                         handlePlayQueueAdd({
                           byItemType: { item: Item.Artist, id: data.id },
@@ -498,7 +531,7 @@ const ArtistView = ({ ...rest }: any) => {
                       }
                     />
                     <PlayAppendNextButton
-                      size="lg"
+                      size="md"
                       appearance="subtle"
                       onClick={() =>
                         handlePlayQueueAdd({
@@ -509,7 +542,7 @@ const ArtistView = ({ ...rest }: any) => {
                       }
                     />
                     <PlayAppendButton
-                      size="lg"
+                      size="md"
                       appearance="subtle"
                       onClick={() =>
                         handlePlayQueueAdd({
@@ -537,7 +570,7 @@ const ArtistView = ({ ...rest }: any) => {
                           })
                         }
                       >
-                        <Icon icon="magic" />
+                        <MagicIcon />
                       </StyledButton>
                     </CustomTooltip>
                     <FavoriteButton
@@ -573,7 +606,15 @@ const ArtistView = ({ ...rest }: any) => {
                         </Popup>
                       }
                     >
-                      <DownloadButton size="lg" appearance="subtle" />
+                      {/* DownloadButton renders its own CustomTooltip, which is itself a
+                          Whisper — nesting that directly as this outer Whisper's child
+                          leaves it without a plain DOM node to measure for positioning,
+                          so the popup fell back to the viewport origin (top-left)
+                          instead of anchoring under the button. A plain wrapper element
+                          gives it one, same as nav-search's Whisper in SearchBar.tsx. */}
+                      <span style={{ display: 'inline-block' }}>
+                        <DownloadButton size="lg" appearance="subtle" />
+                      </span>
                     </Whisper>
                     <Whisper
                       trigger="hover"
@@ -583,26 +624,39 @@ const ArtistView = ({ ...rest }: any) => {
                       preventOverflow
                       speaker={
                         <Popup>
-                          {data.info.externalUrl &&
+                          {data?.info?.externalUrl &&
                             data.info.externalUrl.map((ext: GenericItem) => (
-                              <StyledButton key={ext.id} onClick={() => shell.openExternal(ext.id)}>
+                              <StyledButton
+                                key={ext.id}
+                                onClick={() => {
+                                  if (/^https?:\/\//i.test(ext.id)) shell.openExternal(ext.id);
+                                }}
+                              >
                                 {ext.title}
                               </StyledButton>
                             ))}
                         </Popup>
                       }
                     >
-                      <CustomTooltip text={t('Info')}>
-                        <StyledButton aria-label={t('Info')} appearance="subtle" size="lg">
-                          <Icon icon="info-circle" />
-                        </StyledButton>
-                      </CustomTooltip>
+                      {/* Same fix as the DownloadButton Whisper above: CustomTooltip renders
+                          its own internal Whisper, so nesting it directly as this outer
+                          Whisper's child leaves it without a plain DOM node to measure for
+                          positioning — here throwing "target should return an HTMLElement"
+                          on click instead of just mispositioning. A plain wrapper element
+                          gives it one. */}
+                      <span style={{ display: 'inline-block' }}>
+                        <CustomTooltip text={t('Info')}>
+                          <StyledButton aria-label={t('Info')} appearance="subtle" size="lg">
+                            <InfoCircleIcon />
+                          </StyledButton>
+                        </CustomTooltip>
+                      </span>
                     </Whisper>
                   </ButtonToolbar>
                 </div>
-              </>
+              </div>
             }
-            showViewTypeButtons={location.pathname.match('/albums|/compilationalbums')}
+            showViewTypeButtons={!!location.pathname.match('/albums|/compilationalbums')}
             viewTypeSetting="album"
             handleListClick={() => setViewType('list')}
             handleGridClick={() => setViewType('grid')}
@@ -615,22 +669,27 @@ const ArtistView = ({ ...rest }: any) => {
               data={allSongs || []}
               tableColumns={config.lookAndFeel.listView.music.columns}
               handleRowClick={handleRowClick}
-              handleRowDoubleClick={(e: any) => handleRowDoubleClick(e, allSongs)}
+              handleRowDoubleClick={(rowData: RowDataType) =>
+                handleRowDoubleClick(
+                  rowData as unknown as { uniqueId: string },
+                  allSongs as unknown as MouseEvent
+                )
+              }
               virtualized
               rowHeight={config.lookAndFeel.listView.music.rowHeight}
               fontSize={config.lookAndFeel.listView.music.fontSize}
               cacheImages={{
-                enabled: settings.get('cacheImages'),
+                enabled: settings.get('cacheImages') ?? false,
                 cacheType: 'album',
                 cacheIdProperty: 'albumId',
               }}
               listType="music"
               dnd
               disabledContextMenuOptions={['deletePlaylist', 'viewInModal']}
-              handleFavorite={(rowData: any) =>
+              handleFavorite={(rowData: RowDataType) =>
                 handleFavorite(rowData, { queryKey: ['artistSongs', artistId] })
               }
-              handleRating={(rowData: any, rating: number) =>
+              handleRating={(rowData: RowDataType, rating: number) =>
                 handleRating(rowData, { queryKey: ['artistSongs', artistId], rating })
               }
             />
@@ -642,8 +701,8 @@ const ArtistView = ({ ...rest }: any) => {
                     misc.searchQuery !== ''
                       ? filteredData
                       : location.pathname.match('/albums')
-                      ? albumsByYearDesc
-                      : compilationAlbumsByYearDesc
+                        ? albumsByYearDesc
+                        : compilationAlbumsByYearDesc
                   }
                   tableColumns={config.lookAndFeel.listView.album.columns}
                   handleRowClick={handleRowClick}
@@ -652,7 +711,7 @@ const ArtistView = ({ ...rest }: any) => {
                   rowHeight={config.lookAndFeel.listView.album.rowHeight}
                   fontSize={config.lookAndFeel.listView.album.fontSize}
                   cacheImages={{
-                    enabled: settings.get('cacheImages'),
+                    enabled: settings.get('cacheImages') ?? false,
                     cacheType: 'album',
                     cacheIdProperty: 'albumId',
                   }}
@@ -665,7 +724,7 @@ const ArtistView = ({ ...rest }: any) => {
                     'deletePlaylist',
                     'viewInFolder',
                   ]}
-                  handleFavorite={(rowData: any) =>
+                  handleFavorite={(rowData: RowDataType) =>
                     handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
                   }
                 />
@@ -677,8 +736,8 @@ const ArtistView = ({ ...rest }: any) => {
                     misc.searchQuery !== ''
                       ? filteredData
                       : location.pathname.match('/albums')
-                      ? albumsByYearDesc
-                      : compilationAlbumsByYearDesc
+                        ? albumsByYearDesc
+                        : compilationAlbumsByYearDesc
                   }
                   cardTitle={{
                     prefix: '/library/album',
@@ -693,7 +752,7 @@ const ArtistView = ({ ...rest }: any) => {
                   size={config.lookAndFeel.gridView.cardSize}
                   cacheType="album"
                   isModal={rest.isModal}
-                  handleFavorite={(rowData: any) =>
+                  handleFavorite={(rowData: RowDataType) =>
                     handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
                   }
                 />
@@ -704,22 +763,27 @@ const ArtistView = ({ ...rest }: any) => {
               data={topSongs || []}
               tableColumns={config.lookAndFeel.listView.music.columns}
               handleRowClick={handleRowClick}
-              handleRowDoubleClick={(e: any) => handleRowDoubleClick(e, topSongs)}
+              handleRowDoubleClick={(rowData: RowDataType) =>
+                handleRowDoubleClick(
+                  rowData as unknown as { uniqueId: string },
+                  topSongs as unknown as MouseEvent
+                )
+              }
               virtualized
               rowHeight={config.lookAndFeel.listView.music.rowHeight}
               fontSize={config.lookAndFeel.listView.music.fontSize}
               cacheImages={{
-                enabled: settings.get('cacheImages'),
+                enabled: settings.get('cacheImages') ?? false,
                 cacheType: 'album',
                 cacheIdProperty: 'albumId',
               }}
               listType="music"
               dnd
               disabledContextMenuOptions={['deletePlaylist', 'viewInModal']}
-              handleFavorite={(rowData: any) =>
+              handleFavorite={(rowData: RowDataType) =>
                 handleFavorite(rowData, { queryKey: ['artistTopSongs', data?.title] })
               }
-              handleRating={(rowData: any, rating: number) =>
+              handleRating={(rowData: RowDataType, rating: number) =>
                 handleRating(rowData, { queryKey: ['artistTopSongs', data?.title], rating })
               }
             />
@@ -727,16 +791,17 @@ const ArtistView = ({ ...rest }: any) => {
             <>
               <ButtonToolbar>
                 <StyledButton
+                  data-testid="view-discography-button"
                   size="sm"
                   appearance="subtle"
-                  onClick={() => history.push(`/library/artist/${artistId}/albums`)}
+                  onClick={() => navigate(`/library/artist/${artistId}/albums`)}
                 >
                   {t('View Discography')}
                 </StyledButton>
                 <StyledButton
                   size="sm"
                   appearance="subtle"
-                  onClick={() => history.push(`/library/artist/${artistId}/songs`)}
+                  onClick={() => navigate(`/library/artist/${artistId}/songs`)}
                 >
                   {t('View All Songs')}
                 </StyledButton>
@@ -747,7 +812,7 @@ const ArtistView = ({ ...rest }: any) => {
                   header={
                     <>
                       <SectionTitle
-                        onClick={() => history.push(`/library/artist/${artistId}/topsongs`)}
+                        onClick={() => navigate(`/library/artist/${artistId}/topsongs`)}
                       >
                         {t('Top Songs')}
                       </SectionTitle>{' '}
@@ -797,15 +862,26 @@ const ArtistView = ({ ...rest }: any) => {
                     cacheImages={{ enabled: false }}
                     isModal={false}
                     miniView={false}
-                    handleFavorite={(rowData: any) =>
+                    handleFavorite={(rowData: RowDataType) =>
                       handleFavorite(rowData, { queryKey: ['artistTopSongs', data.title] })
                     }
-                    handleRowClick={handleRowClick}
-                    handleRowDoubleClick={(e: any) => handleRowDoubleClick(e, topSongs)}
-                    handleRating={(rowData: any, rating: number) =>
+                    handleRowClick={
+                      handleRowClick as (
+                        e: MouseEvent,
+                        rowData: RowDataType,
+                        tableData: RowDataType[]
+                      ) => void
+                    }
+                    handleRowDoubleClick={(rowData: RowDataType) =>
+                      handleRowDoubleClick(
+                        rowData as unknown as { uniqueId: string },
+                        topSongs as unknown as MouseEvent
+                      )
+                    }
+                    handleRating={(rowData: RowDataType, rating: number) =>
                       handleRating(rowData, { queryKey: ['artistTopSongs', data?.title], rating })
                     }
-                    config={[]} // Prevent column sort
+                    config={undefined} // Prevent column sort
                     disabledContextMenuOptions={[
                       'removeSelected',
                       'moveSelectedTo',
@@ -865,7 +941,7 @@ const ArtistView = ({ ...rest }: any) => {
                         />
                       </ButtonGroup>
                     }
-                    onClickTitle={() => history.push(`/library/artist/${artistId}/albums`)}
+                    onClickTitle={() => navigate(`/library/artist/${artistId}/albums`)}
                     data={albumsByYearDesc?.slice(0, 15) || []}
                     cardTitle={{
                       prefix: '/library/album',
@@ -878,7 +954,7 @@ const ArtistView = ({ ...rest }: any) => {
                     cardSize={config.lookAndFeel.gridView.cardSize}
                     type="album"
                     noScrollbar
-                    handleFavorite={(rowData: any) =>
+                    handleFavorite={(rowData: RowDataType) =>
                       handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
                     }
                   />
@@ -924,9 +1000,7 @@ const ArtistView = ({ ...rest }: any) => {
                         />
                       </ButtonGroup>
                     }
-                    onClickTitle={() =>
-                      history.push(`/library/artist/${artistId}/compilationalbums`)
-                    }
+                    onClickTitle={() => navigate(`/library/artist/${artistId}/compilationalbums`)}
                     data={compilationAlbumsByYearDesc?.slice(0, 15) || []}
                     cardTitle={{
                       prefix: '/library/album',
@@ -939,18 +1013,18 @@ const ArtistView = ({ ...rest }: any) => {
                     cardSize={config.lookAndFeel.gridView.cardSize}
                     type="album"
                     noScrollbar
-                    handleFavorite={(rowData: any) =>
+                    handleFavorite={(rowData: RowDataType) =>
                       handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
                     }
                   />
                 </StyledPanel>
               )}
 
-              {data.info?.similarArtist.length > 0 && (
+              {(data.info?.similarArtist?.length ?? 0) > 0 && (
                 <StyledPanel>
                   <ScrollingMenu
                     title={t('Related Artists')}
-                    data={data.info.similarArtist}
+                    data={data.info?.similarArtist ?? []}
                     cardTitle={{
                       prefix: '/library/artist',
                       property: 'title',
@@ -960,22 +1034,23 @@ const ArtistView = ({ ...rest }: any) => {
                     cardSize={config.lookAndFeel.gridView.cardSize}
                     type="artist"
                     noScrollbar
-                    handleFavorite={(rowData: any) =>
+                    handleFavorite={(rowData: RowDataType) =>
                       handleFavorite(rowData, {
                         custom: () => {
-                          queryClient.setQueryData(
+                          queryClient.setQueryData<Artist | undefined>(
                             ['artist', artistId, musicFolder],
-                            (oldData: any) => {
-                              const starredIndices = _.keys(
-                                _.pickBy(oldData?.info?.similarArtist, { id: rowData.id })
+                            (oldData) => {
+                              if (!oldData?.info?.similarArtist) return oldData;
+                              const newStarred = (rowData as Artist).starred
+                                ? undefined
+                                : String(Date.now());
+                              const updatedSimilarArtist = oldData.info.similarArtist.map((a) =>
+                                a.id === (rowData as Artist).id ? { ...a, starred: newStarred } : a
                               );
-                              starredIndices.forEach((index) => {
-                                oldData.info.similarArtist[index].starred = rowData.starred
-                                  ? undefined
-                                  : Date.now();
-                              });
-
-                              return oldData;
+                              return {
+                                ...oldData,
+                                info: { ...oldData.info, similarArtist: updatedSimilarArtist },
+                              };
                             }
                           );
                         },

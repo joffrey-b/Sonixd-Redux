@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { ipcRenderer } from 'electron';
-import { deflate, inflate } from 'zlib';
-import { join } from 'path';
-import { access, constants, readFile, writeFile } from 'fs';
+import { deflate, inflate } from 'pako';
 import { useAppDispatch } from '../redux/hooks';
 import {
   decrementCurrentIndex,
   fixPlayer2Index,
   incrementCurrentIndex,
+  PlayQueue,
   PlayQueueSaveState,
   restoreState,
   setVolume,
@@ -15,10 +13,12 @@ import {
   toggleRepeat,
   toggleShuffle,
 } from '../redux/playQueueSlice';
-import { setStatus } from '../redux/playerSlice';
+import { setStatus, Player } from '../redux/playerSlice';
 import { apiController } from '../api/controller';
 import { Server } from '../types';
-import { settings } from '../components/shared/setDefaultSettings';
+import { ipcRenderer, queue, settings } from '../components/shared/bridge';
+import { joinPath } from '../shared/utils';
+import type { ConfigPage } from '../redux/configSlice';
 
 type PlayerControlOverrides = {
   playPause?: () => void | Promise<void>;
@@ -33,15 +33,16 @@ type PlayerControlOverrides = {
 };
 
 const usePlayerControls = (
-  config: any,
-  player: any,
-  playQueue: any,
-  currentEntryList: any,
+  config: ConfigPage,
+  player: Player,
+  playQueue: PlayQueue,
+  currentEntryList: 'entry' | 'shuffledEntry' | 'sortedEntry',
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- three nullable levels in audio player ref chain (PlayerRef|null → ReactAudioPlayer|null → HTMLAudioElement|null) are runtime-safe but not expressible without cascading null assertions
   playersRef: any,
-  isDraggingVolume: any,
-  setIsDraggingVolume: any,
-  setLocalVolume: any,
-  setCurrentTime: any,
+  isDraggingVolume: boolean,
+  setIsDraggingVolume: (val: boolean) => void,
+  setLocalVolume: (val: number) => void,
+  setCurrentTime: (val: number) => void,
   seekPositionRef: React.MutableRefObject<number> | null = null,
   overrides: PlayerControlOverrides = {}
 ) => {
@@ -169,10 +170,14 @@ const usePlayerControls = (
   }, [dispatch]);
 
   const handleStop = useCallback(() => {
-    playersRef.current.player2.audioEl.current.pause();
-    playersRef.current.player2.audioEl.current.currentTime = 0;
-    playersRef.current.player1.audioEl.current.pause();
-    playersRef.current.player1.audioEl.current.currentTime = 0;
+    playersRef.current?.player2?.audioEl.current?.pause();
+    if (playersRef.current?.player2?.audioEl.current) {
+      playersRef.current.player2.audioEl.current.currentTime = 0;
+    }
+    playersRef.current?.player1?.audioEl.current?.pause();
+    if (playersRef.current?.player1?.audioEl.current) {
+      playersRef.current.player1.audioEl.current.currentTime = 0;
+    }
     setCurrentTime(0);
 
     navigator.mediaSession.playbackState = 'paused';
@@ -254,7 +259,7 @@ const usePlayerControls = (
   }, [currentEntryList, playQueue, playersRef, seekPositionRef, setCurrentTime]);
 
   const handleSeekSlider = useCallback(
-    (e: number | any) => {
+    (e: number) => {
       // If trying to seek back while fading to the next track, we need to
       // pause and reset the next track so that they don't begin overlapping
       if (playQueue.isFading) {
@@ -299,7 +304,7 @@ const usePlayerControls = (
   };
 
   const handleVolumeKey = useCallback(
-    (e: any) => {
+    (e: React.KeyboardEvent) => {
       if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
         const vol = Number((playQueue.volume + 0.05 > 1 ? 1 : playQueue.volume + 0.05).toFixed(2));
         setLocalVolume(vol);
@@ -314,7 +319,7 @@ const usePlayerControls = (
   );
 
   const handleVolumeWheel = useCallback(
-    (e: any) => {
+    (e: { deltaY: number }) => {
       if (e.deltaY > 0) {
         if (!isDraggingVolume) {
           setIsDraggingVolume(true);
@@ -334,11 +339,11 @@ const usePlayerControls = (
   );
 
   const handleRepeat = useCallback(() => {
-    const currentRepeat = settings.get('repeat');
+    const currentRepeat = playQueue.repeat;
     const newRepeat = currentRepeat === 'none' ? 'all' : currentRepeat === 'all' ? 'one' : 'none';
     dispatch(toggleRepeat());
     settings.set('repeat', newRepeat);
-  }, [dispatch]);
+  }, [dispatch, playQueue.repeat]);
 
   const handleShuffle = useCallback(() => {
     dispatch(toggleShuffle());
@@ -350,8 +355,8 @@ const usePlayerControls = (
   };
 
   const handleSaveQueue = useCallback(
-    (path: string) => {
-      const queueLocation = join(path, 'queue');
+    async (path: string) => {
+      const queueLocation = joinPath(path, 'queue');
 
       const data: PlayQueueSaveState = {
         entry: playQueue.entry,
@@ -369,7 +374,7 @@ const usePlayerControls = (
         currentPlayer: playQueue.currentPlayer,
 
         // server the queue belongs to — used to prevent restoring across server switches
-        serverUrl: localStorage.getItem('server') || '',
+        serverUrl: String(settings.get('server') || ''),
       };
 
       const dataString = JSON.stringify(data);
@@ -379,56 +384,57 @@ const usePlayerControls = (
       // before compression would finish.
       // Compression level 1 seems to give sufficient performance, as it was able to save
       // around 10k songs by using ~3.5 MB while still being quite fast.
-      deflate(
-        dataString,
-        {
-          level: 1,
-        },
-        (error, deflated) => {
-          if (error) {
-            ipcRenderer.send('saved-state');
-          } else {
-            writeFile(queueLocation, deflated, (writeError) => {
-              if (writeError) console.error(writeError);
-              ipcRenderer.send('saved-state');
-            });
-          }
-        }
-      );
+      // pako is a pure-JS, wire-format-compatible port of zlib -- Node's zlib.inflate
+      // can read what it writes and vice versa (see C1 / nodeIntegration migration:
+      // Node's `zlib` resolves to a runtime require() that nodeIntegration: false breaks).
+      try {
+        const deflated = deflate(dataString, { level: 1 });
+        // Copy into a fresh ArrayBuffer -- Uint8Array.buffer is typed as
+        // ArrayBufferLike (ArrayBuffer | SharedArrayBuffer) and structured-clone
+        // over IPC needs a concrete ArrayBuffer.
+        const arrayBuffer = new ArrayBuffer(deflated.byteLength);
+        new Uint8Array(arrayBuffer).set(deflated);
+        await queue.write(queueLocation, arrayBuffer);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error(error);
+      } finally {
+        ipcRenderer.send('saved-state');
+      }
     },
     [playQueue]
   );
 
   const handleRestoreQueue = useCallback(
-    (path: string) => {
-      const queueLocation = join(path, 'queue');
-      access(queueLocation, constants.F_OK, (accessError) => {
-        // If the file doesn't exist or we can't access it, just don't try
-        if (accessError) {
-          if ((accessError as any).code !== 'ENOENT') console.error(accessError);
-          return;
-        }
+    async (path: string) => {
+      const queueLocation = joinPath(path, 'queue');
 
-        readFile(queueLocation, (error, buffer) => {
-          if (error) {
-            console.error(error);
-            return;
-          }
+      let buffer: ArrayBuffer | null;
+      try {
+        buffer = await queue.read(queueLocation);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error(error);
+        return;
+      }
 
-          inflate(buffer, (decompressError, data) => {
-            if (decompressError) {
-              console.error(decompressError);
-            } else {
-              const parsed: PlayQueueSaveState = JSON.parse(data.toString());
-              const savedServer = parsed.serverUrl || '';
-              const currentServer = localStorage.getItem('server') || '';
-              // Don't restore a queue that belongs to a different server
-              if (savedServer && savedServer !== currentServer) return;
-              dispatch(restoreState(parsed));
-            }
-          });
-        });
-      });
+      // No saved queue file -- nothing to restore (e.g. first run)
+      if (!buffer) return;
+
+      let parsed: PlayQueueSaveState;
+      try {
+        parsed = JSON.parse(inflate(new Uint8Array(buffer), { to: 'string' }));
+      } catch (decompressError) {
+        // eslint-disable-next-line no-console
+        console.error(decompressError);
+        return;
+      }
+
+      const savedServer = parsed.serverUrl || '';
+      const currentServer = String(settings.get('server') || '');
+      // Don't restore a queue that belongs to a different server
+      if (savedServer && savedServer !== currentServer) return;
+      dispatch(restoreState(parsed));
     },
     [dispatch]
   );
@@ -446,24 +452,8 @@ const usePlayerControls = (
       (overridesRef.current.playPause ?? handlePlayPause)();
     });
 
-    ipcRenderer.on('player-play', () => {
-      (overridesRef.current.play ?? handlePlay)();
-    });
-
-    ipcRenderer.on('player-pause', () => {
-      (overridesRef.current.pause ?? handlePause)();
-    });
-
     ipcRenderer.on('player-stop', () => {
       (overridesRef.current.stop ?? handleStop)();
-    });
-
-    ipcRenderer.on('player-shuffle', () => {
-      handleShuffle();
-    });
-
-    ipcRenderer.on('player-repeat', () => {
-      handleRepeat();
     });
 
     ipcRenderer.on('save-queue-state', (_event, path: string) => {
@@ -478,22 +468,14 @@ const usePlayerControls = (
       ipcRenderer.removeAllListeners('player-next-track');
       ipcRenderer.removeAllListeners('player-prev-track');
       ipcRenderer.removeAllListeners('player-play-pause');
-      ipcRenderer.removeAllListeners('player-play');
-      ipcRenderer.removeAllListeners('player-pause');
       ipcRenderer.removeAllListeners('player-stop');
-      ipcRenderer.removeAllListeners('player-shuffle');
-      ipcRenderer.removeAllListeners('player-repeat');
       ipcRenderer.removeAllListeners('save-queue-state');
       ipcRenderer.removeAllListeners('restore-queue-state');
     };
   }, [
     handleNextTrack,
-    handlePause,
-    handlePlay,
     handlePlayPause,
     handlePrevTrack,
-    handleRepeat,
-    handleShuffle,
     handleStop,
     handleSaveQueue,
     handleRestoreQueue,

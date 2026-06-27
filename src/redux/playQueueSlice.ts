@@ -10,9 +10,10 @@ import {
 } from '../shared/utils';
 import { mockSettings } from '../shared/mockSettings';
 import { Song } from '../types';
-import { settings } from '../components/shared/setDefaultSettings';
+import { getParsedSettings } from '../components/shared/settingsAccess';
 
-const parsedSettings = process.env.NODE_ENV === 'test' ? mockSettings : settings.store;
+const getPlayQueueParsedSettings = () =>
+  process.env.NODE_ENV === 'test' ? mockSettings : getParsedSettings();
 
 export interface PlayQueue {
   player1: {
@@ -44,7 +45,7 @@ export interface PlayQueue {
   currentSongId: string;
   currentSongUniqueId: string;
   currentPlayer: number;
-  current?: any;
+  current?: Song;
   isFading: boolean;
   playerUpdated: number;
   playerRestartCurrent: number;
@@ -77,6 +78,54 @@ export type PlayQueueSaveState = Pick<
   | 'currentPlayer'
 > & { serverUrl?: string };
 
+type SettingsDerivedFields = Pick<
+  PlayQueue,
+  | 'scrollWithCurrentSong'
+  | 'fadeDuration'
+  | 'fadeType'
+  | 'pollingInterval'
+  | 'volumeFade'
+  | 'preservePlayNextOrder'
+  | 'directPreviousTrack'
+  | 'scrobbleThreshold'
+  | 'volume'
+  | 'scrobble'
+  | 'repeat'
+  | 'shuffle'
+  | 'showDebugWindow'
+>;
+
+// Exported so import-settings (main.dev.mjs) can dispatch a refresh of just
+// these fields after writing imported settings directly to the store — see
+// configSlice.ts's buildInitialState for the full explanation of why this is
+// needed. Deliberately a field-level merge (refreshSettingsFields below),
+// not a wholesale state replace like configSlice's: the rest of PlayQueue
+// (entry, currentIndex, current, etc.) is live playback/queue state that
+// must survive a settings import untouched.
+export const buildSettingsDerivedFields = (): SettingsDerivedFields => {
+  const parsedSettings = getPlayQueueParsedSettings();
+  return {
+    scrollWithCurrentSong: Boolean(parsedSettings.scrollWithCurrentSong),
+    fadeDuration: Number(parsedSettings.fadeDuration),
+    fadeType: String(parsedSettings.fadeType),
+    pollingInterval: Number(parsedSettings.pollingInterval),
+    volumeFade: Boolean(parsedSettings.volumeFade),
+    preservePlayNextOrder: Boolean(parsedSettings.preservePlayNextOrder),
+    directPreviousTrack: Boolean(parsedSettings.directPreviousTrack),
+    scrobbleThreshold:
+      parsedSettings.scrobbleThreshold !== undefined
+        ? Number(parsedSettings.scrobbleThreshold)
+        : 90,
+    volume: Number(parsedSettings.volume),
+    scrobble: Boolean(parsedSettings.scrobble),
+    repeat: String(parsedSettings.repeat),
+    shuffle:
+      (parsedSettings.shuffle as boolean | string) === true ||
+      (parsedSettings.shuffle as boolean | string) === 'true',
+    showDebugWindow: Boolean(parsedSettings.showDebugWindow),
+  };
+};
+
 const initialState: PlayQueue = {
   player1: {
     src: '',
@@ -94,15 +143,8 @@ const initialState: PlayQueue = {
       timeData: [],
     },
   },
-  scrollWithCurrentSong: Boolean(parsedSettings.scrollWithCurrentSong),
-  fadeDuration: Number(parsedSettings.fadeDuration),
-  fadeType: String(parsedSettings.fadeType),
-  pollingInterval: Number(parsedSettings.pollingInterval),
-  volumeFade: Boolean(parsedSettings.volumeFade),
-  preservePlayNextOrder: Boolean(parsedSettings.preservePlayNextOrder),
-  directPreviousTrack: Boolean(parsedSettings.directPreviousTrack),
+  ...buildSettingsDerivedFields(),
   stopAfterCurrent: false,
-  scrobbleThreshold: Number(parsedSettings.scrobbleThreshold) || 90,
   currentIndex: 0,
   currentSongId: '',
   currentSongUniqueId: '',
@@ -112,15 +154,10 @@ const initialState: PlayQueue = {
   playerRestartCurrent: 0,
   entryVersion: 0,
   autoIncremented: false,
-  volume: Number(parsedSettings.volume),
-  scrobble: Boolean(parsedSettings.scrobble),
-  isLoading: Boolean(false),
-  repeat: String(parsedSettings.repeat),
-  shuffle: parsedSettings.shuffle === true || parsedSettings.shuffle === 'true',
+  isLoading: false,
   sortColumn: undefined,
   sortType: 'asc',
   displayQueue: false,
-  showDebugWindow: Boolean(parsedSettings.showDebugWindow),
   entry: [],
   shuffledEntry: [],
   sortedEntry: [],
@@ -147,18 +184,25 @@ const resetToPlayer1 = (state: PlayQueue) => {
   state.player1.index = state.currentIndex;
 };
 
-const insertItem = (array: any, index: any, item: any) => {
+const insertItem = <T>(array: T[], index: number, item: T): T[] => {
   return [...array.slice(0, index), item, ...array.slice(index)];
 };
 
-const removeItem = (array: any, index: any) => {
+const removeItem = <T>(array: T[], index: number): T[] => {
   return [...array.slice(0, index), ...array.slice(index + 1)];
 };
 
 const entrySelect = (state: PlayQueue) =>
   state.sortedEntry.length > 0 ? 'sortedEntry' : state.shuffle ? 'shuffledEntry' : 'entry';
 
-export const getNextPlayerIndex = (length: number, repeat: string, currentIndex: number) => {
+export const getNextPlayerIndex = (
+  length: number,
+  repeat: string,
+  currentIndex: number
+): number | null => {
+  if (repeat === 'none' && currentIndex >= length - 1) {
+    return null;
+  }
   if (length >= 2 && repeat !== 'one') {
     if (currentIndex + 1 === length) {
       return 0;
@@ -171,18 +215,25 @@ export const getNextPlayerIndex = (length: number, repeat: string, currentIndex:
   return 0;
 };
 
-export const getCurrentEntryIndex = (entries: any[], currentSongId: string) => {
-  return entries.findIndex((entry: any) => entry.id === currentSongId);
+export const getCurrentEntryIndex = (entries: Song[], currentSongId: string) => {
+  return entries.findIndex((entry) => entry.id === currentSongId);
 };
 
-export const getCurrentEntryIndexByUID = (entries: any[], currentSongId: string) => {
-  return entries.findIndex((entry: any) => entry.uniqueId === currentSongId);
+export const getCurrentEntryIndexByUID = (entries: Song[], currentSongId: string) => {
+  return entries.findIndex((entry) => entry.uniqueId === currentSongId);
 };
 
 const playQueueSlice = createSlice({
   name: 'nowPlaying',
   initialState,
   reducers: {
+    // Shallow merge, dispatched by main.dev.mjs's import-settings handler with
+    // a freshly-built buildSettingsDerivedFields() — see that function's
+    // comment. Only merges the provided keys, so live queue state is untouched.
+    refreshSettingsFields: (state, action: PayloadAction<Partial<PlayQueue>>) => {
+      Object.assign(state, action.payload);
+    },
+
     setPlayerSrc: (state, action: PayloadAction<{ player: number; src: string }>) => {
       if (action.payload.player === 1) {
         state.player1.src = action.payload.src;
@@ -191,7 +242,7 @@ const playQueueSlice = createSlice({
       }
     },
 
-    updatePlayerIndices: (state, action: PayloadAction<any[]>) => {
+    updatePlayerIndices: (state, action: PayloadAction<Song[]>) => {
       const newCurrentSongIndex = getCurrentEntryIndexByUID(
         action.payload,
         state.currentSongUniqueId
@@ -220,10 +271,12 @@ const playQueueSlice = createSlice({
         state.sortedEntry = _.orderBy(
           state.entry,
           [
-            (entry: any) =>
-              typeof entry[action.payload.columnDataKey] === 'string'
-                ? entry[action.payload.columnDataKey].toLowerCase() || ''
-                : entry[action.payload.columnDataKey] || '',
+            (entry: Song) => {
+              const key = action.payload.columnDataKey as keyof Song;
+              const val = entry[key];
+              if (typeof val === 'string') return val.toLowerCase() || '';
+              return (val as number | undefined) ?? '';
+            },
           ],
           action.payload.sortType
         );
@@ -261,44 +314,48 @@ const playQueueSlice = createSlice({
 
     resetPlayQueue: (state) => {
       const currentEntry = entrySelect(state);
-
+      // Capture the first entry before resetPlayerDefaults clears all entry arrays,
+      // otherwise state[currentEntry][0] is undefined after the reset.
+      const firstEntry = state[currentEntry][0];
       resetPlayerDefaults(state);
-      state.current = { ...state[currentEntry][0] };
-      state.currentSongId = state[currentEntry][0].id;
-      state.currentSongUniqueId = state[currentEntry][0].uniqueId;
+      if (firstEntry) {
+        state.current = { ...firstEntry };
+        state.currentSongId = firstEntry.id;
+        state.currentSongUniqueId = firstEntry.uniqueId;
+      }
     },
 
-    setPlaybackSetting: (state, action: PayloadAction<{ setting: string; value: any }>) => {
+    setPlaybackSetting: (state, action: PayloadAction<{ setting: string; value: unknown }>) => {
       switch (action.payload.setting) {
         case 'fadeDuration':
-          state.fadeDuration = action.payload.value;
+          state.fadeDuration = action.payload.value as number;
           break;
         case 'pollingInterval':
-          state.pollingInterval = action.payload.value;
+          state.pollingInterval = action.payload.value as number;
           break;
         case 'fadeType':
-          state.fadeType = action.payload.value;
+          state.fadeType = action.payload.value as string;
           break;
         case 'volumeFade':
-          state.volumeFade = action.payload.value;
+          state.volumeFade = action.payload.value as boolean;
           break;
         case 'preservePlayNextOrder':
-          state.preservePlayNextOrder = action.payload.value;
+          state.preservePlayNextOrder = action.payload.value as boolean;
           break;
         case 'directPreviousTrack':
-          state.directPreviousTrack = action.payload.value;
+          state.directPreviousTrack = action.payload.value as boolean;
           break;
         case 'scrobbleThreshold':
-          state.scrobbleThreshold = action.payload.value;
+          state.scrobbleThreshold = action.payload.value as number;
           break;
         case 'showDebugWindow':
-          state.showDebugWindow = action.payload.value;
+          state.showDebugWindow = action.payload.value as boolean;
           break;
         case 'scrollWithCurrentSong':
-          state.scrollWithCurrentSong = action.payload.value;
+          state.scrollWithCurrentSong = action.payload.value as boolean;
           break;
         case 'scrobble':
-          state.scrobble = action.payload.value;
+          state.scrobble = action.payload.value as boolean;
           break;
         default:
           break;
@@ -392,11 +449,11 @@ const playQueueSlice = createSlice({
         state.player1.index =
           state.currentPlayer === 1
             ? currentEntryIndex
-            : getNextPlayerIndex(state.entry.length, state.repeat, state.currentIndex);
+            : (getNextPlayerIndex(state.entry.length, state.repeat, state.currentIndex) ?? 0);
         state.player2.index =
           state.currentPlayer === 2
             ? currentEntryIndex
-            : getNextPlayerIndex(state.entry.length, state.repeat, state.currentIndex);
+            : (getNextPlayerIndex(state.entry.length, state.repeat, state.currentIndex) ?? 0);
 
         // Free up memory by clearing out the shuffled entries
         state.shuffledEntry = [];
@@ -417,30 +474,24 @@ const playQueueSlice = createSlice({
         const findSortedIndices = _.keys(_.pickBy(state.sortedEntry, { id }));
 
         if (action.payload.type === 'unstar') {
-          findIndices?.forEach((rowIndex: any) => {
-            state.entry[rowIndex].starred = undefined;
-            return rowIndex;
+          findIndices?.forEach((rowIndex: string) => {
+            state.entry[Number(rowIndex)].starred = undefined;
           });
-          findShuffledIndices?.forEach((rowIndex: any) => {
-            state.shuffledEntry[rowIndex].starred = undefined;
-            return rowIndex;
+          findShuffledIndices?.forEach((rowIndex: string) => {
+            state.shuffledEntry[Number(rowIndex)].starred = undefined;
           });
-          findSortedIndices?.forEach((rowIndex: any) => {
-            state.sortedEntry[rowIndex].starred = undefined;
-            return rowIndex;
+          findSortedIndices?.forEach((rowIndex: string) => {
+            state.sortedEntry[Number(rowIndex)].starred = undefined;
           });
         } else {
-          findIndices?.forEach((rowIndex: any) => {
-            state.entry[rowIndex].starred = String(Date.now());
-            return rowIndex;
+          findIndices?.forEach((rowIndex: string) => {
+            state.entry[Number(rowIndex)].starred = String(Date.now());
           });
-          findShuffledIndices?.forEach((rowIndex: any) => {
-            state.shuffledEntry[rowIndex].starred = String(Date.now());
-            return rowIndex;
+          findShuffledIndices?.forEach((rowIndex: string) => {
+            state.shuffledEntry[Number(rowIndex)].starred = String(Date.now());
           });
-          findSortedIndices?.forEach((rowIndex: any) => {
-            state.sortedEntry[rowIndex].starred = String(Date.now());
-            return rowIndex;
+          findSortedIndices?.forEach((rowIndex: string) => {
+            state.sortedEntry[Number(rowIndex)].starred = String(Date.now());
           });
         }
       });
@@ -453,30 +504,24 @@ const playQueueSlice = createSlice({
         const findSortedIndices = _.keys(_.pickBy(state.sortedEntry, { id }));
 
         if (action.payload.rating) {
-          findIndices?.forEach((rowIndex: any) => {
-            state.entry[rowIndex].userRating = action.payload.rating;
-            return rowIndex;
+          findIndices?.forEach((rowIndex: string) => {
+            state.entry[Number(rowIndex)].userRating = action.payload.rating;
           });
-          findShuffledIndices?.forEach((rowIndex: any) => {
-            state.shuffledEntry[rowIndex].userRating = action.payload.rating;
-            return rowIndex;
+          findShuffledIndices?.forEach((rowIndex: string) => {
+            state.shuffledEntry[Number(rowIndex)].userRating = action.payload.rating;
           });
-          findSortedIndices?.forEach((rowIndex: any) => {
-            state.sortedEntry[rowIndex].userRating = action.payload.rating;
-            return rowIndex;
+          findSortedIndices?.forEach((rowIndex: string) => {
+            state.sortedEntry[Number(rowIndex)].userRating = action.payload.rating;
           });
         } else {
-          findIndices?.forEach((rowIndex: any) => {
-            state.entry[rowIndex].userRating = undefined;
-            return rowIndex;
+          findIndices?.forEach((rowIndex: string) => {
+            state.entry[Number(rowIndex)].userRating = undefined;
           });
-          findShuffledIndices?.forEach((rowIndex: any) => {
-            state.shuffledEntry[rowIndex].userRating = undefined;
-            return rowIndex;
+          findShuffledIndices?.forEach((rowIndex: string) => {
+            state.shuffledEntry[Number(rowIndex)].userRating = undefined;
           });
-          findSortedIndices?.forEach((rowIndex: any) => {
-            state.sortedEntry[rowIndex].userRating = undefined;
-            return rowIndex;
+          findSortedIndices?.forEach((rowIndex: string) => {
+            state.sortedEntry[Number(rowIndex)].userRating = undefined;
           });
         }
       });
@@ -687,11 +732,9 @@ const playQueueSlice = createSlice({
       if (state.currentPlayer === 1) {
         state.player2.src = '';
 
-        state.player2.index = getNextPlayerIndex(
-          state.entry.length,
-          state.repeat,
-          state.currentIndex
-        );
+        state.player2.index =
+          getNextPlayerIndex(state[entrySelect(state)].length, state.repeat, state.currentIndex) ??
+          0;
       }
     },
 
@@ -713,16 +756,17 @@ const playQueueSlice = createSlice({
       }>
     ) => {
       // Used with gridview where you just want to set the entry queue directly
+      if (action.payload.entries.length === 0) return;
       state.entryVersion += 1;
       resetPlayerDefaults(state);
 
       state.player1.src = action.payload.entries[0].streamUrl;
 
-      action.payload.entries.map((entry: any) => state.entry.push(entry));
+      action.payload.entries.forEach((entry) => state.entry.push(entry));
       if (state.shuffle) {
         // If shuffle is enabled, add all entries randomly
         const shuffledEntries = _.shuffle(action.payload.entries);
-        shuffledEntries.map((entry: any) => state.shuffledEntry.push(entry));
+        shuffledEntries.forEach((entry) => state.shuffledEntry.push(entry));
         state.current = { ...shuffledEntries[0] };
         state.currentSongId = shuffledEntries[0].id;
         state.currentSongUniqueId = shuffledEntries[0].uniqueId;
@@ -741,7 +785,7 @@ const playQueueSlice = createSlice({
         currentIndex: number;
         currentSongId: string;
         uniqueSongId: string;
-        filters: any;
+        filters: { enabled: boolean; filter: string }[];
       }>
     ) => {
       // Used with listview where you want to set the entry queue by double clicking on a row
@@ -813,7 +857,7 @@ const playQueueSlice = createSlice({
       const isEmptyQueue = state.entry.length < 1;
       // We'll need to update the uniqueId otherwise selecting a song with duplicates
       // will select them all at once
-      const refreshedEntries = action.payload.entries.map((entry: any) => {
+      const refreshedEntries = action.payload.entries.map((entry) => {
         return {
           ...entry,
           uniqueId: nanoid(),
@@ -822,16 +866,13 @@ const playQueueSlice = createSlice({
       });
 
       if (action.payload.type === 'later') {
-        refreshedEntries.map((entry: any) => state.entry.push(entry));
+        refreshedEntries.forEach((entry) => state.entry.push(entry));
       } else {
         const currentSongIndex = getCurrentEntryIndexByUID(state.entry, state.currentSongUniqueId);
         let insertIndex = currentSongIndex + 1;
         if (state.preservePlayNextOrder) {
           // Advance past any entries already in the "play next" block
-          while (
-            insertIndex < state.entry.length &&
-            (state.entry[insertIndex] as any).playNextBlock
-          ) {
+          while (insertIndex < state.entry.length && state.entry[insertIndex].playNextBlock) {
             insertIndex += 1;
           }
         }
@@ -849,13 +890,13 @@ const playQueueSlice = createSlice({
         }
 
         if (action.payload.type === 'later') {
-          shuffledEntries.map((entry: any) => state.shuffledEntry.push(entry));
+          shuffledEntries.forEach((entry) => state.shuffledEntry.push(entry));
         } else {
           let shuffleInsertIndex = state.currentIndex + 1;
           if (state.preservePlayNextOrder) {
             while (
               shuffleInsertIndex < state.shuffledEntry.length &&
-              (state.shuffledEntry[shuffleInsertIndex] as any).playNextBlock
+              state.shuffledEntry[shuffleInsertIndex].playNextBlock
             ) {
               shuffleInsertIndex += 1;
             }
@@ -884,25 +925,25 @@ const playQueueSlice = createSlice({
         (entry) => !uniqueIds.includes(entry.uniqueId)
       );
 
-      // If the current song is removed, then reset to the first entry
+      // If the current song is removed, reset to the first remaining entry (or clear if empty)
       if (uniqueIds.includes(state.currentSongUniqueId)) {
-        state.current = state.sortColumn
-          ? state.sortedEntry[0]
+        const remainingEntries = state.sortColumn
+          ? state.sortedEntry
           : state.shuffle
-          ? state.shuffledEntry[0]
-          : state.entry[0];
+            ? state.shuffledEntry
+            : state.entry;
 
-        state.currentSongId = state.sortColumn
-          ? state.sortedEntry[0].id
-          : state.shuffle
-          ? state.shuffledEntry[0].id
-          : state.entry[0].id;
+        if (remainingEntries.length === 0) {
+          state.current = undefined;
+          state.currentSongId = '';
+          state.currentSongUniqueId = '';
+          resetPlayerDefaults(state);
+          return;
+        }
 
-        state.currentSongUniqueId = state.sortColumn
-          ? state.sortedEntry[0].uniqueId
-          : state.shuffle
-          ? state.shuffledEntry[0].uniqueId
-          : state.entry[0].uniqueId;
+        state.current = remainingEntries[0];
+        state.currentSongId = remainingEntries[0].id;
+        state.currentSongUniqueId = remainingEntries[0].uniqueId;
 
         if (state.currentPlayer === 1) {
           state.player1.index = 0;
@@ -1058,7 +1099,7 @@ const playQueueSlice = createSlice({
 
     incrementEntryPlayCount: (state, action: PayloadAction<string>) => {
       const id = action.payload;
-      const increment = (list: any[]) => {
+      const increment = (list: Song[]) => {
         list.forEach((song) => {
           if (song.id === id) song.playCount = (song.playCount || 0) + 1;
         });
@@ -1073,6 +1114,17 @@ const playQueueSlice = createSlice({
 
     restoreState: (state, action: PayloadAction<PlayQueueSaveState>) => {
       const result = action.payload;
+
+      if (
+        !Array.isArray(result.entry) ||
+        typeof result.currentIndex !== 'number' ||
+        result.currentIndex < 0
+      ) {
+        return;
+      }
+      if (!Array.isArray(result.shuffledEntry)) return;
+      if (result.currentPlayer !== 1 && result.currentPlayer !== 2) return;
+      if (result.currentIndex >= result.entry.length) return;
 
       state.entry = result.entry;
       state.shuffledEntry = result.shuffledEntry;
@@ -1090,6 +1142,7 @@ const playQueueSlice = createSlice({
 });
 
 export const {
+  refreshSettingsFields,
   setPlayerSrc,
   updatePlayerIndices,
   setSort,

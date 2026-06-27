@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
-import { ipcRenderer, shell } from 'electron';
+import { ipcRenderer, shell } from '../components/shared/bridge';
 import axios from 'axios';
-import { Notification } from 'rsuite';
+import { Notification, toaster } from 'rsuite';
 
 const REPO = 'joffrey-b/Sonixd-Redux';
 const RELEASES_URL = `https://github.com/${REPO}/releases`;
@@ -27,9 +27,8 @@ const useCheckForUpdates = () => {
         const latestTag: string = data.tag_name;
 
         if (isNewer(currentVersion, latestTag)) {
-          Notification.info({
-            title: `Sonixd Redux ${latestTag} is available`,
-            description: (
+          toaster.push(
+            <Notification type="info" header={`Sonixd Redux ${latestTag} is available`} closable>
               <div>
                 <p style={{ margin: '4px 0 8px' }}>You are running v{currentVersion}.</p>
                 <div style={{ display: 'flex', gap: 12 }}>
@@ -50,7 +49,7 @@ const useCheckForUpdates = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => Notification.closeAll()}
+                    onClick={() => toaster.clear()}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -65,9 +64,9 @@ const useCheckForUpdates = () => {
                   </button>
                 </div>
               </div>
-            ),
-            duration: 0,
-          });
+            </Notification>,
+            { placement: 'topEnd', duration: 0 }
+          );
         }
       } catch {
         // Silent fail — no network, no releases yet, API rate limit, etc.

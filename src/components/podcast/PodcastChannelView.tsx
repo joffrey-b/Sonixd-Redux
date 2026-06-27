@@ -1,8 +1,12 @@
 import React from 'react';
-import { useQuery } from 'react-query';
-import { ButtonToolbar, FlexboxGrid, Icon } from 'rsuite';
+import { useQuery } from '@tanstack/react-query';
+import { ButtonToolbar, FlexboxGrid } from 'rsuite';
+import AngleLeftIcon from '@rsuite/icons/legacy/AngleLeft';
+import PlayIcon from '@rsuite/icons/legacy/Play';
+import PlusIcon from '@rsuite/icons/legacy/Plus';
+import PlusCircleIcon from '@rsuite/icons/legacy/PlusCircle';
 import { useTranslation } from 'react-i18next';
-import { useHistory, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import format from 'format-duration';
 import { useAppSelector } from '../../redux/hooks';
 import { apiController } from '../../api/controller';
@@ -12,38 +16,69 @@ import GenericPage from '../layout/GenericPage';
 import GenericPageHeader from '../layout/GenericPageHeader';
 import CenterLoader from '../loader/CenterLoader';
 import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
-import { Play } from '../../types';
+import { Item, Play, Song } from '../../types';
+
+interface PodcastEpisode {
+  episodeId: string;
+  title: string;
+  publishDate: string | null;
+  duration: number;
+  streamUrl: string | null;
+}
+
+interface PodcastChannel {
+  id: string;
+  title: string;
+  episodes: PodcastEpisode[];
+}
 
 const PodcastChannelView = () => {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const config = useAppSelector((state) => state.config);
-  const history = useHistory();
+  const navigate = useNavigate();
   const { handlePlayQueueAdd } = usePlayQueueHandler();
 
-  const { isLoading, data: channels } = useQuery(
-    ['podcasts'],
-    () => apiController({ serverType: config.serverType, endpoint: 'getPodcasts' }),
-    { retry: false }
-  );
+  const { isLoading, data: channels } = useQuery({
+    queryKey: ['podcasts'],
+    queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getPodcasts' }),
+    retry: false,
+  });
 
-  const channel = channels?.find((ch: any) => ch.id === id);
+  const channel = (channels as PodcastChannel[] | undefined)?.find((ch) => ch.id === id);
 
-  const handlePlay = (episode: any, play: Play) => {
+  const episodeToSong = (episode: PodcastEpisode): Song => ({
+    id: episode.episodeId,
+    uniqueId: `podcast-${episode.episodeId}`,
+    type: Item.Music,
+    title: episode.title,
+    duration: episode.duration,
+    streamUrl: episode.streamUrl ?? '',
+    album: '',
+    albumArtist: '',
+    albumArtistId: '',
+    artist: [],
+    size: 0,
+    created: '',
+    image: '',
+    isPodcast: true,
+  });
+
+  const handlePlay = (episode: PodcastEpisode, play: Play) => {
     if (!episode.streamUrl) {
       notifyToast('warning', t('This episode has not been downloaded yet.'));
       return;
     }
-    handlePlayQueueAdd({ byData: [episode], play });
+    handlePlayQueueAdd({ byData: [episodeToSong(episode)], play });
   };
 
   const handlePlayAll = (play: Play) => {
-    const playable = channel?.episodes?.filter((ep: any) => ep.streamUrl) || [];
+    const playable = channel?.episodes?.filter((ep) => ep.streamUrl) || [];
     if (playable.length === 0) {
       notifyToast('warning', t('No downloaded episodes to play.'));
       return;
     }
-    handlePlayQueueAdd({ byData: playable, play });
+    handlePlayQueueAdd({ byData: playable.map(episodeToSong), play });
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -58,8 +93,8 @@ const PodcastChannelView = () => {
           title={channel?.title || t('Loading...')}
           subtitle={
             <ButtonToolbar>
-              <StyledButton appearance="subtle" size="sm" onClick={() => history.push('/podcasts')}>
-                <Icon icon="angle-left" /> {t('All Podcasts')}
+              <StyledButton appearance="subtle" size="sm" onClick={() => navigate('/podcasts')}>
+                <AngleLeftIcon /> {t('All Podcasts')}
               </StyledButton>
               {channel && (
                 <>
@@ -68,14 +103,14 @@ const PodcastChannelView = () => {
                     size="sm"
                     onClick={() => handlePlayAll(Play.Play)}
                   >
-                    <Icon icon="play" /> {t('Play All')}
+                    <PlayIcon /> {t('Play All')}
                   </StyledButton>
                   <StyledButton
                     appearance="subtle"
                     size="sm"
                     onClick={() => handlePlayAll(Play.Later)}
                   >
-                    <Icon icon="plus" /> {t('Add All')}
+                    <PlusIcon /> {t('Add All')}
                   </StyledButton>
                 </>
               )}
@@ -90,16 +125,16 @@ const PodcastChannelView = () => {
           {t('Podcast not found.')}
         </div>
       )}
-      {!isLoading && channel && channel.episodes.length === 0 && (
+      {!isLoading && channel && (channel.episodes?.length ?? 0) === 0 && (
         <div style={{ padding: '60px 20px', textAlign: 'center', opacity: 0.5 }}>
           {t('No episodes available.')}
         </div>
       )}
-      {!isLoading && channel && channel.episodes.length > 0 && (
+      {!isLoading && channel && (channel.episodes?.length ?? 0) > 0 && (
         <div style={{ padding: '10px 20px' }}>
-          {channel.episodes.map((episode: any) => (
+          {channel.episodes.map((episode) => (
             <FlexboxGrid
-              key={episode.episodeId}
+              key={String(episode.episodeId)}
               align="middle"
               justify="space-between"
               style={{
@@ -122,10 +157,11 @@ const PodcastChannelView = () => {
                   <StyledButton
                     appearance="primary"
                     size="sm"
+                    data-testid="episode-play-btn"
                     onClick={() => handlePlay(episode, Play.Play)}
                     disabled={!episode.streamUrl}
                   >
-                    <Icon icon="play" />
+                    <PlayIcon />
                   </StyledButton>
                   <StyledButton
                     appearance="subtle"
@@ -133,7 +169,7 @@ const PodcastChannelView = () => {
                     onClick={() => handlePlay(episode, Play.Next)}
                     disabled={!episode.streamUrl}
                   >
-                    <Icon icon="plus-circle" />
+                    <PlusCircleIcon />
                   </StyledButton>
                   <StyledButton
                     appearance="subtle"
@@ -141,7 +177,7 @@ const PodcastChannelView = () => {
                     onClick={() => handlePlay(episode, Play.Later)}
                     disabled={!episode.streamUrl}
                   >
-                    <Icon icon="plus" />
+                    <PlusIcon />
                   </StyledButton>
                 </ButtonToolbar>
               </FlexboxGrid.Item>

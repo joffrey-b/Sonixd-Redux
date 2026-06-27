@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { useHistory } from 'react-router-dom';
-import { ButtonToolbar, Content, FlexboxGrid, Icon } from 'rsuite';
+import { useNavigate } from 'react-router-dom';
+import { ButtonToolbar, Content, FlexboxGrid } from 'rsuite';
+import ArrowLeftLineIcon from '@rsuite/icons/legacy/ArrowLeftLine';
+import ArrowRightLineIcon from '@rsuite/icons/legacy/ArrowRightLine';
 import Sidebar from './Sidebar';
 import Titlebar from './Titlebar';
 import { RootContainer, RootFooter, MainContainer } from './styled';
@@ -11,11 +13,17 @@ import { clearSelected } from '../../redux/multiSelectSlice';
 import { StyledButton } from '../shared/styled';
 import { setSidebar } from '../../redux/configSlice';
 import SearchBar from '../search/SearchBar';
-import { settings } from '../shared/setDefaultSettings';
-import { isCached } from '../../shared/utils';
+import { settings } from '../shared/bridge';
+import useIsCached from '../../hooks/useIsCached';
 
-const Layout = ({ footer, children, disableSidebar, font }: any) => {
-  const history = useHistory();
+interface LayoutProps {
+  footer?: React.ReactNode;
+  children?: React.ReactNode;
+  disableSidebar?: boolean;
+}
+
+const Layout = ({ footer, children, disableSidebar }: LayoutProps) => {
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const misc = useAppSelector((state) => state.misc);
   const config = useAppSelector((state) => state.config);
@@ -23,35 +31,44 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
   const playQueue = useAppSelector((state) => state.playQueue);
   const [dynamicBgSrc, setDynamicBgSrc] = useState('');
 
+  // The cached-path check needs to run through useIsCached (a hook), so it has to be
+  // computed unconditionally here rather than inside the effect below -- an empty
+  // string disables the underlying query (see useIsCached) when there's nothing to check.
+  const dynamicBgImage = playQueue.current?.image;
+  const dynamicBgCachedPath =
+    misc.dynamicBackground && dynamicBgImage && !dynamicBgImage.includes('placeholder')
+      ? `${misc.imageCachePath}album_${playQueue.current?.albumId}.jpg`
+      : '';
+  const isDynamicBgCached = useIsCached(dynamicBgCachedPath);
+
   useEffect(() => {
     if (!misc.dynamicBackground) {
       setDynamicBgSrc('');
       return;
     }
-    const albumId = playQueue.current?.albumId;
-    const image = playQueue.current?.image;
+    const image = dynamicBgImage;
     if (!image || image.includes('placeholder')) {
       setDynamicBgSrc('');
       return;
     }
-    const cachedPath = `${misc.imageCachePath}album_${albumId}.jpg`;
-    const cssCachedPath = cachedPath.replaceAll('\\', '/');
+    const cssCachedPath = dynamicBgCachedPath.replaceAll('\\', '/');
     const serverPath = image.replace(/size=\d+/, 'size=500');
-    if (!isCached(cachedPath)) {
+    if (!isDynamicBgCached) {
       const preloadImage = new Image();
       preloadImage.src = serverPath;
     }
-    setDynamicBgSrc(isCached(cachedPath) ? cssCachedPath : serverPath);
-  }, [misc.imageCachePath, misc.dynamicBackground, playQueue]);
+    setDynamicBgSrc(isDynamicBgCached ? cssCachedPath : serverPath);
+  }, [
+    misc.imageCachePath,
+    misc.dynamicBackground,
+    dynamicBgImage,
+    dynamicBgCachedPath,
+    isDynamicBgCached,
+  ]);
 
-  useHotkeys(
+  useHotkeys(config.hotkeys.navigateBack, () => navigate(-1), { preventDefault: true }, [
     config.hotkeys.navigateBack,
-    (e: KeyboardEvent) => {
-      e.preventDefault();
-      history.goBack();
-    },
-    [config.hotkeys.navigateBack]
-  );
+  ]);
 
   const handleToggle = () => {
     settings.set('sidebar.expand', !config.lookAndFeel.sidebar.expand);
@@ -106,18 +123,17 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
         break;
     }
 
-    history.push(route);
+    navigate(route);
   };
 
   return (
     <>
-      <Titlebar font={font} />
+      <Titlebar />
       <Sidebar
         expand={config.lookAndFeel.sidebar.expand}
         handleToggle={handleToggle}
         handleSidebarSelect={handleSidebarSelect}
-        disableSidebar={disableSidebar}
-        font={font}
+        disableSidebar={disableSidebar ?? false}
         titleBar={misc.titleBar}
         onClick={() => {
           if (misc.contextMenu.show === true) {
@@ -134,7 +150,6 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
       />
       <RootContainer
         id="container-root"
-        font={font}
         onClick={() => {
           if (misc.contextMenu.show === true) {
             dispatch(
@@ -153,7 +168,7 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
               left: 0,
               width: '100%',
               height: 'calc(100% - 98px)',
-              backgroundImage: `url("${dynamicBgSrc}")`,
+              backgroundImage: `url("${dynamicBgSrc.replace(/"/g, '%22')}")`,
               backgroundPosition: 'center',
               backgroundRepeat: 'no-repeat',
               backgroundSize: 'cover',
@@ -167,7 +182,7 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
         <MainContainer
           id="container-main"
           expanded={config.lookAndFeel.sidebar.expand}
-          sidebarwidth={config.lookAndFeel.sidebar.width}
+          $sidebarwidth={config.lookAndFeel.sidebar.width}
           $titleBar={misc.titleBar} // transient prop to determine margin
         >
           <FlexboxGrid
@@ -183,20 +198,20 @@ const Layout = ({ footer, children, disableSidebar, font }: any) => {
                 <FlexboxGrid.Item>
                   <ButtonToolbar aria-label="history">
                     <StyledButton
-                      aria-label="back"
+                      aria-label="navigate back"
                       appearance="subtle"
                       size="sm"
-                      onClick={() => history.goBack()}
+                      onClick={() => navigate(-1)}
                     >
-                      <Icon icon="arrow-left-line" />
+                      <ArrowLeftLineIcon />
                     </StyledButton>
                     <StyledButton
-                      aria-label="next"
+                      aria-label="navigate forward"
                       appearance="subtle"
                       size="sm"
-                      onClick={() => history.goForward()}
+                      onClick={() => navigate(1)}
                     >
-                      <Icon icon="arrow-right-line" />
+                      <ArrowRightLineIcon />
                     </StyledButton>
                   </ButtonToolbar>
                 </FlexboxGrid.Item>

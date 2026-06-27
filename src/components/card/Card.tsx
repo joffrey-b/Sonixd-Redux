@@ -1,12 +1,21 @@
 import React from 'react';
-import { Icon } from 'rsuite';
-import { useHistory } from 'react-router-dom';
+import Book2Icon from '@rsuite/icons/legacy/Book2';
+import ExternalLinkIcon from '@rsuite/icons/legacy/ExternalLink';
+import HeartIcon from '@rsuite/icons/legacy/Heart';
+import HeartOIcon from '@rsuite/icons/legacy/HeartO';
+import ListUlIcon from '@rsuite/icons/legacy/ListUl';
+import MusicIcon from '@rsuite/icons/legacy/Music';
+import PlayIcon from '@rsuite/icons/legacy/Play';
+import PlusIcon from '@rsuite/icons/legacy/Plus';
+import PlusCircleIcon from '@rsuite/icons/legacy/PlusCircle';
+import UserIcon from '@rsuite/icons/legacy/User';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import cacheImage from '../shared/cacheImage';
 import { useAppDispatch } from '../../redux/hooks';
-import { isCached } from '../../shared/utils';
-import { settings } from '../shared/setDefaultSettings';
+import useIsCached from '../../hooks/useIsCached';
+import { settings } from '../shared/bridge';
 import {
   CardPanel,
   InfoPanel,
@@ -47,19 +56,26 @@ const Card = ({
   noInfoPanel,
   noModalButton,
   ...rest
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Card renders heterogeneous API data objects via ...rest; full typing requires pervasive casts throughout JSX
 }: any) => {
   const { t } = useTranslation();
-  const history = useHistory();
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
+
+  const cachedImagePath =
+    rest.details?.cacheType && rest.details?.id
+      ? `${cachePath}${rest.details.cacheType}_${rest.details.id}.jpg`
+      : '';
+  const isCoverArtCached = useIsCached(cachedImagePath);
 
   const handleClick = () => {
     if (url) {
-      history.push(url);
+      navigate(url);
     }
   };
 
   const handleSubClick = () => {
-    history.push(subUrl);
+    if (subUrl) navigate(subUrl);
   };
 
   const { handlePlayQueueAdd } = usePlayQueueHandler();
@@ -75,18 +91,18 @@ const Card = ({
 
   return (
     <>
-      <CardPanel cardsize={size} style={rest.style} $noInfoPanel={noInfoPanel}>
-        <Overlay cardsize={size}>
+      <CardPanel $cardsize={size} style={rest.style} $noInfoPanel={noInfoPanel}>
+        <Overlay $cardsize={size}>
           <ImgPanel
             tabIndex={0}
-            onKeyDown={(e: any) => {
+            onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
               if (e.key === ' ' || e.key === 'Enter') {
                 handleClick();
               }
             }}
           >
             {Array.isArray(rest.coverArt) ? (
-              <CoverArtWrapper size={size}>
+              <CoverArtWrapper $size={size}>
                 <CustomImageGridWrapper>
                   <CustomImageGrid $gridArea="1 / 1 / 2 / 2">
                     <LazyLoadImage
@@ -122,38 +138,31 @@ const Card = ({
                   </CustomImageGrid>
                 </CustomImageGridWrapper>
               </CoverArtWrapper>
-            ) : rest.coverArt.match('placeholder') ? (
+            ) : rest.coverArt?.match?.('placeholder') ? (
               <CardImgWrapper
                 id="placeholder-wrapper"
-                size={size}
+                $size={size}
                 opacity={0.4}
                 onClick={handleClick}
               >
-                <Icon
-                  icon={
-                    playClick.type === 'album'
-                      ? 'book2'
-                      : playClick.type === 'artist'
-                      ? 'user'
-                      : playClick.type === 'playlist'
-                      ? 'list-ul'
-                      : 'music'
-                  }
-                  size="4x"
-                />
+                {playClick.type === 'album' ? (
+                  <Book2Icon style={{ fontSize: '4em' }} />
+                ) : playClick.type === 'artist' ? (
+                  <UserIcon style={{ fontSize: '4em' }} />
+                ) : playClick.type === 'playlist' ? (
+                  <ListUlIcon style={{ fontSize: '4em' }} />
+                ) : (
+                  <MusicIcon style={{ fontSize: '4em' }} />
+                )}
               </CardImgWrapper>
             ) : (
-              <CardImgWrapper size={size} onClick={handleClick}>
+              <CardImgWrapper $size={size} onClick={handleClick}>
                 {lazyLoad ? (
                   <LazyCardImg
-                    src={
-                      isCached(`${cachePath}${rest.details.cacheType}_${rest.details.id}.jpg`)
-                        ? `${cachePath}${rest.details.cacheType}_${rest.details.id}.jpg`
-                        : rest.coverArt
-                    }
+                    src={isCoverArtCached ? cachedImagePath : rest.coverArt}
                     alt="img"
                     effect="opacity"
-                    cardsize={size}
+                    $cardsize={size}
                     visibleByDefault={!notVisibleByDefault}
                     afterLoad={() => {
                       if (cacheImages && settings.get('cacheImages')) {
@@ -165,7 +174,7 @@ const Card = ({
                     }}
                   />
                 ) : (
-                  <CardImg src={rest.coverArt} alt="img" onClick={handleClick} cardsize={size} />
+                  <CardImg src={rest.coverArt} alt="img" onClick={handleClick} $cardsize={size} />
                 )}
               </CardImgWrapper>
             )}
@@ -176,7 +185,8 @@ const Card = ({
                 <PlayOverlayButton
                   size="lg"
                   circle
-                  icon={<Icon icon="play" />}
+                  aria-label={t('Play')}
+                  icon={<PlayIcon />}
                   onClick={() => {
                     if (playClick.type === Item.Music) {
                       return handlePlayQueueAdd({
@@ -207,7 +217,8 @@ const Card = ({
                       });
                     }}
                     size={size <= 160 ? 'xs' : 'sm'}
-                    icon={<Icon icon="plus" />}
+                    circle
+                    icon={<PlusIcon />}
                   />
                 </CustomTooltip>
 
@@ -227,7 +238,7 @@ const Card = ({
                       });
                     }}
                     size={size <= 160 ? 'xs' : 'sm'}
-                    icon={<Icon icon="plus-circle" />}
+                    icon={<PlusCircleIcon />}
                   />
                 </CustomTooltip>
 
@@ -239,7 +250,7 @@ const Card = ({
                       }
                       onClick={() => handleFavorite(rest.details)}
                       size={size <= 160 ? 'xs' : 'sm'}
-                      icon={<Icon icon={rest.details.starred ? 'heart' : 'heart-o'} />}
+                      icon={rest.details.starred ? <HeartIcon /> : <HeartOIcon />}
                     />
                   </CustomTooltip>
                 )}
@@ -248,7 +259,7 @@ const Card = ({
                     <ModalViewOverlayButton
                       aria-label={t('View in modal')}
                       size={size <= 160 ? 'xs' : 'sm'}
-                      icon={<Icon icon="external-link" />}
+                      icon={<ExternalLinkIcon />}
                       onClick={handleOpenModal}
                     />
                   </CustomTooltip>
@@ -259,7 +270,7 @@ const Card = ({
         </Overlay>
 
         {!noInfoPanel && (
-          <InfoPanel cardsize={size}>
+          <InfoPanel $cardsize={size}>
             <InfoSpan>
               <CardTitleWrapper>
                 <CustomTooltip text={rest.title}>
@@ -268,7 +279,7 @@ const Card = ({
                     tabIndex={-1}
                     size="sm"
                     onClick={handleClick}
-                    cardsize={size}
+                    $cardsize={size}
                   >
                     {rest.title}
                   </CardTitleButton>
@@ -284,15 +295,19 @@ const Card = ({
                       tabIndex={-1}
                       size="xs"
                       onClick={handleSubClick}
-                      cardsize={size}
+                      $cardsize={size}
                     >
                       {rest.subtitle}
                     </CardSubtitleButton>
                   </CustomTooltip>
                 </CardTitleWrapper>
               ) : (
-                <CardSubtitle cardsize={size}>
-                  {rest.subtitle !== 'undefined' ? rest.subtitle : <span>&#8203;</span>}
+                <CardSubtitle $cardsize={size}>
+                  {rest.subtitle != null && rest.subtitle !== 'undefined' ? (
+                    rest.subtitle
+                  ) : (
+                    <span>&#8203;</span>
+                  )}
                 </CardSubtitle>
               )}
             </InfoSpan>

@@ -1,9 +1,5 @@
 import React from 'react';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
-import cacheImage from '../../shared/cacheImage';
-import { settings } from '../../shared/setDefaultSettings';
-import { isCached } from '../../../shared/utils';
-import { CoverArtWrapper } from '../../layout/styled';
+import CachedCoverArt from './CachedCoverArt';
 import { TableCellWrapper } from '../styled';
 
 const CoverArtCell = ({
@@ -18,14 +14,16 @@ const CoverArtCell = ({
   onMouseDown,
   onMouseEnter,
   onMouseUp,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table cell receives heterogeneous row data; full typing belongs in ListViewTable
 }: any) => {
   return (
     <TableCellWrapper
-      height={rowHeight}
+      $height={rowHeight}
+      $alignment={column.alignment}
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}
       onMouseUp={onMouseUp}
-      onClick={(e: any) => {
+      onClick={(e: React.MouseEvent<HTMLElement>) => {
         if (!column.dataKey?.match(/starred|userRating|genre|columnResizable|columnDefaultSort/)) {
           handleRowClick(e, {
             ...rowData,
@@ -42,34 +40,13 @@ const CoverArtCell = ({
         }
       }}
     >
-      <CoverArtWrapper size={rowHeight - 10}>
-        <LazyLoadImage
-          src={
-            isCached(
-              `${misc.imageCachePath}${cacheImages.cacheType}_${
-                rowData[cacheImages.cacheIdProperty]
-              }.jpg`
-            )
-              ? `${misc.imageCachePath}${cacheImages.cacheType}_${
-                  rowData[cacheImages.cacheIdProperty]
-                }.jpg`
-              : rowData.image
-          }
-          alt="track-img"
-          effect="opacity"
-          width={rowHeight - 10}
-          height={rowHeight - 10}
-          visibleByDefault
-          afterLoad={() => {
-            if (cacheImages.enabled && settings.get('cacheImages')) {
-              cacheImage(
-                `${cacheImages.cacheType}_${rowData[cacheImages.cacheIdProperty]}.jpg`,
-                rowData.image.replaceAll(/=150/gi, '=350')
-              );
-            }
-          }}
-        />
-      </CoverArtWrapper>
+      <CachedCoverArt
+        fileName={`${cacheImages.cacheType}_${rowData[cacheImages.cacheIdProperty]}.jpg`}
+        fallbackSrc={rowData.image}
+        cachePath={misc.imageCachePath}
+        size={rowHeight - 10}
+        cacheEnabled={cacheImages.enabled}
+      />
     </TableCellWrapper>
   );
 };

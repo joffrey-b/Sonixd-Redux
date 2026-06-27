@@ -33,7 +33,7 @@ const artistSlice = createSlice({
   name: 'artist',
   initialState,
   reducers: {
-    setActive: (state, action: PayloadAction<any>) => {
+    setActive: (state, action: PayloadAction<ArtistPage['active']>) => {
       state.active = action.payload;
     },
 

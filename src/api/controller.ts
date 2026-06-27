@@ -134,14 +134,13 @@ const endpoints = [
 export const apiController = async (options: {
   serverType: ServerType;
   endpoint: APIEndpoints;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- args shape is endpoint-specific; a discriminated union of all 40+ endpoint arg types would be excessive
   args?: any;
 }) => {
   const selectedEndpoint = endpoints.find((e) => e.id === options.endpoint);
-  const selectedEndpointFn = selectedEndpoint!.endpoint[options.serverType];
-
-  if (!selectedEndpointFn || !selectedEndpoint) {
-    return null;
-  }
+  if (!selectedEndpoint) return null;
+  const selectedEndpointFn = selectedEndpoint.endpoint[options.serverType];
+  if (!selectedEndpointFn) return null;
 
   const res = await selectedEndpointFn(options.args);
   return res;

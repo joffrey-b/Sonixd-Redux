@@ -1,110 +1,122 @@
-/* eslint-disable array-callback-return */
-/* eslint-disable consistent-return */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import _ from 'lodash';
-import i18n from '../i18n/i18n';
-import { Item } from '../types';
+import { useTranslation } from 'react-i18next';
+import { Item, Sort } from '../types';
 
-const ALBUM_COLUMNS = [
-  { label: i18n.t('Artist'), dataKey: 'albumArtist' },
-  { label: i18n.t('Created'), dataKey: 'created' },
-  { label: i18n.t('Duration'), dataKey: 'duration' },
-  { label: i18n.t('Favorite'), dataKey: 'starred' },
-  { label: i18n.t('Genre'), dataKey: 'albumGenre' },
-  { label: i18n.t('Play Count'), dataKey: 'playCount' },
-  { label: i18n.t('Rating'), dataKey: 'userRating' },
-  { label: i18n.t('Song Count'), dataKey: 'songCount' },
-  { label: i18n.t('Title'), dataKey: 'title' },
-  { label: i18n.t('Year'), dataKey: 'year' },
-];
+const useColumnSort = (data: unknown[], type: Item, sort: Sort) => {
+  const { t } = useTranslation();
+  const [sortedData, setSortedData] = useState<unknown[]>([]);
+  const [sortColumns, setSortColumns] = useState<{ label: string; dataKey: string }[]>([]);
 
-const ARTIST_COLUMNS = [
-  { label: i18n.t('Album Count'), dataKey: 'albumCount' },
-  { label: i18n.t('Duration'), dataKey: 'duration' },
-  { label: i18n.t('Favorite'), dataKey: 'starred' },
-  { label: i18n.t('Rating'), dataKey: 'userRating' },
-  { label: i18n.t('Title'), dataKey: 'title' },
-];
+  const albumColumns = useMemo(
+    () => [
+      { label: t('Artist'), dataKey: 'albumArtist' },
+      { label: t('Created'), dataKey: 'created' },
+      { label: t('Duration'), dataKey: 'duration' },
+      { label: t('Favorite'), dataKey: 'starred' },
+      { label: t('Genre'), dataKey: 'albumGenre' },
+      { label: t('Play Count'), dataKey: 'playCount' },
+      { label: t('Rating'), dataKey: 'userRating' },
+      { label: t('Song Count'), dataKey: 'songCount' },
+      { label: t('Title'), dataKey: 'title' },
+      { label: t('Year'), dataKey: 'year' },
+    ],
+    [t]
+  );
 
-const MUSIC_COLUMNS = [
-  { label: i18n.t('Artist'), dataKey: 'albumArtist' },
-  { label: i18n.t('Bitrate'), dataKey: 'bitRate' },
-  { label: i18n.t('Created'), dataKey: 'created' },
-  { label: i18n.t('Duration'), dataKey: 'duration' },
-  { label: i18n.t('Favorite'), dataKey: 'starred' },
-  { label: i18n.t('Genre'), dataKey: 'albumGenre' },
-  { label: i18n.t('Play Count'), dataKey: 'playCount' },
-  { label: i18n.t('Rating'), dataKey: 'userRating' },
-  { label: i18n.t('Size'), dataKey: 'size' },
-  { label: i18n.t('Title'), dataKey: 'title' },
-  { label: i18n.t('Year'), dataKey: 'year' },
-];
+  const artistColumns = useMemo(
+    () => [
+      { label: t('Album Count'), dataKey: 'albumCount' },
+      { label: t('Duration'), dataKey: 'duration' },
+      { label: t('Favorite'), dataKey: 'starred' },
+      { label: t('Rating'), dataKey: 'userRating' },
+      { label: t('Title'), dataKey: 'title' },
+    ],
+    [t]
+  );
 
-const PLAYLIST_COLUMNS = [
-  { label: i18n.t('Created'), dataKey: 'created' },
-  { label: i18n.t('Description'), dataKey: 'comment' },
-  { label: i18n.t('Duration'), dataKey: 'duration' },
-  { label: i18n.t('Modified'), dataKey: 'changed' },
-  { label: i18n.t('Owner'), dataKey: 'owner' },
-  { label: i18n.t('Song Count'), dataKey: 'songCount' },
-  { label: i18n.t('Title'), dataKey: 'title' },
-  { label: i18n.t('Visibility'), dataKey: 'public' },
-];
+  const musicColumns = useMemo(
+    () => [
+      { label: t('Artist'), dataKey: 'albumArtist' },
+      { label: t('Bitrate'), dataKey: 'bitRate' },
+      { label: t('Created'), dataKey: 'created' },
+      { label: t('Duration'), dataKey: 'duration' },
+      { label: t('Favorite'), dataKey: 'starred' },
+      { label: t('Genre'), dataKey: 'albumGenre' },
+      { label: t('Play Count'), dataKey: 'playCount' },
+      { label: t('Rating'), dataKey: 'userRating' },
+      { label: t('Size'), dataKey: 'size' },
+      { label: t('Title'), dataKey: 'title' },
+      { label: t('Year'), dataKey: 'year' },
+    ],
+    [t]
+  );
 
-const GENRE_COLUMNS = [
-  { label: i18n.t('Album Count'), dataKey: 'albumCount' },
-  { label: i18n.t('Song Count'), dataKey: 'songCount' },
-  { label: i18n.t('Title'), dataKey: 'title' },
-];
+  const playlistColumns = useMemo(
+    () => [
+      { label: t('Created'), dataKey: 'created' },
+      { label: t('Description'), dataKey: 'comment' },
+      { label: t('Duration'), dataKey: 'duration' },
+      { label: t('Modified'), dataKey: 'changed' },
+      { label: t('Owner'), dataKey: 'owner' },
+      { label: t('Song Count'), dataKey: 'songCount' },
+      { label: t('Title'), dataKey: 'title' },
+      { label: t('Visibility'), dataKey: 'public' },
+    ],
+    [t]
+  );
 
-const useColumnSort = (data: any[], type: Item, sort: { column: string; type: 'asc' | 'desc' }) => {
-  const [sortProps, setSortProps] = useState<any>(sort);
-  const [sortedData, setSortedData] = useState<any[]>([]);
-  const [sortColumns, setSortColumns] = useState<any[]>([]);
+  const genreColumns = useMemo(
+    () => [
+      { label: t('Album Count'), dataKey: 'albumCount' },
+      { label: t('Song Count'), dataKey: 'songCount' },
+      { label: t('Title'), dataKey: 'title' },
+    ],
+    [t]
+  );
 
   useEffect(() => {
     if (type === Item.Album) {
-      return setSortColumns(ALBUM_COLUMNS);
+      return setSortColumns(albumColumns);
     }
 
     if (type === Item.Artist) {
-      return setSortColumns(ARTIST_COLUMNS);
+      return setSortColumns(artistColumns);
     }
 
     if (type === Item.Music) {
-      return setSortColumns(MUSIC_COLUMNS);
+      return setSortColumns(musicColumns);
     }
 
     if (type === Item.Genre) {
-      return setSortColumns(GENRE_COLUMNS);
+      return setSortColumns(genreColumns);
     }
 
     if (type === Item.Playlist) {
-      return setSortColumns(PLAYLIST_COLUMNS);
+      return setSortColumns(playlistColumns);
     }
-  }, [type]);
+  }, [type, albumColumns, artistColumns, musicColumns, genreColumns, playlistColumns]);
 
   useEffect(() => {
-    setSortProps(sort);
-
     const safeData = data || [];
-    const sortedByColumn = sortProps.column
+    const sortedByColumn = sort.column
       ? _.orderBy(
           safeData,
           [
-            (entry: any) => {
-              return typeof entry[sortProps.column!] === 'string'
-                ? entry[sortProps.column!].toLowerCase() || ''
-                : +entry[sortProps.column!] || '';
+            (entry: unknown) => {
+              const e = entry as Record<string, unknown>;
+              const col = sort.column ?? '';
+              return typeof e[col] === 'string'
+                ? (e[col] as string).toLowerCase() || ''
+                : Number(e[col]) || '';
             },
           ],
-          sortProps.type
+          sort.type
         )
       : safeData;
 
     setSortedData(sortedByColumn);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, sort.column, sort.type, sortProps.column, sortProps.type]);
+  }, [data, sort.column, sort.type]);
 
   return { sortedData, sortColumns };
 };

@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import _ from 'lodash';
-import { useQuery, useQueryClient } from 'react-query';
-import { useHistory } from 'react-router-dom';
-import { ButtonToolbar, Icon } from 'rsuite';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { ButtonToolbar } from 'rsuite';
+import LevelUpIcon from '@rsuite/icons/legacy/LevelUp';
 import { useTranslation } from 'react-i18next';
 import ListViewType from '../viewtypes/ListViewType';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
@@ -14,18 +14,19 @@ import { setStatus } from '../../redux/playerSlice';
 import useSearchQuery from '../../hooks/useSearchQuery';
 import { setCurrentViewedFolder } from '../../redux/folderSlice';
 import useRouterQuery from '../../hooks/useRouterQuery';
-import { Server } from '../../types';
+import { Server, Song } from '../../types';
+import type { RowDataType } from 'rsuite-table';
 import { apiController } from '../../api/controller';
 import CenterLoader from '../loader/CenterLoader';
 import useListClickHandler from '../../hooks/useListClickHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
 
 const FolderList = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const history = useHistory();
+  const navigate = useNavigate();
   const query = useRouterQuery();
   const queryClient = useQueryClient();
   const folder = useAppSelector((state) => state.folder);
@@ -39,30 +40,32 @@ const FolderList = () => {
     isError,
     data: indexData,
     error,
-  }: any = useQuery(['indexes', musicFolder], () =>
-    apiController({
-      serverType: config.serverType,
-      endpoint: 'getIndexes',
-      args: config.serverType === Server.Subsonic ? { musicFolderId: musicFolder } : null,
-    })
-  );
+  } = useQuery({
+    queryKey: ['indexes', musicFolder],
+    queryFn: () =>
+      apiController({
+        serverType: config.serverType,
+        endpoint: 'getIndexes',
+        args: config.serverType === Server.Subsonic ? { musicFolderId: musicFolder } : null,
+      }),
+  });
 
-  const { isLoading: isLoadingFolderData, data: folderData }: any = useQuery(
-    ['folder', folder.currentViewedFolder],
-    () =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- folderData has heterogeneous shape (id, title, parent, child) that varies between Subsonic/Jellyfin
+  const { isLoading: isLoadingFolderData, data: folderData }: any = useQuery({
+    queryKey: ['folder', folder.currentViewedFolder],
+    queryFn: () =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getMusicDirectory',
         args: { id: folder.currentViewedFolder },
       }),
-    {
-      enabled: folder.currentViewedFolder !== '',
-    }
-  );
+    enabled: Boolean(folder.currentViewedFolder),
+  });
 
-  const { isLoading: isLoadingMusicFolders, data: musicFolders } = useQuery(['musicFolders'], () =>
-    apiController({ serverType: config.serverType, endpoint: 'getMusicFolders' })
-  );
+  const { isLoading: isLoadingMusicFolders, data: musicFolders } = useQuery({
+    queryKey: ['musicFolders'],
+    queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getMusicFolders' }),
+  });
 
   const filteredData = useSearchQuery(
     misc.searchQuery,
@@ -77,15 +80,15 @@ const FolderList = () => {
   }, [dispatch, query]);
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
-    doubleClick: (rowData: any) => {
+    doubleClick: (rowData: RowDataType) => {
       if (rowData.isDir) {
-        history.push(`/library/folder?folderId=${rowData.id}`);
+        navigate(`/library/folder?folderId=${rowData.id}`);
         dispatch(setCurrentViewedFolder(rowData.id));
       } else {
         const selected = folderData?.id ? folderData?.child : indexData?.child;
         dispatch(
           setPlayQueueByRowClick({
-            entries: (selected || []).filter((entry: any) => entry?.isDir === false),
+            entries: (selected || []).filter((entry: Song) => entry?.isDir === false),
             currentIndex: rowData.rowIndex,
             currentSongId: rowData.id,
             uniqueSongId: rowData.uniqueId,
@@ -104,7 +107,7 @@ const FolderList = () => {
   return (
     <>
       {(isLoading || isLoadingMusicFolders) && <CenterLoader />}
-      {isError && <div>{(error as any)?.message || 'Failed to load.'}</div>}
+      {isError && <div>{(error as Error)?.message || 'Failed to load.'}</div>}
       {!isLoading && indexData && (
         <GenericPage
           hideDivider
@@ -114,8 +117,8 @@ const FolderList = () => {
                 folderData?.title
                   ? folderData.title
                   : isLoadingFolderData
-                  ? t('Loading...')
-                  : t('Select a folder')
+                    ? t('Loading...')
+                    : t('Select a folder')
               }`}
               showTitleTooltip
               subtitle={
@@ -131,16 +134,17 @@ const FolderList = () => {
                         valueKey="id"
                         labelKey="title"
                         placeholder={t('Select')}
-                        onChange={(e: any) => {
+                        onChange={(e: string) => {
                           setMusicFolder(e);
                         }}
                         disabled={config.serverType === Server.Jellyfin}
                       />
 
                       <StyledButton
+                        data-testid="folder-go-up-button"
                         size="sm"
                         onClick={() => {
-                          history.push(
+                          navigate(
                             `/library/folder?folderId=${
                               folderData?.parent ? folderData.parent : ''
                             }`
@@ -150,7 +154,7 @@ const FolderList = () => {
                           );
                         }}
                       >
-                        <Icon icon="level-up" style={{ marginRight: '10px' }} />
+                        <LevelUpIcon style={{ marginRight: '10px' }} />
                         {t('Go up')}
                       </StyledButton>
                     </ButtonToolbar>
@@ -165,8 +169,8 @@ const FolderList = () => {
               misc.searchQuery !== ''
                 ? filteredData
                 : folder.currentViewedFolder
-                ? folderData?.child
-                : indexData
+                  ? folderData?.child
+                  : indexData
             }
             loading={isLoadingFolderData}
             tableColumns={settings.get('musicListColumns')}
@@ -174,24 +178,26 @@ const FolderList = () => {
             fontSize={Number(settings.get('musicListFontSize'))}
             handleRowClick={handleRowClick}
             handleRowDoubleClick={handleRowDoubleClick}
-            handleFavorite={(rowData: any) =>
+            handleFavorite={(rowData: RowDataType) =>
               handleFavorite(rowData, {
                 custom: () => {
                   queryClient.setQueryData(
                     ['folder', folder.currentViewedFolder],
-                    (oldData: any) => {
-                      const starredIndices = _.keys(_.pickBy(oldData.child, { id: rowData.id }));
-                      starredIndices.forEach((index) => {
-                        oldData.child[index].starred = rowData.starred ? undefined : Date.now();
-                      });
-
-                      return oldData;
+                    (oldData: { child?: { id: string; starred?: number }[] }) => {
+                      if (!oldData?.child) return oldData;
+                      const newStarred = rowData.starred ? undefined : Date.now();
+                      return {
+                        ...oldData,
+                        child: oldData.child.map((item) =>
+                          item.id === rowData.id ? { ...item, starred: newStarred } : item
+                        ),
+                      };
                     }
                   );
                 },
               })
             }
-            handleRating={(rowData: any, rating: number) =>
+            handleRating={(rowData: RowDataType, rating: number) =>
               handleRating(rowData, { queryKey: ['folder', folder.currentViewedFolder], rating })
             }
             cacheImages={{
@@ -200,7 +206,7 @@ const FolderList = () => {
               cacheIdProperty: 'id',
             }}
             page="folderListPage"
-            listType="folder"
+            listType="music"
             virtualized
             disabledContextMenuOptions={[
               'addToFavorites',

@@ -1,88 +1,91 @@
-import fs from 'fs';
 import _ from 'lodash';
-import os from 'os';
-import path from 'path';
-import moment from 'moment';
-import arrayMove from 'array-move';
-// eslint-disable-next-line import/no-cycle
-import i18n from '../i18n/i18n';
-import { mockSettings } from './mockSettings';
-// eslint-disable-next-line import/no-cycle
-import { settings } from '../components/shared/setDefaultSettings';
+import dayjs from 'dayjs';
+import { arrayMoveMutable } from 'array-move';
 
-export const isCached = (filePath: string) => {
-  return fs.existsSync(filePath);
-};
+import i18n from '../i18n/i18n';
+import { nowPlaying, settings, recovery, osRelease } from '../components/shared/bridge';
+import type { Song } from '../types';
+
+interface ApiResponse {
+  status?: string;
+  error?: { message: string };
+}
+
+interface EntryWithId {
+  uniqueId: string;
+  rowIndex?: number;
+  streamUrl?: string;
+  title?: string;
+}
+
+// Pure string-based path joining. Node's `path` module compiles to a runtime
+// require("path") in the renderer bundle (target: electron-renderer) -- this only
+// works while nodeIntegration is true. Forward slashes are accepted by Node's fs
+// APIs on every platform including Windows, so a plain join + slash-collapse is a
+// safe drop-in for the two/three-segment joins this codebase actually performs
+// (see C1 / nodeIntegration migration).
+export const joinPath = (...segments: string[]): string =>
+  segments
+    .filter((segment) => segment.length > 0)
+    .join('/')
+    .replace(/\/{2,}/g, '/');
 
 export const getRootCachePath = () => {
-  const baseCachePath =
-    process.env.NODE_ENV === 'test' ? mockSettings.cachePath : String(settings.get('cachePath'));
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require is intentional: avoids bundling mockSettings in production
+  const ms = process.env.NODE_ENV === 'test' ? require('./mockSettings').mockSettings : null;
+  const baseCachePath = ms ? ms.cachePath : String(settings.get('cachePath'));
+  const serverBase64 = ms ? ms.serverBase64 : String(settings.get('serverBase64'));
 
-  const serverBase64 =
-    process.env.NODE_ENV === 'test'
-      ? mockSettings.serverBase64
-      : String(settings.get('serverBase64'));
-
-  return path.join(baseCachePath, 'sonixd-redux-cache', serverBase64);
+  return joinPath(baseCachePath, 'sonixd-redux-cache', serverBase64);
 };
 
 export const getImageCachePath = () => {
-  return path.join(getRootCachePath(), 'image', '/');
+  return joinPath(getRootCachePath(), 'image', '/');
 };
 
 export const getSongCachePath = () => {
-  return path.join(getRootCachePath(), 'song', '/');
+  return joinPath(getRootCachePath(), 'song', '/');
 };
 
 export const getRecoveryPath = () => {
-  return path.join(getRootCachePath(), '__recovery');
+  return joinPath(getRootCachePath(), '__recovery');
 };
 
-export const createRecoveryFile = (id: any, type: string, data: any) => {
-  const recoveryPath = getRecoveryPath();
+// Fire-and-forget, matching the original's `.catch(() => {})` — the bridge handler
+// performs the existsSync-then-mkdirSync-then-writeFile sequence in main (the
+// renderer can no longer reach `fs` directly, see C1 / nodeIntegration).
+export const createRecoveryFile = (id: string | number, type: string, data: unknown) => {
+  const filePath = joinPath(getRecoveryPath(), `${type}_${id}.json`);
 
-  if (!fs.existsSync(recoveryPath)) {
-    fs.mkdirSync(recoveryPath, { recursive: true });
+  recovery.write(filePath, JSON.stringify(data, null, 4)).catch(() => {});
+};
+
+export const isFailedResponse = (res: unknown): boolean => {
+  if (Array.isArray(res)) {
+    return (res as ApiResponse[]).some((r) => r.status === 'failed');
   }
-
-  const filePath = path.join(recoveryPath, `${type}_${id}.json`);
-
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 4), 'utf-8');
+  return (res as ApiResponse)?.status === 'failed';
 };
 
-export const isFailedResponse = (res: any) => {
-  if (res.length >= 1) {
-    const statuses = _.map(res, 'status');
+export const errorMessages = (res: unknown): string[] => {
+  const errors: string[] = [];
 
-    if (statuses.includes('failed')) {
-      return true;
-    }
-  } else if (res.status === 'failed') return true;
-
-  return false;
-};
-
-export const errorMessages = (res: any) => {
-  const errors: any[] = [];
-
-  if (res.length >= 1) {
-    const statuses = _.map(res, 'status');
-    if (statuses.includes('failed')) {
-      res.forEach((response: any) => {
-        if (response.status === 'failed') {
-          errors.push(response.error.message);
-        }
-      });
-    }
+  if (Array.isArray(res)) {
+    (res as ApiResponse[]).forEach((response) => {
+      if (response.status === 'failed') {
+        errors.push(response.error?.message ?? 'Unknown error');
+      }
+    });
   } else {
-    errors.push(res.error.message);
+    errors.push((res as ApiResponse)?.error?.message ?? 'Unknown error');
   }
 
   return errors;
 };
 
-export const shuffle = (array: any[]) => {
-  let currentIndex = array.length;
+export const shuffle = <T>(array: T[]): T[] => {
+  const arr = [...array];
+  let currentIndex = arr.length;
   let randomIndex;
 
   // While there remain elements to shuffle...
@@ -92,10 +95,10 @@ export const shuffle = (array: any[]) => {
     currentIndex -= 1;
 
     // And swap it with the current element.
-    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+    [arr[currentIndex], arr[randomIndex]] = [arr[randomIndex], arr[currentIndex]];
   }
 
-  return array;
+  return arr;
 };
 
 // https://stackoverflow.com/questions/15900485/correct-way-to-convert-size-in-bytes-to-kb-mb-gb-in-javascript
@@ -144,11 +147,11 @@ export const formatDuration = (duration: number) => {
 };
 
 export const formatDate = (date: string) => {
-  return moment(date).format('MMM D YYYY');
+  return dayjs(date).format('MMM D YYYY');
 };
 
 export const formatDateTime = (date: string) => {
-  return moment(date).format('MMM D YYYY H:mm');
+  return dayjs(date).format('MMM D YYYY H:mm');
 };
 
 export const convertByteToMegabyte = (kb: number) => {
@@ -208,7 +211,7 @@ export const areConsecutive = (arr: number[], n: number) => {
 // https://www.geeksforgeeks.org/find-all-ranges-of-consecutive-numbers-from-array/
 export const consecutiveRanges = (a: number[]) => {
   let length = 1;
-  const list: any[] = [];
+  const list: number[][] = [];
 
   // If the array is empty,
   // return the list
@@ -254,9 +257,13 @@ export const consecutiveRanges = (a: number[]) => {
   return list;
 };
 
-export const sliceRangeByUniqueId = (data: any, startUniqueId: string, endUniqueId: string) => {
-  const beginningIndex = data.findIndex((e: any) => e.uniqueId === startUniqueId);
-  const endingIndex = data.findIndex((e: any) => e.uniqueId === endUniqueId);
+export const sliceRangeByUniqueId = <T extends { uniqueId?: string }>(
+  data: T[],
+  startUniqueId: string,
+  endUniqueId: string
+): T[] => {
+  const beginningIndex = data.findIndex((e) => e.uniqueId === startUniqueId);
+  const endingIndex = data.findIndex((e) => e.uniqueId === endUniqueId);
 
   // Handle both selection directions
   const newSlice =
@@ -267,10 +274,13 @@ export const sliceRangeByUniqueId = (data: any, startUniqueId: string, endUnique
   return newSlice;
 };
 
-export const moveSelectedUp = (entryData: any[], selectedEntries: any[]) => {
+export const moveSelectedUp = <T extends { uniqueId?: string }>(
+  entryData: T[],
+  selectedEntries: { uniqueId?: string }[]
+): T[] => {
   // Ascending index is needed to move the indexes in order
-  const selectedIndices = selectedEntries.map((selected: any) => {
-    return entryData.findIndex((item: any) => item.uniqueId === selected.uniqueId);
+  const selectedIndices = selectedEntries.map((selected) => {
+    return entryData.findIndex((item) => item.uniqueId === selected.uniqueId);
   });
 
   const selectedIndexesAsc = selectedIndices.sort((a: number, b: number) => a - b);
@@ -286,10 +296,10 @@ export const moveSelectedUp = (entryData: any[], selectedEntries: any[]) => {
     selectedIndexesAsc.map((index: number) => {
       if (cr[0]?.includes(0)) {
         if (!cr[0]?.includes(index) && index !== 0) {
-          return arrayMove.mutate(entryData, index, index - 1);
+          return arrayMoveMutable(entryData, index, index - 1);
         }
       } else if (index !== 0) {
-        return arrayMove.mutate(entryData, index, index - 1);
+        return arrayMoveMutable(entryData, index, index - 1);
       }
 
       return undefined;
@@ -299,10 +309,13 @@ export const moveSelectedUp = (entryData: any[], selectedEntries: any[]) => {
   return entryData;
 };
 
-export const moveSelectedDown = (entryData: any[], selectedEntries: any[]) => {
+export const moveSelectedDown = <T extends { uniqueId?: string }>(
+  entryData: T[],
+  selectedEntries: { uniqueId?: string }[]
+): T[] => {
   // Descending index is needed to move the indexes in order
-  const selectedIndices = selectedEntries.map((selected: any) => {
-    return entryData.findIndex((item: any) => item.uniqueId === selected.uniqueId);
+  const selectedIndices = selectedEntries.map((selected) => {
+    return entryData.findIndex((item) => item.uniqueId === selected.uniqueId);
   });
 
   const cr = consecutiveRanges(selectedIndices.sort((a, b) => a - b));
@@ -318,10 +331,10 @@ export const moveSelectedDown = (entryData: any[], selectedEntries: any[]) => {
     selectedIndexesDesc.map((index) => {
       if (cr[0]?.includes(entryData.length - 1)) {
         if (!cr[0]?.includes(index) && index !== entryData.length - 1) {
-          return arrayMove.mutate(entryData, index, index + 1);
+          return arrayMoveMutable(entryData, index, index + 1);
         }
       } else if (index !== entryData.length - 1) {
-        return arrayMove.mutate(entryData, index, index + 1);
+        return arrayMoveMutable(entryData, index, index + 1);
       }
 
       return undefined;
@@ -331,83 +344,92 @@ export const moveSelectedDown = (entryData: any[], selectedEntries: any[]) => {
   return entryData;
 };
 
-export const moveSelectedToTop = (entryData: any, selectedEntries: any) => {
+export const moveSelectedToTop = <T extends { uniqueId?: string }>(
+  entryData: T[],
+  selectedEntries: { uniqueId?: string }[]
+): T[] => {
   const uniqueIds = _.map(selectedEntries, 'uniqueId');
 
   // Remove the selected entries from the queue
-  const newList = entryData.filter((entry: any) => {
+  const newList = entryData.filter((entry) => {
     return !uniqueIds.includes(entry.uniqueId);
   });
 
   // Get the updated entry rowIndexes since dragging an entry multiple times will change the existing selected rowIndex
-  const updatedEntries = selectedEntries.map((entry: any) => {
-    const findIndex = entryData.findIndex((item: any) => item.uniqueId === entry.uniqueId);
+  const updatedEntries = selectedEntries.map((entry) => {
+    const findIndex = entryData.findIndex((item) => item.uniqueId === entry.uniqueId);
     return { ...entry, rowIndex: findIndex };
   });
 
   // Sort the entries by their rowIndex so that we can re-add them in the proper order
-  const sortedEntries = updatedEntries.sort((a: any, b: any) => a.rowIndex - b.rowIndex);
+  const sortedEntries = updatedEntries.sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
 
-  newList.splice(0, 0, ...sortedEntries);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- sortedEntries is a heterogeneous Column array; typed spread requires `as any[]` due to generic variance
+  newList.splice(0, 0, ...(sortedEntries as any[]));
 
   return newList;
 };
 
-export const moveSelectedToBottom = (entryData: any, selectedEntries: any) => {
+export const moveSelectedToBottom = <T extends { uniqueId?: string }>(
+  entryData: T[],
+  selectedEntries: { uniqueId?: string }[]
+): T[] => {
   const uniqueIds = _.map(selectedEntries, 'uniqueId');
 
   // Remove the selected entries from the queue
-  const newList = entryData.filter((entry: any) => {
+  const newList = entryData.filter((entry) => {
     return !uniqueIds.includes(entry.uniqueId);
   });
 
   // Get the updated entry rowIndexes since dragging an entry multiple times will change the existing selected rowIndex
-  const updatedEntries = selectedEntries.map((entry: any) => {
-    const findIndex = entryData.findIndex((item: any) => item.uniqueId === entry.uniqueId);
+  const updatedEntries = selectedEntries.map((entry) => {
+    const findIndex = entryData.findIndex((item) => item.uniqueId === entry.uniqueId);
     return { ...entry, rowIndex: findIndex };
   });
 
   // Sort the entries by their rowIndex so that we can re-add them in the proper order
-  const sortedEntries = updatedEntries.sort((a: any, b: any) => a.rowIndex - b.rowIndex);
+  const sortedEntries = updatedEntries.sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
 
-  newList.push(...sortedEntries);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- sortedEntries is a heterogeneous Column array; typed spread requires `as any[]` due to generic variance
+  newList.push(...(sortedEntries as any[]));
 
   return newList;
 };
 
-export const moveSelectedToIndex = (
-  entryData: any,
-  selectedEntries: any,
+export const moveSelectedToIndex = <T extends { uniqueId?: string }>(
+  entryData: T[],
+  selectedEntries: { uniqueId?: string }[],
   moveBeforeId: string | number | undefined
-) => {
+): T[] => {
   if (!entryData || !selectedEntries) return entryData;
   const uniqueIds = _.map(selectedEntries, 'uniqueId');
 
   // Remove the selected entries from the queue
-  const newList = entryData.filter((entry: any) => {
+  const newList = entryData.filter((entry) => {
     return !uniqueIds.includes(entry.uniqueId);
   });
 
   // When dropped below the last row, append selected entries to end
   if (moveBeforeId === undefined) {
     const sortedEntries = selectedEntries
-      .map((entry: any) => ({
+      .map((entry) => ({
         ...entry,
-        rowIndex: entryData.findIndex((item: any) => item.uniqueId === entry.uniqueId),
+        rowIndex: entryData.findIndex((item) => item.uniqueId === entry.uniqueId),
       }))
-      .sort((a: any, b: any) => a.rowIndex - b.rowIndex);
-    return [...newList, ...sortedEntries];
+      .sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- sortedEntries is a heterogeneous Column array; typed spread requires `as any[]` due to generic variance
+    return [...newList, ...(sortedEntries as any[])] as T[];
   }
 
   // Used if dragging onto the first selected row. We'll need to calculate the number of selected rows above the first selected row
   // so we can subtract it from the spliceIndexPre value when moving it into the newList, which has all selected entries removed
-  const spliceIndexPre = entryData.findIndex((entry: any) => entry.uniqueId === moveBeforeId);
+  const spliceIndexPre = entryData.findIndex((entry) => entry.uniqueId === moveBeforeId);
 
   const queueAbovePre = entryData.slice(0, spliceIndexPre);
-  const selectedAbovePre = queueAbovePre.filter((entry: any) => uniqueIds.includes(entry.uniqueId));
+  const selectedAbovePre = queueAbovePre.filter((entry) => uniqueIds.includes(entry.uniqueId));
 
   // Used if dragging onto a non-selected row
-  const spliceIndexPost = newList.findIndex((entry: any) => entry.uniqueId === moveBeforeId);
+  const spliceIndexPost = newList.findIndex((entry) => entry.uniqueId === moveBeforeId);
 
   // Used if dragging onto consecutive selected rows
   // If the moveBeforeId index is selected, then we find the first consecutive selected index to move to
@@ -431,33 +453,37 @@ export const moveSelectedToIndex = (
     spliceIndexPost >= 0
       ? spliceIndexPost
       : firstConsecutiveSelectedDragIndex >= 0
-      ? firstConsecutiveSelectedDragIndex
-      : spliceIndexPre - selectedAbovePre.length;
+        ? firstConsecutiveSelectedDragIndex
+        : spliceIndexPre - selectedAbovePre.length;
 
   // Get the updated entry rowIndexes since dragging an entry multiple times will change the existing selected rowIndex
-  const updatedEntries = selectedEntries.map((entry: any) => {
-    const findIndex = entryData.findIndex((item: any) => item.uniqueId === entry.uniqueId);
+  const updatedEntries = selectedEntries.map((entry) => {
+    const findIndex = entryData.findIndex((item) => item.uniqueId === entry.uniqueId);
     return { ...entry, rowIndex: findIndex };
   });
 
   // Sort the entries by their rowIndex so that we can re-add them in the proper order
-  const sortedEntries = updatedEntries.sort((a: any, b: any) => a.rowIndex - b.rowIndex);
+  const sortedEntries = updatedEntries.sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
 
   // Splice the entries into the new queue array
-  newList.splice(spliceIndex, 0, ...sortedEntries);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- sortedEntries is a heterogeneous Column array; typed spread requires `as any[]` due to generic variance
+  newList.splice(spliceIndex, 0, ...(sortedEntries as any[]));
 
   // Finally, return the modified list
   return newList;
 };
 
-export const getUpdatedEntryRowIndex = (selectedEntries: any, entryData: any) => {
-  const updatedEntries = selectedEntries.map((entry: any) => {
-    const findIndex = entryData.findIndex((item: any) => item.uniqueId === entry.uniqueId);
+export const getUpdatedEntryRowIndex = (
+  selectedEntries: EntryWithId[],
+  entryData: EntryWithId[]
+) => {
+  const updatedEntries = selectedEntries.map((entry) => {
+    const findIndex = entryData.findIndex((item) => item.uniqueId === entry.uniqueId);
     return { ...entry, rowIndex: findIndex };
   });
 
   // Sort the entries by their rowIndex so that we can re-add them in the proper order
-  const sortedEntries = updatedEntries.sort((a: any, b: any) => a.rowIndex - b.rowIndex);
+  const sortedEntries = updatedEntries.sort((a, b) => (a.rowIndex ?? 0) - (b.rowIndex ?? 0));
 
   return sortedEntries;
 };
@@ -466,7 +492,17 @@ export const sleep = (ms: number) => {
   return new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-export const getCurrentEntryList = (playQueue: any) => {
+export function getCurrentEntryList(playQueue: {
+  sortedEntry: Song[];
+  shuffledEntry: Song[];
+  entry: Song[];
+  shuffle: boolean;
+}): 'sortedEntry' | 'shuffledEntry' | 'entry';
+export function getCurrentEntryList(playQueue: {
+  sortedEntry: Song[];
+  entry: Song[];
+}): 'sortedEntry' | 'entry';
+export function getCurrentEntryList(playQueue: { sortedEntry: Song[]; shuffle?: boolean }): string {
   if (playQueue.sortedEntry.length > 0) {
     return 'sortedEntry';
   }
@@ -476,25 +512,35 @@ export const getCurrentEntryList = (playQueue: any) => {
   }
 
   return 'entry';
-};
+}
 
-export const getTheme = (themes: any[], value: string) => {
+export const getTheme = <T extends { value: string }>(
+  themes: T[],
+  value: string
+): T | undefined => {
   return themes.find((theme) => theme.value === value);
 };
 
-export const filterPlayQueue = (filters: any[], entries: any) => {
-  const enabledFilters = filters.filter((f: any) => f.enabled === true);
-  const joinedFilterRegex = enabledFilters.map((f: any) => f.filter).join('|');
+export const filterPlayQueue = <T extends EntryWithId>(
+  filters: { enabled: boolean; filter: string }[],
+  entries: T[]
+) => {
+  const enabledFilters = filters.filter((f) => f.enabled === true);
+  const joinedFilterRegex = enabledFilters.map((f) => f.filter).join('|');
 
   // Remove invalid entries that may break the player (likely due to Airsonic including folders)
-  const validEntries = entries.filter((song: any) => {
+  const validEntries = entries.filter((song) => {
     return song.streamUrl;
   });
 
   if (joinedFilterRegex) {
-    const filteredEntries = validEntries.filter(
-      (entry: any) => !entry.title.match(joinedFilterRegex)
-    );
+    let filteredEntries = validEntries;
+    try {
+      const regex = new RegExp(joinedFilterRegex, 'i');
+      filteredEntries = validEntries.filter((entry) => !regex.test(entry.title ?? ''));
+    } catch {
+      // Invalid regex pattern — skip filtering rather than crashing
+    }
 
     return {
       entries: filteredEntries,
@@ -542,7 +588,7 @@ export const getUniqueRandomNumberArr = (count: number, maxRange: number) => {
   return arr;
 };
 
-export const getAlbumSize = (songs: any[]) => {
+export const getAlbumSize = (songs: { size: number }[]) => {
   return formatBytes(
     _.sumBy(songs, (o) => {
       return o.size;
@@ -550,66 +596,24 @@ export const getAlbumSize = (songs: any[]) => {
   );
 };
 
-export const base64Encode = (file: any) => {
-  return fs.readFileSync(file, { encoding: 'base64' });
-};
-
-export const decodeBase64Image = (dataString: any) => {
+export const decodeBase64Image = (dataString: string) => {
   const matches = dataString.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
-  const response: any = {};
+  const response: { type?: string; data?: Buffer } = {};
 
-  if (matches.length !== 3) {
+  if (!matches || matches.length !== 3) {
     return new Error('Invalid input string');
   }
 
-  // eslint-disable-next-line prefer-destructuring
   response.type = matches[1];
   response.data = Buffer.from(matches[2], 'base64');
 
   return response;
 };
 
-export const writeOBSFiles = (filePath: string, data: any) => {
-  fs.writeFile(path.join(filePath, 'album.txt'), data.album || '', (err) => {
-    if (err) {
-      console.log(err);
-    }
-  });
-  fs.writeFile(path.join(filePath, 'artists.txt'), (data.artists || []).join(', '), (err) => {
-    if (err) {
-      console.log(err);
-    }
-  });
-  fs.writeFile(path.join(filePath, 'duration.txt'), String(data.duration) || '0', (err) => {
-    if (err) {
-      console.log(err);
-    }
-  });
-  fs.writeFile(path.join(filePath, 'progress.txt'), String(data.progress) || '0', (err) => {
-    if (err) {
-      console.log(err);
-    }
-  });
-  fs.writeFile(path.join(filePath, 'status.txt'), data.status || '', (err) => {
-    if (err) {
-      console.log(err);
-    }
-  });
-  fs.writeFile(path.join(filePath, 'title.txt'), data.title || '', (err) => {
-    if (err) {
-      console.log(err);
-    }
-  });
-
-  fs.writeFile(
-    path.join(filePath, 'image.txt'),
-    data.cover_url?.replace(/&size=\d+|width=\d+&height=\d+&quality=\d+/, '') || '',
-    (err) => {
-      if (err) {
-        console.log(err);
-      }
-    }
-  );
+export const writeOBSFiles = (filePath: string, data: unknown) => {
+  // Writes happen on the main process side now (see bridge.nowPlaying) — batched into
+  // a single IPC message since this fires on a poll timer as fast as every 100ms.
+  nowPlaying.write(filePath, data);
 };
 
 // From https://gist.github.com/andjosh/6764939#gistcomment-3564498
@@ -660,8 +664,13 @@ export const isWindows = () => {
   return process.platform === 'win32';
 };
 
+// `os.release()` compiles to a runtime `require("os")` in the renderer bundle
+// (target: electron-renderer) -- only works while nodeIntegration is true. The
+// bridge's `osRelease` is computed once in preload (always a real Node context)
+// and exposed as a plain string (see C1 / nodeIntegration). This helper is only
+// ever called from the renderer (PlayerConfig.tsx), never from main.
 export const isWindows10 = () => {
-  return os.release().match(/^10\.*/g);
+  return osRelease().match(/^10\.*/g);
 };
 
 export const isMacOS = () => {

@@ -1,57 +1,170 @@
-import { Icon, Slider } from 'rsuite';
+import React from 'react';
 import styled from 'styled-components';
+import BackwardIcon from '@rsuite/icons/legacy/Backward';
+import ClockOIcon from '@rsuite/icons/legacy/ClockO';
+import ForwardIcon from '@rsuite/icons/legacy/Forward';
+import HeartIcon from '@rsuite/icons/legacy/Heart';
+import HeartOIcon from '@rsuite/icons/legacy/HeartO';
+import MusicIcon from '@rsuite/icons/legacy/Music';
+import PauseCircleIcon from '@rsuite/icons/legacy/PauseCircle';
+import PlayCircleIcon from '@rsuite/icons/legacy/PlayCircle';
+import PlusSquareIcon from '@rsuite/icons/legacy/PlusSquare';
+import RandomIcon from '@rsuite/icons/legacy/Random';
+import RefreshIcon from '@rsuite/icons/legacy/Refresh';
+import SpinnerIcon from '@rsuite/icons/legacy/Spinner';
+import StepBackwardIcon from '@rsuite/icons/legacy/StepBackward';
+import StepForwardIcon from '@rsuite/icons/legacy/StepForward';
+import StopIcon from '@rsuite/icons/legacy/Stop';
+import TasksIcon from '@rsuite/icons/legacy/Tasks';
+import VolumeDownIcon from '@rsuite/icons/legacy/VolumeDown';
+import VolumeOffIcon from '@rsuite/icons/legacy/VolumeOff';
 
-export const PlayerContainer = styled.div`
-  background: ${(props) => props.theme.colors.layout.playerBar.background};
-  height: 100%;
-  border-top: ${(props) => props.theme.other.playerBar.borderTop};
-  border-right: ${(props) => props.theme.other.playerBar.borderRight};
-  border-bottom: ${(props) => props.theme.other.playerBar.borderBottom};
-  border-left: ${(props) => props.theme.other.playerBar.borderLeft};
-  filter: ${(props) => props.theme.other.playerBar.filter};
-`;
+interface IconProps {
+  spin?: boolean;
+  style?: React.CSSProperties;
+}
 
-export const PlayerColumn = styled.div<{
-  left?: boolean;
-  center?: boolean;
-  right?: boolean;
-  height: string;
-}>`
-  user-select: none;
-  height: ${(props) => props.height};
-  display: flex;
-  align-items: center;
-  justify-content: ${(props) =>
-    props.left ? 'flex-start' : props.center ? 'center' : props.right ? 'flex-end' : 'center'};
-`;
+const PLAYER_ICON_MAP: Record<string, React.ComponentType<IconProps>> = {
+  backward: BackwardIcon,
+  'clock-o': ClockOIcon,
+  forward: ForwardIcon,
+  heart: HeartIcon,
+  'heart-o': HeartOIcon,
+  music: MusicIcon,
+  'pause-circle': PauseCircleIcon,
+  'play-circle': PlayCircleIcon,
+  'plus-square': PlusSquareIcon,
+  random: RandomIcon,
+  refresh: RefreshIcon,
+  spinner: SpinnerIcon,
+  'step-backward': StepBackwardIcon,
+  'step-forward': StepForwardIcon,
+  stop: StopIcon,
+  tasks: TasksIcon,
+};
 
-export const PlayerControlIcon = styled(Icon)`
-  cursor: pointer;
-  font-size: medium;
+const VOLUME_ICON_MAP: Record<string, React.ComponentType<IconProps>> = {
+  'volume-down': VolumeDownIcon,
+  'volume-off': VolumeOffIcon,
+};
+
+interface PlayerControlIconProps {
+  icon: string;
+  active?: string;
+  disabled?: boolean;
+  spin?: boolean;
+  size?: string;
+  fixedWidth?: boolean;
+  onClick?: React.MouseEventHandler;
+  onKeyDown?: React.KeyboardEventHandler;
+  role?: string;
+  tabIndex?: number;
+  'aria-label'?: string;
+  'aria-pressed'?: boolean | 'true' | 'false';
+  style?: React.CSSProperties;
+  className?: string;
+}
+
+const PlayerControlIconWrapper = styled.span<{ $active?: string; disabled?: boolean }>`
+  cursor: ${(props) => (props.disabled ? 'default' : 'pointer')};
+  font-size: 12px;
   color: ${(props) =>
-    props.active === 'true'
-      ? props.theme.colors.primary
-      : props.theme.colors.layout.playerBar.button.color};
+    props.$active === 'true' ? 'var(--app-primary)' : 'var(--app-playerbar-btn)'};
   padding-left: 10px;
   padding-right: 10px;
+  display: inline-flex;
+  align-items: center;
+  opacity: ${(props) => (props.disabled ? 0.5 : 1)};
+  pointer-events: ${(props) => (props.disabled ? 'none' : 'auto')};
+
   &:hover {
     color: ${(props) =>
-      props.active === 'true'
-        ? props.theme.colors.primary
-        : props.theme.colors.layout.playerBar.button.colorHover};
+      props.$active === 'true' ? 'var(--app-primary)' : 'var(--app-playerbar-btn-hover)'};
   }
 
   &:focus-visible {
     outline: none;
     filter: brightness(0.7);
   }
-
-  opacity: ${(props) => props.disabled && '0.5'};
-  cursor: ${(props) => props.disabled && 'default'};
-  pointer-events: ${(props) => props.disabled && 'none'};
 `;
 
-export const CoverArtContainer = styled.div<{ expand: boolean }>`
+const RS4_SIZE_MAP: Record<string, string> = {
+  lg: '1.33em',
+  '2x': '2em',
+  '3x': '3em',
+  '4x': '4em',
+  '5x': '5em',
+};
+
+export const PlayerControlIcon: React.FC<PlayerControlIconProps> = ({
+  icon,
+  active,
+  disabled,
+  spin,
+  size,
+  fixedWidth: _fixedWidth,
+  ...rest
+}) => {
+  const IconComponent = PLAYER_ICON_MAP[icon];
+  const fontSize = size ? (RS4_SIZE_MAP[size] ?? size) : undefined;
+  return (
+    <PlayerControlIconWrapper $active={active} disabled={disabled} {...rest}>
+      {IconComponent && <IconComponent spin={spin} style={fontSize ? { fontSize } : undefined} />}
+    </PlayerControlIconWrapper>
+  );
+};
+
+const VolumeIconWrapper = styled.span`
+  color: var(--app-playerbar-color);
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 15px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+`;
+
+interface VolumeIconProps {
+  icon: string;
+  onClick?: React.MouseEventHandler;
+  size?: string;
+}
+
+export const VolumeIcon: React.FC<VolumeIconProps> = ({ icon, size, ...rest }) => {
+  const IconComponent = VOLUME_ICON_MAP[icon];
+  const fontSize = size ? (RS4_SIZE_MAP[size] ?? size) : undefined;
+  return (
+    <VolumeIconWrapper {...rest}>
+      {IconComponent && <IconComponent style={fontSize ? { fontSize } : undefined} />}
+    </VolumeIconWrapper>
+  );
+};
+
+export const PlayerContainer = styled.div`
+  background: var(--app-playerbar-bg);
+  height: 100%;
+  border-top: var(--app-playerbar-border-top);
+  border-right: var(--app-playerbar-border-right);
+  border-bottom: var(--app-playerbar-border-bottom);
+  border-left: var(--app-playerbar-border-left);
+  filter: var(--app-playerbar-filter);
+`;
+
+export const PlayerColumn = styled.div<{
+  $left?: boolean;
+  $center?: boolean;
+  $right?: boolean;
+  $height: string;
+}>`
+  user-select: none;
+  height: ${(props) => props.$height};
+  display: flex;
+  align-items: center;
+  justify-content: ${(props) =>
+    props.$left ? 'flex-start' : props.$center ? 'center' : props.$right ? 'flex-end' : 'center'};
+`;
+
+export const CoverArtContainer = styled.div<{ $expand: boolean }>`
   height: 65px;
   width: 65px;
   .rs-btn {
@@ -60,7 +173,7 @@ export const CoverArtContainer = styled.div<{ expand: boolean }>`
 
   &:hover {
     .rs-btn {
-      display: ${(props) => (props.expand ? 'block' : 'none')};
+      display: ${(props) => (props.$expand ? 'block' : 'none')};
       position: absolute;
       top: 0;
       left: 0;
@@ -69,7 +182,7 @@ export const CoverArtContainer = styled.div<{ expand: boolean }>`
   }
 `;
 
-export const LinkButton = styled.a<{ playing?: string; subtitle?: string }>`
+export const LinkButton = styled.a<{ $playing?: string; $subtitle?: string }>`
   border-radius: 0px;
   background: transparent;
   max-width: 100%;
@@ -78,11 +191,11 @@ export const LinkButton = styled.a<{ playing?: string; subtitle?: string }>`
   text-overflow: ellipsis;
   overflow: hidden;
   color: ${(props) =>
-    props.playing === 'true'
-      ? props.theme.colors.primary
-      : props.subtitle === 'true'
-      ? props.theme.colors.layout.playerBar.colorSecondary
-      : props.theme.colors.layout.playerBar.color} !important;
+    props.$playing === 'true'
+      ? 'var(--app-primary)'
+      : props.$subtitle === 'true'
+        ? 'var(--app-playerbar-color-secondary)'
+        : 'var(--app-playerbar-color)'} !important;
 
   &:hover {
     text-decoration: underline;
@@ -92,7 +205,7 @@ export const LinkButton = styled.a<{ playing?: string; subtitle?: string }>`
   &:active,
   &:focus {
     background: transparent !important;
-    color: ${(props) => props.theme.colors.layout.playerBar.color};
+    color: var(--app-playerbar-color);
     cursor: pointer;
   }
 
@@ -101,64 +214,25 @@ export const LinkButton = styled.a<{ playing?: string; subtitle?: string }>`
   }
 `;
 
-export const CustomSlider = styled(Slider)<{ isDragging?: boolean }>`
-  &:hover {
-    .rs-slider-handle::before {
-      display: block;
-    }
-    .rs-slider-progress-bar {
-      background-color: ${(props) => props.theme.colors.primary};
-    }
-  }
-
-  .rs-slider-bar {
-    background-color: ${(props) => props.theme.colors.slider.background};
-  }
-
-  .rs-slider-progress-bar {
-    background-color: ${(props) =>
-      props.$isDragging ? props.theme.colors.primary : props.theme.colors.slider.progressBar};
-  }
-
-  .rs-slider-handle::before {
-    display: none;
-    border: ${(props) => `1px solid ${props.theme.colors.primary} !important`};
-  }
-
-  &:focus-visible {
-    outline: none;
-    .rs-slider-progress-bar {
-      background-color: ${(props) => props.theme.colors.primary};
-    }
-  }
-`;
-
 export const DurationSpan = styled.span`
-  color: ${(props) => props.theme.colors.layout.playerBar.color};
+  color: var(--app-playerbar-color);
 `;
 
-export const VolumeIcon = styled(Icon)`
-  color: ${(props) => props.theme.colors.layout.playerBar.color};
-  cursor: pointer;
-  margin-right: 15px;
-  padding: 0;
-`;
-
-export const MiniViewContainer = styled.div<{ display: string }>`
+export const MiniViewContainer = styled.div<{ $display: string }>`
   user-select: none;
-  pointer-events: ${(props) => (props.display === 'true' ? 'all' : 'none')};
+  pointer-events: ${(props) => (props.$display === 'true' ? 'all' : 'none')};
   position: absolute;
   bottom: 100px;
   right: 25px;
   padding: 8px;
   width: 400px;
-  height: ${(props) => props.theme.other.miniPlayer.height};
-  background: ${(props) => props.theme.colors.layout.miniPlayer.background};
+  height: var(--app-miniplayer-height);
+  background: var(--app-miniplayer-bg);
   border: 1px #000 solid;
   filter: drop-shadow(0px 1px 2px #121316);
   overflow: hidden auto;
-  opacity: ${(props) => (props.display === 'true' ? props.theme.other.miniPlayer.opacity : 0)};
-  color: ${(props) => `${props.theme.colors.layout.page.color} !important`};
+  opacity: ${(props) => (props.$display === 'true' ? 'var(--app-miniplayer-opacity)' : 0)};
+  color: var(--app-text) !important;
   z-index: 500;
 `;
 

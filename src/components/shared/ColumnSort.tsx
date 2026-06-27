@@ -4,6 +4,16 @@ import { FlexboxGrid, RadioGroup } from 'rsuite';
 import { FilterHeader } from '../library/AdvancedFilters';
 import { StyledButton, StyledInputPickerContainer, StyledInputPicker, StyledRadio } from './styled';
 
+interface ColumnSortProps {
+  sortColumns: { label: string; dataKey: string }[];
+  sortType?: string;
+  sortColumn?: string;
+  setSortType?: (v: string) => void;
+  setSortColumn?: (v: string) => void;
+  clearSortType?: () => void;
+  disabledItemValues?: string[];
+}
+
 const ColumnSort = ({
   sortColumns,
   sortType,
@@ -12,9 +22,9 @@ const ColumnSort = ({
   setSortColumn,
   clearSortType,
   disabledItemValues,
-}: any) => {
+}: ColumnSortProps) => {
   const { t } = useTranslation();
-  const sortFilterPickerContainerRef = useRef<any>();
+  const sortFilterPickerContainerRef = useRef<HTMLDivElement | null>(null);
 
   return (
     <>
@@ -34,7 +44,7 @@ const ColumnSort = ({
         </FlexboxGrid>
       </FilterHeader>
 
-      <RadioGroup inline defaultValue={sortType} onChange={setSortType}>
+      <RadioGroup inline defaultValue={sortType} onChange={(v) => setSortType?.(String(v))}>
         <StyledRadio value="asc">{t('ASC')}</StyledRadio>
         <StyledRadio value="desc">{t('DESC')}</StyledRadio>
       </RadioGroup>

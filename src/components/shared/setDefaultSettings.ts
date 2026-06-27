@@ -1,16 +1,17 @@
 import Store from 'electron-store';
 import path from 'path';
-// eslint-disable-next-line import/no-cycle
+
 import i18n from '../../i18n/i18n';
-// eslint-disable-next-line import/no-cycle
+
 import { isMacOS } from '../../shared/utils';
+import { registerMainProcessSettings } from './settingsAccess';
 
 interface Filter {
   filter: string;
   enabled: boolean;
 }
 
-interface Column {
+export interface Column {
   id: string;
   dataKey: string;
   alignment: string;
@@ -21,7 +22,7 @@ interface Column {
   rowIndex?: number;
 }
 
-interface Settings {
+export interface Settings {
   discord: {
     enabled: boolean;
     clientId: string;
@@ -59,6 +60,7 @@ interface Settings {
   globalShortcuts: boolean;
   musicFolder: {
     id: null | string;
+    name?: string | null;
     albums: boolean;
     artists: boolean;
     dashboard: boolean;
@@ -107,7 +109,7 @@ interface Settings {
   hotkeyVolumeDown: string;
   hotkeyMute: string;
   repeat: string;
-  shuffle: string;
+  shuffle: boolean;
   scrollWithCurrentSong: boolean;
   cacheImages: boolean;
   cacheSongs: boolean;
@@ -142,9 +144,10 @@ interface Settings {
   genreListFontSize: string | number;
   genreListRowHeight: string | number;
   genreListColumns?: Column[];
-  smartPlaylists: any[];
-  themes: any[];
-  themesDefault: any[];
+  lyricsFontSize: number;
+  smartPlaylists: unknown[];
+  themes: unknown[];
+  themesDefault: unknown[];
   infoMode?: boolean;
   retainWindowSize: boolean;
   defaultWindowWidth: number;
@@ -154,6 +157,7 @@ interface Settings {
   eqEnabled: boolean;
   eqGains: number[];
   eqCustomPresets: Array<{ name: string; gains: number[] }>;
+  eqPreampDb: number;
   peqEnabled: boolean;
   peqBands: Array<{
     enabled: boolean;
@@ -162,9 +166,33 @@ interface Settings {
     gain: number;
     q: number;
   }>;
+  peqCustomPresets: Array<{
+    name: string;
+    bands: Array<{
+      enabled: boolean;
+      type: 'peaking' | 'lowshelf' | 'highshelf' | 'lowpass' | 'highpass' | 'notch';
+      freq: number;
+      gain: number;
+      q: number;
+    }>;
+    preampDb: number;
+  }>;
+  peqPreampDb: number;
+  songCacheSizeLimit: number;
+  imageCacheSizeLimit: number;
+  // Auth keys — set after login, no defaults
+  server?: string;
+  serverBase64?: string;
+  username?: string;
+  password?: string;
+  salt?: string;
+  hash?: string;
+  token?: string;
+  deviceId?: string;
+  librarySyncedAt?: string;
 }
 
-const DEFAULT_SETTINGS: Settings = {
+export const DEFAULT_SETTINGS: Settings = {
   discord: {
     enabled: false,
     clientId: '1499423307420795021',
@@ -263,7 +291,7 @@ const DEFAULT_SETTINGS: Settings = {
   hotkeyVolumeDown: 'ctrl+down',
   hotkeyMute: 'ctrl+m',
   repeat: 'none',
-  shuffle: 'false',
+  shuffle: false,
   scrollWithCurrentSong: true,
   cacheImages: true,
   cacheSongs: false,
@@ -309,15 +337,25 @@ const DEFAULT_SETTINGS: Settings = {
   eqEnabled: false,
   eqGains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   eqCustomPresets: [],
+  eqPreampDb: 0,
   peqEnabled: false,
   peqBands: [
-    { enabled: true, type: 'peaking', freq: 80, gain: 0, q: 1.0 },
+    { enabled: true, type: 'peaking', freq: 32, gain: 0, q: 1.0 },
+    { enabled: true, type: 'peaking', freq: 64, gain: 0, q: 1.0 },
+    { enabled: true, type: 'peaking', freq: 125, gain: 0, q: 1.0 },
     { enabled: true, type: 'peaking', freq: 250, gain: 0, q: 1.0 },
+    { enabled: true, type: 'peaking', freq: 500, gain: 0, q: 1.0 },
     { enabled: true, type: 'peaking', freq: 1000, gain: 0, q: 1.0 },
+    { enabled: true, type: 'peaking', freq: 2000, gain: 0, q: 1.0 },
     { enabled: true, type: 'peaking', freq: 4000, gain: 0, q: 1.0 },
     { enabled: true, type: 'peaking', freq: 8000, gain: 0, q: 1.0 },
     { enabled: true, type: 'peaking', freq: 16000, gain: 0, q: 1.0 },
   ],
+  peqCustomPresets: [],
+  peqPreampDb: 0,
+  songCacheSizeLimit: 5 * 1000 * 1000 * 1000,
+  imageCacheSizeLimit: 2 * 1000 * 1000 * 1000,
+  lyricsFontSize: 15,
   smartPlaylists: [],
   themes: [],
   themesDefault: [
@@ -904,7 +942,7 @@ const DEFAULT_SETTINGS: Settings = {
           selectedRow: 'rgba(150, 150, 150, .3)',
         },
         tag: {
-          background: '##3C3F43',
+          background: '#3C3F43',
           text: '#E2E4E9',
         },
         tooltip: {
@@ -1944,6 +1982,11 @@ export const settings = new Store({
   name: 'settings',
 });
 
+// Main-process-only: makes the real settings instance available to slices that
+// also load in the renderer (where this module — and its `electron-store`/`path`
+// dependencies — cannot be evaluated). See settingsAccess.ts for details.
+registerMainProcessSettings(settings);
+
 export const setDefaultSettings = (force: boolean) => {
   if (force) {
     settings.clear();
@@ -1957,7 +2000,7 @@ export const setDefaultSettings = (force: boolean) => {
   // on subsequent launches because the version check prevents re-adding them.
   // To add a new sidebar entry in a future release: add a new version block below,
   // add the entry to DEFAULT_SETTINGS.sidebar.selected, and increment SIDEBAR_MIGRATION_VERSION.
-  const SIDEBAR_MIGRATION_VERSION = 3;
+  const SIDEBAR_MIGRATION_VERSION = 4;
   const sidebarVersion: number = (settings.get('sidebar.version') as number) || 0;
 
   if (sidebarVersion === 0) {
@@ -1995,6 +2038,40 @@ export const setDefaultSettings = (force: boolean) => {
   }
 
   settings.set('sidebar.version', SIDEBAR_MIGRATION_VERSION);
+
+  // PEQ bands migration: the original default was 6 bands (80–16000 Hz); peqSlice now
+  // uses 10 bands (32–16000 Hz). Detect stored 6-band arrays and upgrade them, preserving
+  // any per-band settings for frequencies that exist in both old and new band sets.
+  const PEQ_MIGRATION_VERSION = 1;
+  const peqVersion: number = (settings.get('peq.version') as number) || 0;
+  if (peqVersion < 1) {
+    const storedBands = settings.get('peqBands');
+    if (
+      Array.isArray(storedBands) &&
+      storedBands.length !== 10 &&
+      storedBands.every((b) => typeof b?.freq === 'number')
+    ) {
+      const DEFAULT_10_BANDS = DEFAULT_SETTINGS.peqBands;
+      const freqMap = new Map(storedBands.map((b) => [b.freq, b]));
+      const migrated = DEFAULT_10_BANDS.map((band) => freqMap.get(band.freq) ?? band);
+      // eslint-disable-next-line no-console
+      console.log('[migration] peqBands: migrated from', storedBands.length, 'bands to 10 bands');
+      settings.set('peqBands', migrated);
+    }
+    settings.set('peq.version', PEQ_MIGRATION_VERSION);
+  }
+
+  // v1.0.7 upgrade safety net: the old settings format stored a plaintext `password`
+  // directly with no `legacyAuth` flag and no `hash`/`salt` (that concept didn't exist
+  // yet). `legacyAuth` defaults to false via the Store's `defaults` option, so without
+  // this check an upgrading user would silently fall through to hash/salt auth with
+  // nothing to send, failing every API call even though the login screen (which only
+  // checks for `server`/`serverBase64`) never reappears. This signature — password
+  // present, hash absent, legacyAuth never written — cannot occur from a fresh login
+  // through this app's own Login.tsx, which always sets `legacyAuth` explicitly.
+  if (!settings.has('legacyAuth') && settings.has('password') && !settings.has('hash')) {
+    settings.set('legacyAuth', true);
+  }
 
   if (force || !settings.has('cachePath')) {
     settings.set('cachePath', path.join(path.dirname(settings.path)));
@@ -2180,7 +2257,7 @@ export const setDefaultSettings = (force: boolean) => {
         dataKey: 'coverart',
         alignment: 'center',
         resizable: true,
-        width: 50,
+        width: 60,
         label: i18n.t('CoverArt')?.toString(),
       },
       {

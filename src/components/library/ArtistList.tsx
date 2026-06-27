@@ -1,6 +1,7 @@
+import { useNavigate } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from 'react-query';
-import { useHistory } from 'react-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+
 import { ButtonToolbar } from 'rsuite';
 import { useTranslation } from 'react-i18next';
 import useSearchQuery from '../../hooks/useSearchQuery';
@@ -12,6 +13,7 @@ import GridViewType from '../viewtypes/GridViewType';
 import { FilterButton, RefreshButton } from '../shared/ToolbarButtons';
 import { apiController } from '../../api/controller';
 import { Item, Server } from '../../types';
+import type { RowDataType } from 'rsuite-table';
 import ColumnSortPopover from '../shared/ColumnSortPopover';
 import useColumnSort from '../../hooks/useColumnSort';
 import { setSort } from '../../redux/artistSlice';
@@ -19,55 +21,53 @@ import { StyledTag } from '../shared/styled';
 import useListClickHandler from '../../hooks/useListClickHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
 
 const ArtistList = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const history = useHistory();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const artist = useAppSelector((state) => state.artist);
   const folder = useAppSelector((state) => state.folder);
   const config = useAppSelector((state) => state.config);
   const misc = useAppSelector((state) => state.misc);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [viewType, setViewType] = useState(settings.get('artistViewType'));
-  const [musicFolder, setMusicFolder] = useState(undefined);
+  const [viewType, setViewType] = useState(settings.get('artistViewType') || 'list');
+  const [musicFolder, setMusicFolder] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (folder.applied.artists) {
       setMusicFolder(folder.musicFolder);
     }
-  }, [folder]);
+  }, [folder.applied.artists, folder.musicFolder]);
 
   const {
     isLoading,
     isError,
     data: artists,
     error,
-  }: any = useQuery(
-    ['artistList', musicFolder],
-    () =>
+  } = useQuery({
+    queryKey: ['artistList', musicFolder],
+    queryFn: () =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getArtists',
         args: { musicFolderId: musicFolder },
       }),
-    {
-      cacheTime: 3600000, // Stay in cache for 1 hour
-      staleTime: Infinity, // Only allow manual refresh
-    }
-  );
+    gcTime: 3600000, // Stay in cache for 1 hour
+    staleTime: Infinity, // Only allow manual refresh
+  });
   const filteredData = useSearchQuery(misc.searchQuery, artists, ['title', 'genre']);
   const { sortedData, sortColumns } = useColumnSort(artists, Item.Artist, artist.active.list.sort);
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
-    doubleClick: (rowData: any) => history.push(`/library/artist/${rowData.id}`),
+    doubleClick: (rowData: RowDataType) => navigate(`/library/artist/${rowData.id as string}`),
   });
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await queryClient.refetchQueries(['artistList', musicFolder], { active: true });
+    await queryClient.refetchQueries({ queryKey: ['artistList', musicFolder], type: 'active' });
     setIsRefreshing(false);
   };
 
@@ -111,7 +111,7 @@ const ArtistList = () => {
                   })
                 )
               }
-              setSortType={(e: string) =>
+              setSortType={(e: 'asc' | 'desc') =>
                 dispatch(
                   setSort({
                     type: 'list',
@@ -156,7 +156,7 @@ const ArtistList = () => {
           fontSize={config.lookAndFeel.listView.artist.fontSize}
           handleRowClick={handleRowClick}
           handleRowDoubleClick={handleRowDoubleClick}
-          handleRating={(rowData: any, rating: number) =>
+          handleRating={(rowData: RowDataType, rating: number) =>
             handleRating(rowData, { queryKey: ['artistList', musicFolder], rating })
           }
           cacheImages={{
@@ -173,7 +173,7 @@ const ArtistList = () => {
             'deletePlaylist',
             'viewInFolder',
           ]}
-          handleFavorite={(rowData: any) =>
+          handleFavorite={(rowData: RowDataType) =>
             handleFavorite(rowData, { queryKey: ['artistList', musicFolder] })
           }
           initialScrollOffset={Number(localStorage.getItem('scroll_list_artistList'))}
@@ -200,7 +200,7 @@ const ArtistList = () => {
           playClick={{ type: 'artist', idProperty: 'id' }}
           size={config.lookAndFeel.gridView.cardSize}
           cacheType="artist"
-          handleFavorite={(rowData: any) =>
+          handleFavorite={(rowData: RowDataType) =>
             handleFavorite(rowData, { queryKey: ['artistList', musicFolder] })
           }
           initialScrollOffset={Number(localStorage.getItem('scroll_grid_artistList'))}

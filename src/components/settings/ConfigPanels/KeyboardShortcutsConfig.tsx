@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
 import { setHotkey, setPlayer } from '../../../redux/configSlice';
 import { StyledToggle } from '../../shared/styled';
 import ConfigOption from '../ConfigOption';
-import { settings } from '../../shared/setDefaultSettings';
+import { settings, ipcRenderer } from '../../shared/bridge';
 
 const Table = styled.table`
   width: 100%;
@@ -19,26 +19,26 @@ const Th = styled.th`
   padding: 8px 12px;
   opacity: 0.5;
   font-weight: normal;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--rs-border-secondary);
 `;
 
 const Td = styled.td`
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--rs-border-secondary);
 `;
 
 const CancelButton = styled.button`
   background: none;
   border: none;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--rs-text-tertiary);
   font-size: 1em;
   padding: 0 4px;
   margin-left: 4px;
   line-height: 1;
   vertical-align: middle;
   &:hover {
-    color: rgba(255, 255, 255, 0.9);
+    color: var(--rs-text-primary);
   }
 `;
 
@@ -52,15 +52,15 @@ const KeyBadge = styled.span<{ $listening: boolean; $conflict: boolean }>`
     p.$conflict
       ? 'rgba(220,53,69,0.25)'
       : p.$listening
-      ? 'rgba(33,150,243,0.3)'
-      : 'rgba(255,255,255,0.08)'};
+        ? 'rgba(33,150,243,0.3)'
+        : 'var(--rs-bg-subtle)'};
   border: 1px solid
     ${(p) =>
       p.$conflict
         ? 'rgba(220,53,69,0.7)'
         : p.$listening
-        ? 'rgba(33,150,243,0.7)'
-        : 'rgba(255,255,255,0.15)'};
+          ? 'rgba(33,150,243,0.7)'
+          : 'var(--rs-border-secondary)'};
   cursor: pointer;
   min-width: 140px;
   text-align: center;
@@ -80,7 +80,7 @@ const SETTING_KEY_MAP: Record<string, string> = {
   mute: 'hotkeyMute',
 };
 
-function formatKey(key: string): string {
+export function formatKey(key: string): string {
   return key
     .split('+')
     .map((part) => {
@@ -101,13 +101,17 @@ function formatKey(key: string): string {
     .join(' + ');
 }
 
-function captureKey(e: React.KeyboardEvent): string | null {
+export function captureKey(e: React.KeyboardEvent): string | null {
   e.preventDefault();
   const parts: string[] = [];
   if (e.ctrlKey) parts.push('ctrl');
   if (e.altKey) parts.push('alt');
   if (e.shiftKey) parts.push('shift');
   if (e.metaKey) parts.push('meta');
+  if (/^F\d+$/i.test(e.key)) {
+    parts.push(e.key);
+    return parts.join('+');
+  }
   const key = e.key.toLowerCase();
   if (['control', 'alt', 'shift', 'meta'].includes(key)) return null;
   if (key === 'escape') return null; // escape cancels
@@ -115,21 +119,21 @@ function captureKey(e: React.KeyboardEvent): string | null {
     key === ' '
       ? 'space'
       : key === 'delete'
-      ? 'del'
-      : key === 'arrowleft'
-      ? 'left'
-      : key === 'arrowright'
-      ? 'right'
-      : key === 'arrowup'
-      ? 'up'
-      : key === 'arrowdown'
-      ? 'down'
-      : key
+        ? 'del'
+        : key === 'arrowleft'
+          ? 'left'
+          : key === 'arrowright'
+            ? 'right'
+            : key === 'arrowup'
+              ? 'up'
+              : key === 'arrowdown'
+                ? 'down'
+                : key
   );
   return parts.join('+');
 }
 
-const KeyboardShortcutsConfig = ({ bordered }: any) => {
+const KeyboardShortcutsConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const hotkeys = useAppSelector((state) => state.config.hotkeys);
@@ -138,8 +142,10 @@ const KeyboardShortcutsConfig = ({ bordered }: any) => {
   const [conflict, setConflict] = useState<string | null>(null);
 
   const save = (action: string, key: string) => {
-    dispatch(setHotkey({ action: action as any, key }));
+    const oldKey = hotkeys[action as keyof typeof hotkeys];
+    dispatch(setHotkey({ action: action as keyof typeof hotkeys, key }));
     settings.set(SETTING_KEY_MAP[action], key);
+    ipcRenderer.send('update-local-shortcut', { action, oldKey, newKey: key });
     setListening(null);
     setConflict(null);
   };
@@ -166,7 +172,6 @@ const KeyboardShortcutsConfig = ({ bordered }: any) => {
         )}
         option={
           <StyledToggle
-            defaultChecked={globalShortcuts}
             checked={globalShortcuts}
             onChange={(e: boolean) => {
               settings.set('globalShortcuts', e);
@@ -192,10 +197,11 @@ const KeyboardShortcutsConfig = ({ bordered }: any) => {
             const isListening = listening === action;
             const currentKey = hotkeys[action as keyof typeof hotkeys];
             return (
-              <tr key={action}>
+              <tr key={action} data-testid={`shortcut-row-${action}`}>
                 <Td>{label}</Td>
                 <Td>
                   <KeyBadge
+                    data-testid={`shortcut-key-${action}`}
                     $listening={isListening}
                     $conflict={isListening && conflict !== null}
                     tabIndex={0}
@@ -205,7 +211,7 @@ const KeyboardShortcutsConfig = ({ bordered }: any) => {
                         setConflict(null);
                       }
                     }}
-                    onKeyDown={(e) => {
+                    onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
                       if (!isListening) {
                         if (e.key === 'Enter' || e.key === ' ') setListening(action);
                         return;
@@ -235,8 +241,8 @@ const KeyboardShortcutsConfig = ({ bordered }: any) => {
                     {isListening && conflict
                       ? t('Used by: {{label}}', { label: conflict })
                       : isListening
-                      ? t('Press a key...')
-                      : formatKey(currentKey)}
+                        ? t('Press a key...')
+                        : formatKey(currentKey ?? '')}
                   </KeyBadge>
                   {isListening && (
                     <CancelButton

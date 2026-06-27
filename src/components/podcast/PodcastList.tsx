@@ -1,10 +1,19 @@
 import React from 'react';
-import { useQuery } from 'react-query';
-import { FlexboxGrid, Icon } from 'rsuite';
+import { useQuery } from '@tanstack/react-query';
+import { FlexboxGrid } from 'rsuite';
+import AngleRightIcon from '@rsuite/icons/legacy/AngleRight';
+import RefreshIcon from '@rsuite/icons/legacy/Refresh';
 import { useTranslation } from 'react-i18next';
-import { useHistory } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAppSelector } from '../../redux/hooks';
 import { apiController } from '../../api/controller';
+
+interface PodcastChannelSummary {
+  id: string;
+  title: string;
+  image: string;
+  episodes: { length: number }[];
+}
 import { notifyToast } from '../shared/toast';
 import { StyledButton } from '../shared/styled';
 import GenericPage from '../layout/GenericPage';
@@ -14,7 +23,7 @@ import CenterLoader from '../loader/CenterLoader';
 const PodcastList = () => {
   const { t } = useTranslation();
   const config = useAppSelector((state) => state.config);
-  const history = useHistory();
+  const navigate = useNavigate();
 
   const {
     isLoading,
@@ -22,11 +31,11 @@ const PodcastList = () => {
     data: channels,
     refetch,
     isRefetching,
-  } = useQuery(
-    ['podcasts'],
-    () => apiController({ serverType: config.serverType, endpoint: 'getPodcasts' }),
-    { retry: false }
-  );
+  } = useQuery({
+    queryKey: ['podcasts'],
+    queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getPodcasts' }),
+    retry: false,
+  });
 
   const handleRefresh = async () => {
     await apiController({ serverType: config.serverType, endpoint: 'refreshPodcasts' });
@@ -47,7 +56,7 @@ const PodcastList = () => {
                 onClick={handleRefresh}
                 loading={isLoading || isRefetching}
               >
-                <Icon icon="refresh" /> {t('Refresh feeds')}
+                <RefreshIcon /> {t('Refresh feeds')}
               </StyledButton>
             )
           }
@@ -67,7 +76,7 @@ const PodcastList = () => {
       )}
       {!isLoading && channels && channels.length > 0 && (
         <div style={{ padding: '10px 20px' }}>
-          {channels.map((channel: any) => (
+          {(channels as PodcastChannelSummary[]).map((channel) => (
             <FlexboxGrid
               key={channel.id}
               align="middle"
@@ -79,12 +88,13 @@ const PodcastList = () => {
                 background: 'rgba(128,128,128,0.08)',
                 cursor: 'pointer',
               }}
-              onClick={() => history.push(`/podcasts/${channel.id}`)}
+              onClick={() => navigate(`/podcasts/${channel.id}`)}
             >
               <FlexboxGrid.Item style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <img
                   src={channel.image}
-                  alt={channel.title}
+                  role="presentation"
+                  alt=""
                   style={{
                     width: 48,
                     height: 48,
@@ -92,8 +102,8 @@ const PodcastList = () => {
                     objectFit: 'cover',
                     flexShrink: 0,
                   }}
-                  onError={(e: any) => {
-                    e.target.src = 'img/placeholder.png';
+                  onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                    e.currentTarget.src = 'img/placeholder.png';
                   }}
                 />
                 <div>
@@ -104,7 +114,7 @@ const PodcastList = () => {
                 </div>
               </FlexboxGrid.Item>
               <FlexboxGrid.Item>
-                <Icon icon="angle-right" style={{ opacity: 0.4 }} />
+                <AngleRightIcon style={{ opacity: 0.4 }} />
               </FlexboxGrid.Item>
             </FlexboxGrid>
           ))}

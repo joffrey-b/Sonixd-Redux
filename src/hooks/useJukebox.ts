@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ipcRenderer } from 'electron';
+import { ipcRenderer } from '../components/shared/bridge';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
 import { setJukeboxEnabled, setJukeboxStatus } from '../redux/jukeboxSlice';
@@ -21,7 +21,7 @@ const POLL_INTERVAL_PAUSED = 3000;
 const useJukebox = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const jukebox = useAppSelector((state: any) => state.jukebox);
+  const jukebox = useAppSelector((state) => state.jukebox);
   const playQueue = useAppSelector((state) => state.playQueue);
   const config = useAppSelector((state) => state.config);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -29,6 +29,7 @@ const useJukebox = () => {
   const pausePositionRef = useRef(0);
   const wasPlayingRef = useRef(false);
   const syncInProgressRef = useRef<Promise<void> | null>(null);
+  const pollFailureCountRef = useRef(0);
   const [loopCount, setLoopCount] = useState(0);
   // Refs to avoid stale closures in poll without adding them to useCallback deps
   const playQueueRef = useRef(playQueue);
@@ -53,14 +54,26 @@ const useJukebox = () => {
   // then skip seeks to the right track. Skipping before start fails with "connection refused".
   const syncQueueToServer = useCallback(
     async (startIndex = 0) => {
+      // If a sync is already running, await it before starting a new one so that
+      // concurrent calls (e.g. rapid queue modifications) do not interleave their
+      // set/start/skip IPC sequences and leave the server in an inconsistent state.
+      // Reading playQueueRef.current AFTER the await ensures we always sync the
+      // latest playlist state rather than a stale snapshot.
+      if (syncInProgressRef.current) {
+        try {
+          await syncInProgressRef.current;
+        } catch {
+          /* ignore errors from the previous sync */
+        }
+      }
       const pq = playQueueRef.current;
       const entryList = getCurrentEntryList(pq);
-      const songs = pq[entryList] as any[];
+      const songs = pq[entryList];
       if (songs.length === 0) return;
       // Internet radio streams are not valid jukebox queue items — the server cannot
       // resolve a radio station URL via the jukebox song-ID API.
-      if (songs.some((s: any) => s.isRadio)) return;
-      const ids = songs.map((s: any) => s.id);
+      if (songs.some((s) => s.isRadio)) return;
+      const ids = songs.map((s) => s.id);
       const promise = (async () => {
         await callJukebox({ action: 'set', id: ids });
         await callJukebox({ action: 'start' });
@@ -88,6 +101,7 @@ const useJukebox = () => {
     try {
       const result = await callJukebox({ action: 'status' });
       if (!result) return;
+      pollFailureCountRef.current = 0;
       // Capture playing transition before updating anything
       const wasPlaying = wasPlayingRef.current;
       wasPlayingRef.current = result.playing;
@@ -97,7 +111,7 @@ const useJukebox = () => {
       if (result.currentIndex >= 0) {
         const pq = playQueueRef.current;
         const entryList = getCurrentEntryList(pq);
-        const song = (pq[entryList] as any[])[result.currentIndex];
+        const song = pq[entryList][result.currentIndex];
         if (song && song.uniqueId !== pq.currentSongUniqueId) {
           if (pq.repeat === 'one') {
             // Server advanced to the next song, but repeat-one means we stay on the
@@ -123,7 +137,7 @@ const useJukebox = () => {
       if (!result.playing && wasPlaying) {
         const pq = playQueueRef.current;
         const entryList = getCurrentEntryList(pq);
-        const songs = pq[entryList] as any[];
+        const songs = pq[entryList];
         if (songs.length > 0 && pq.repeat === 'all') {
           await syncQueueToServerRef.current(0);
           dispatch(setCurrentIndex(songs[0]));
@@ -134,9 +148,13 @@ const useJukebox = () => {
         }
       }
     } catch {
-      // Ignore poll errors silently
+      pollFailureCountRef.current += 1;
+      if (pollFailureCountRef.current >= 3) {
+        notifyToast('warning', t('Jukebox server is unreachable. Check your connection.'));
+        pollFailureCountRef.current = 0;
+      }
     }
-  }, [callJukebox, dispatch]); // stable — uses refs, not reactive state
+  }, [callJukebox, dispatch, t]); // stable — uses refs, not reactive state
 
   // Start/stop polling when jukebox is enabled/disabled
   useEffect(() => {
@@ -168,7 +186,7 @@ const useJukebox = () => {
     if (!jukeboxRef.current?.enabled) return;
     const pq = playQueueRef.current;
     const entryList = getCurrentEntryList(pq);
-    const localSong = (pq[entryList] as any[])[pq.currentIndex];
+    const localSong = pq[entryList][pq.currentIndex];
     if (!localSong?.id) return;
     const jk = jukeboxRef.current;
     const serverCurrentId = jk?.status?.entry?.[jk?.status?.currentIndex ?? -1];
@@ -183,7 +201,7 @@ const useJukebox = () => {
     if (!jukeboxRef.current?.enabled) return;
     const pq = playQueueRef.current;
     const entryList = getCurrentEntryList(pq);
-    if ((pq[entryList] as any[]).length === 0) return;
+    if (pq[entryList].length === 0) return;
     syncQueueToServer(pq.currentIndex).catch(() => {});
   }, [playQueue.shuffle, syncQueueToServer]);
 
@@ -246,7 +264,7 @@ const useJukebox = () => {
     const pq = playQueueRef.current;
     const jk = jukeboxRef.current;
     const entryList = getCurrentEntryList(pq);
-    const localSong = (pq[entryList] as any[])[pq.currentIndex];
+    const localSong = pq[entryList][pq.currentIndex];
     const serverCurrentId = jk?.status?.entry?.[jk?.status?.currentIndex ?? -1];
     const savedPosition = pausePositionRef.current;
     pausePositionRef.current = 0;
@@ -295,7 +313,7 @@ const useJukebox = () => {
     if (!jukeboxRef.current?.enabled) return;
     const pq = playQueueRef.current;
     const entryList = getCurrentEntryList(pq);
-    const total = (pq[entryList] as any[]).length;
+    const total = pq[entryList].length;
     if (total === 0) return;
     const currentIdx = jukeboxRef.current?.status?.currentIndex ?? 0;
     const nextIndex = currentIdx + 1;
@@ -315,7 +333,7 @@ const useJukebox = () => {
     if (!jukeboxRef.current?.enabled) return;
     const pq = playQueueRef.current;
     const entryList = getCurrentEntryList(pq);
-    const total = (pq[entryList] as any[]).length;
+    const total = pq[entryList].length;
     if (total === 0) return;
     const position = jukeboxRef.current?.status?.position ?? 0;
     const currentIdx = jukeboxRef.current?.status?.currentIndex ?? 0;
@@ -374,7 +392,7 @@ const useJukebox = () => {
       if (!jukeboxRef.current?.enabled) return;
       const pq = playQueueRef.current;
       const entryList = getCurrentEntryList(pq);
-      const index = (pq[entryList] as any[]).findIndex((s) => s.uniqueId === uniqueId);
+      const index = pq[entryList].findIndex((s) => s.uniqueId === uniqueId);
       if (index < 0) return;
       await callJukebox({ action: 'skip', index, offset: 0 });
       await poll();
@@ -394,7 +412,7 @@ const useJukebox = () => {
     };
     ipcRenderer.on('stop-jukebox-on-close', handleStopOnClose);
     return () => {
-      ipcRenderer.removeListener('stop-jukebox-on-close', handleStopOnClose);
+      ipcRenderer.removeAllListeners('stop-jukebox-on-close');
     };
   }, [callJukebox]);
 

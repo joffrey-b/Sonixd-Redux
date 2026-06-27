@@ -11,7 +11,7 @@ import {
   StyledToggle,
 } from '../../shared/styled';
 import { useAppDispatch, useAppSelector } from '../../../redux/hooks';
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, settings } from '../../shared/bridge';
 import { setPlaybackSetting } from '../../../redux/playQueueSlice';
 import {
   setAudioDeviceId,
@@ -23,14 +23,13 @@ import {
 } from '../../../redux/configSlice';
 import { notifyToast } from '../../shared/toast';
 import ConfigOption from '../ConfigOption';
-import { settings } from '../../shared/setDefaultSettings';
 
 const getAudioDevice = async () => {
   const devices = await navigator.mediaDevices.enumerateDevices();
   return (devices || []).filter((dev: MediaDeviceInfo) => dev.kind === 'audiooutput');
 };
 
-const PlaybackConfig = ({ bordered }: any) => {
+const PlaybackConfig = ({ bordered }: { bordered?: boolean }) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
@@ -48,6 +47,7 @@ const PlaybackConfig = ({ bordered }: any) => {
   const mpvReplayGainPickerContainerRef = useRef(null);
 
   const isMpv = config.playback.playerBackend === 'mpv';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- jukebox slice is optional and not part of RootState; checked defensively at runtime
   const isJukebox = useAppSelector((state: any) => state.jukebox?.enabled ?? false);
   // Keep a ref to the latest mpvAudioDeviceId so the 2-second retry timer in
   // refreshMpvDevices doesn't fire the toast again from a stale closure.
@@ -206,24 +206,44 @@ const PlaybackConfig = ({ bordered }: any) => {
               'Web uses the built-in Chromium audio engine. MPV requires MPV to be installed on your system and supports gapless playback.'
             )}
             option={
-              <StyledInputPickerContainer
-                ref={backendPickerContainerRef}
-                style={{ position: 'relative', height: 30, overflow: 'visible' }}
-              >
-                <StyledInputPicker
-                  container={() => backendPickerContainerRef.current}
-                  size="sm"
-                  searchable={false}
-                  cleanable={false}
+              <div style={{ position: 'relative' }}>
+                <select
+                  data-testid="player-backend-select"
                   value={config.playback.playerBackend}
-                  data={[
-                    { label: t('Web (default)'), value: 'web' },
-                    { label: t('MPV'), value: 'mpv' },
-                  ]}
-                  onChange={(val: 'web' | 'mpv') => handleSetPlayerBackend(val)}
-                  style={{ width: 160 }}
-                />
-              </StyledInputPickerContainer>
+                  onChange={(e) => handleSetPlayerBackend(e.target.value as 'web' | 'mpv')}
+                  style={{
+                    position: 'absolute',
+                    width: '1px',
+                    height: '1px',
+                    opacity: 0.01,
+                    top: 0,
+                    left: 0,
+                  }}
+                  aria-hidden="true"
+                  tabIndex={-1}
+                >
+                  <option value="web">{t('Web (default)')}</option>
+                  <option value="mpv">{t('MPV')}</option>
+                </select>
+                <StyledInputPickerContainer
+                  ref={backendPickerContainerRef}
+                  style={{ position: 'relative', height: 30, overflow: 'visible' }}
+                >
+                  <StyledInputPicker
+                    container={() => backendPickerContainerRef.current}
+                    size="sm"
+                    searchable={false}
+                    cleanable={false}
+                    value={config.playback.playerBackend}
+                    data={[
+                      { label: t('Web (default)'), value: 'web' },
+                      { label: t('MPV'), value: 'mpv' },
+                    ]}
+                    onChange={(val: 'web' | 'mpv') => handleSetPlayerBackend(val)}
+                    style={{ width: 160 }}
+                  />
+                </StyledInputPickerContainer>
+              </div>
             }
           />
         </ConfigPanel>
@@ -233,14 +253,13 @@ const PlaybackConfig = ({ bordered }: any) => {
         <ConfigPanel bordered={bordered} header={t('MPV Settings')}>
           <ConfigOption
             name={t('MPV Binary Path')}
-            description={t(
-              'Path to the mpv binary. Leave empty to use the system-installed mpv. Install guide: Windows: winget install mpv | Linux: apt/pacman install mpv | macOS: brew install mpv'
-            )}
+            description={t('Path to the mpv binary. Leave empty to use the system-installed mpv.')}
             option={
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <StyledInput
+                  data-testid="mpv-path-input"
                   size="sm"
-                  placeholder={t('e.g. /usr/bin/mpv or C:\\mpv\\mpv.exe')}
+                  placeholder={t('System default')}
                   value={mpvPathInput}
                   onChange={(val: string) => setMpvPathInput(val)}
                   onBlur={handleSetMpvPath}
@@ -283,25 +302,48 @@ const PlaybackConfig = ({ bordered }: any) => {
               'Normalize loudness across tracks using ReplayGain tags embedded in your audio files. Track adjusts each song individually. Album preserves relative dynamics within an album.'
             )}
             option={
-              <StyledInputPickerContainer
-                ref={mpvReplayGainPickerContainerRef}
-                style={{ position: 'relative', height: 30, overflow: 'visible' }}
-              >
-                <StyledInputPicker
-                  container={() => mpvReplayGainPickerContainerRef.current}
-                  size="sm"
-                  searchable={false}
-                  cleanable={false}
+              <div style={{ position: 'relative' }}>
+                <select
+                  data-testid="replaygain-mode-select"
                   value={config.playback.mpvReplayGain}
-                  data={[
-                    { label: t('Off'), value: 'no' },
-                    { label: t('Track'), value: 'track' },
-                    { label: t('Album'), value: 'album' },
-                  ]}
-                  onChange={(val: 'no' | 'track' | 'album') => handleSetMpvReplayGain(val)}
-                  style={{ width: 120 }}
-                />
-              </StyledInputPickerContainer>
+                  onChange={(e) =>
+                    handleSetMpvReplayGain(e.target.value as 'no' | 'track' | 'album')
+                  }
+                  style={{
+                    position: 'absolute',
+                    width: '1px',
+                    height: '1px',
+                    opacity: 0.01,
+                    top: 0,
+                    left: 0,
+                  }}
+                  aria-hidden="true"
+                  tabIndex={-1}
+                >
+                  <option value="no">{t('Off')}</option>
+                  <option value="track">{t('Track')}</option>
+                  <option value="album">{t('Album')}</option>
+                </select>
+                <StyledInputPickerContainer
+                  ref={mpvReplayGainPickerContainerRef}
+                  style={{ position: 'relative', height: 30, overflow: 'visible' }}
+                >
+                  <StyledInputPicker
+                    container={() => mpvReplayGainPickerContainerRef.current}
+                    size="sm"
+                    searchable={false}
+                    cleanable={false}
+                    value={config.playback.mpvReplayGain}
+                    data={[
+                      { label: t('Off'), value: 'no' },
+                      { label: t('Track'), value: 'track' },
+                      { label: t('Album'), value: 'album' },
+                    ]}
+                    onChange={(val: 'no' | 'track' | 'album') => handleSetMpvReplayGain(val)}
+                    style={{ width: 120 }}
+                  />
+                </StyledInputPickerContainer>
+              </div>
             }
           />
 
@@ -382,6 +424,7 @@ const PlaybackConfig = ({ bordered }: any) => {
               <StyledInputPickerContainer ref={crossfadePickerContainerRef}>
                 <StyledInputPicker
                   container={() => crossfadePickerContainerRef.current}
+                  searchable={false}
                   data={[
                     {
                       label: t('Equal Power'),
@@ -433,7 +476,6 @@ const PlaybackConfig = ({ bordered }: any) => {
             option={
               <StyledToggle
                 size="md"
-                defaultChecked={volumeFade}
                 checked={volumeFade}
                 disabled={crossfadeDuration === 0}
                 onChange={(e: boolean) => handleSetVolumeFade(e)}
@@ -481,6 +523,7 @@ const PlaybackConfig = ({ bordered }: any) => {
               <StyledInputPickerContainer ref={audioDevicePickerContainerRef}>
                 <StyledInputPicker
                   container={() => audioDevicePickerContainerRef.current}
+                  width={220}
                   data={audioDevices}
                   defaultValue={config.playback.audioDeviceId}
                   value={config.playback.audioDeviceId}

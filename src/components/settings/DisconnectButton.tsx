@@ -1,38 +1,54 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StyledButton } from '../shared/styled';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
+import { reloadPage } from '../../shared/navigation';
+import { clearCredentialCache } from '../../api/api';
 
-export const handleDisconnect = () => {
-  localStorage.removeItem('server');
-  localStorage.removeItem('username');
-  localStorage.removeItem('userId');
-  localStorage.removeItem('password');
-  localStorage.removeItem('salt');
-  localStorage.removeItem('hash');
-  localStorage.removeItem('token');
-
-  settings.set('server', '');
-  settings.set('serverBase64', '');
-  settings.set('username', '');
-  settings.set('userId', '');
-  settings.set('password', '');
-  settings.set('salt', '');
-  settings.set('hash', '');
-  settings.set('token', '');
-
-  // Remove the selected musicFolder on disconnect since it will cause conflicts with other servers
-  settings.set('musicFolder.id', null);
-  settings.set('musicFolder.name', null);
-  window.location.reload();
+// Only api.ts's cache is cleared directly here — jellyfinApi.ts imports
+// handleDisconnect below for its own 401 auto-disconnect, so importing its
+// clearCredentialCache back into this file would create a cycle. Not needed
+// anyway: reloadPage() below is a full window.location.reload(), which already
+// resets every module-level cache (including jellyfinApi.ts's) on its own —
+// the explicit clear here is just for the gap between disconnect and reload,
+// and jellyfinApi.ts's own 401 handler clears its own cache directly for that.
+export const handleDisconnect = async () => {
+  await settings.disconnect();
+  clearCredentialCache();
+  reloadPage();
 };
 
 const DisconnectButton = () => {
   const { t } = useTranslation();
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleClick = async () => {
+    if (isDisconnecting) return;
+    setIsDisconnecting(true);
+    setError('');
+    try {
+      await settings.disconnect();
+      clearCredentialCache();
+      reloadPage();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Failed to disconnect'));
+      setIsDisconnecting(false);
+    }
+  };
+
   return (
-    <StyledButton onClick={handleDisconnect} size="sm">
-      {t('Disconnect')}
-    </StyledButton>
+    <>
+      <StyledButton
+        data-testid="disconnect-button"
+        onClick={handleClick}
+        size="sm"
+        disabled={isDisconnecting}
+      >
+        {t('Disconnect')}
+      </StyledButton>
+      {error && <p role="alert">{error}</p>}
+    </>
   );
 };
 

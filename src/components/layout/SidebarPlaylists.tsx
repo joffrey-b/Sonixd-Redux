@@ -1,8 +1,8 @@
 import React from 'react';
-import { useQuery } from 'react-query';
-import { useHistory } from 'react-router-dom';
-import { AutoSizer } from 'react-virtualized';
-import { FixedSizeList as List } from 'react-window';
+import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
+import { List } from 'react-window';
 import styled from 'styled-components';
 import { apiController } from '../../api/controller';
 import { useAppSelector } from '../../redux/hooks';
@@ -17,27 +17,42 @@ const ListItemContainer = styled.div`
     white-space: nowrap;
     overflow: hidden;
     text-align: left;
-    color: ${(props) => props.theme.colors.layout.sideBar.button.color} !important;
+    color: var(--app-sidebar-btn) !important;
 
     &:hover {
-      color: ${(props) => props.theme.colors.layout.sideBar.button.colorHover} !important;
+      color: var(--app-sidebar-btn-hover) !important;
     }
 
     &:focus-visible {
-      color: ${(props) => props.theme.colors.layout.sideBar.button.colorHover} !important;
+      color: var(--app-sidebar-btn-hover) !important;
     }
   }
 `;
 
-const PlaylistRow = ({ data, index, style }: any) => {
-  const history = useHistory();
+type PlaylistEntry = { id: string; title: string };
+
+interface PlaylistRowExtraProps {
+  data: PlaylistEntry[];
+}
+
+const PlaylistRow = ({
+  ariaAttributes,
+  data,
+  index,
+  style,
+}: {
+  ariaAttributes: { 'aria-posinset': number; 'aria-setsize': number; role: 'listitem' };
+  index: number;
+  style: React.CSSProperties;
+} & PlaylistRowExtraProps) => {
+  const navigate = useNavigate();
 
   return (
-    <ListItemContainer style={style}>
+    <ListItemContainer style={style} {...ariaAttributes}>
       <StyledButton
         block
         appearance="subtle"
-        onClick={() => history.push(`/playlist/${data[index].id}`)}
+        onClick={() => navigate(`/playlist/${data[index].id}`)}
       >
         {data[index].title}
       </StyledButton>
@@ -45,33 +60,28 @@ const PlaylistRow = ({ data, index, style }: any) => {
   );
 };
 
-const SidebarPlaylists = ({ width }: any) => {
+const SidebarPlaylists = ({ width }: { width?: number }) => {
   const config = useAppSelector((state) => state.config);
 
-  const { isLoading, data: playlists }: any = useQuery(['playlists'], () =>
-    apiController({ serverType: config.serverType, endpoint: 'getPlaylists' })
-  );
+  const { isLoading, data: playlists } = useQuery({
+    queryKey: ['playlists'],
+    queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getPlaylists' }),
+  });
+
+  if (isLoading) return <CenterLoader absolute />;
 
   return (
-    <AutoSizer>
-      {({ height }: any) => (
-        <>
-          {isLoading ? (
-            <CenterLoader absolute />
-          ) : (
-            <List
-              height={height - 25}
-              itemCount={playlists?.length}
-              itemSize={25}
-              width={width}
-              itemData={playlists}
-            >
-              {PlaylistRow}
-            </List>
-          )}
-        </>
+    <AutoSizer
+      renderProp={({ height }) => (
+        <List<PlaylistRowExtraProps>
+          rowCount={playlists?.length ?? 0}
+          rowHeight={35}
+          rowProps={{ data: playlists ?? [] }}
+          rowComponent={PlaylistRow}
+          style={{ height: (height ?? 0) - 25, width }}
+        />
       )}
-    </AutoSizer>
+    />
   );
 };
 

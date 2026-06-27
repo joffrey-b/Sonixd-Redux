@@ -1,0 +1,8 @@
+#EXTM3U
+#PLAYLIST:Imported Mix
+#EXTINF:62,Test Artist - Test Track 01
+/music/Test Artist/Test Album/track-01.flac
+#EXTINF:62,Solo Artist - Solo Track
+/music/Solo Artist/Solo Album/track-04.flac
+#EXTINF:62,Jazz Artist - Jazz Track
+/music/Jazz Artist/Jazz Album/track-05.flac

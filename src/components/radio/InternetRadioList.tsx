@@ -1,17 +1,18 @@
 import React from 'react';
-import { shell } from 'electron';
-import { useQuery } from 'react-query';
-import { ButtonToolbar, FlexboxGrid, Icon } from 'rsuite';
+import { shell } from '../shared/bridge';
+import { useQuery } from '@tanstack/react-query';
+import { ButtonToolbar, FlexboxGrid } from 'rsuite';
+import PlayIcon from '@rsuite/icons/legacy/Play';
 import { useTranslation } from 'react-i18next';
 import { useAppSelector } from '../../redux/hooks';
 import { apiController } from '../../api/controller';
-import { StyledButton } from '../shared/styled';
+import { StyledIconButton } from '../shared/styled';
 import GenericPage from '../layout/GenericPage';
 import GenericPageHeader from '../layout/GenericPageHeader';
 import CenterLoader from '../loader/CenterLoader';
 import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
 import { notifyToast } from '../shared/toast';
-import { Play } from '../../types';
+import { Item, Play } from '../../types';
 
 interface RadioStation {
   id: string;
@@ -23,12 +24,15 @@ interface RadioStation {
 const InternetRadioList = () => {
   const { t } = useTranslation();
   const config = useAppSelector((state) => state.config);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- jukebox slice is optional and not part of RootState; checked defensively at runtime
   const isJukebox = useAppSelector((state: any) => state.jukebox?.enabled ?? false);
   const { handlePlayQueueAdd } = usePlayQueueHandler();
 
-  const { isLoading, data: stations } = useQuery(['internetRadioStations'], () =>
-    apiController({ serverType: config.serverType, endpoint: 'getInternetRadioStations' })
-  );
+  const { isLoading, data: stations } = useQuery({
+    queryKey: ['internetRadioStations'],
+    queryFn: () =>
+      apiController({ serverType: config.serverType, endpoint: 'getInternetRadioStations' }),
+  });
 
   const handlePlay = (station: RadioStation) => {
     if (isJukebox) {
@@ -48,7 +52,7 @@ const InternetRadioList = () => {
           created: '',
           streamUrl: station.streamUrl,
           image: 'img/placeholder.png',
-          type: 'music' as any,
+          type: Item.Music,
           uniqueId: station.id,
           isRadio: true,
         },
@@ -85,7 +89,11 @@ const InternetRadioList = () => {
                   <div style={{ fontSize: 12, opacity: 0.55, marginTop: 2 }}>
                     <button
                       type="button"
-                      onClick={() => shell.openExternal(station.homePageUrl!)}
+                      onClick={() => {
+                        if (station.homePageUrl && /^https?:\/\//i.test(station.homePageUrl)) {
+                          shell.openExternal(station.homePageUrl);
+                        }
+                      }}
                       style={{
                         background: 'none',
                         border: 'none',
@@ -104,9 +112,14 @@ const InternetRadioList = () => {
               </FlexboxGrid.Item>
               <FlexboxGrid.Item>
                 <ButtonToolbar>
-                  <StyledButton appearance="primary" size="sm" onClick={() => handlePlay(station)}>
-                    <Icon icon="play" />
-                  </StyledButton>
+                  <StyledIconButton
+                    data-testid="radio-play-button"
+                    icon={<PlayIcon />}
+                    appearance="primary"
+                    size="sm"
+                    circle
+                    onClick={() => handlePlay(station)}
+                  />
                 </ButtonToolbar>
               </FlexboxGrid.Item>
             </FlexboxGrid>

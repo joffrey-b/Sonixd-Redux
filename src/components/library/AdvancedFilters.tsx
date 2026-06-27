@@ -1,10 +1,28 @@
 import _ from 'lodash';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ButtonToolbar, ControlLabel, Divider, FlexboxGrid, RadioGroup } from 'rsuite';
+import { ButtonToolbar, Divider, FlexboxGrid, Form, RadioGroup } from 'rsuite';
 import styled from 'styled-components';
 import { useAppDispatch } from '../../redux/hooks';
-import { Item } from '../../types';
+import { Item, Album } from '../../types';
+import { setAdvancedFilters as setAdvancedFiltersCreator } from '../../redux/viewSlice';
+import type { AdvancedFilters as AdvancedFiltersState } from '../../redux/viewSlice';
+type SetAdvancedFilters = typeof setAdvancedFiltersCreator;
+
+interface FilteredData {
+  filteredData: Album[];
+  byArtistData: Album[];
+  byArtistBaseData: Album[];
+  byGenreData: Album[];
+  byStarredData: Album[];
+  byYearData: Album[];
+}
+
+interface TagSummary {
+  id: string;
+  title: string;
+  count: number;
+}
 import {
   StyledButton,
   StyledCheckbox,
@@ -21,15 +39,25 @@ export const FilterHeader = styled.div`
   line-height: unset;
 `;
 
-const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilters }: any) => {
+const AdvancedFilters = ({
+  filteredData,
+  originalData,
+  filter,
+  setAdvancedFilters,
+}: {
+  filteredData: FilteredData;
+  originalData: Album[];
+  filter: AdvancedFiltersState;
+  setAdvancedFilters: SetAdvancedFilters;
+}) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const [availableGenres, setAvailableGenres] = useState<any[]>([]);
-  const [availableArtists, setAvailableArtists] = useState<any[]>([]);
-  const [genreListData, setGenreListData] = useState<any[]>([]);
-  const [artistListData, setArtistListData] = useState<any[]>([]);
-  const genreFilterPickerContainerRef = useRef<any>();
-  const artistFilterPickerContainerRef = useRef<any>();
+  const [availableGenres, setAvailableGenres] = useState<TagSummary[]>([]);
+  const [availableArtists, setAvailableArtists] = useState<TagSummary[]>([]);
+  const [genreListData, setGenreListData] = useState<Album[]>([]);
+  const [artistListData, setArtistListData] = useState<Album[]>([]);
+  const genreFilterPickerContainerRef = useRef<HTMLDivElement | null>(null);
+  const artistFilterPickerContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Filter flow from TOP to BOTTOM (see useAdvancedFilter hook)
   // 1. byStarredData
@@ -99,10 +127,10 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
   ]);
 
   useEffect(() => {
-    const allGenres = _.flatten(_.map(genreListData, 'genre'));
+    const allGenres = _.compact(_.flatten(_.map(genreListData, 'genre')));
     const counts = _.countBy(allGenres, 'title');
     const uniqueGenres = _.orderBy(_.uniqBy(allGenres, 'title'), [
-      (entry: any) => {
+      (entry) => {
         return typeof entry.title === 'string'
           ? entry.title.toLowerCase() || ''
           : +entry.title || '';
@@ -121,10 +149,10 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
   }, [genreListData]);
 
   useEffect(() => {
-    const allArtists = _.flatten(_.map(artistListData, 'artist'));
+    const allArtists = _.compact(_.flatten(_.map(artistListData, 'artist')));
     const counts = _.countBy(allArtists, 'id');
     const uniqueArtists = _.orderBy(_.uniqBy(allArtists, 'id'), [
-      (entry: any) => {
+      (entry) => {
         return typeof entry.title === 'string'
           ? entry.title.toLowerCase() || ''
           : +entry.title || '';
@@ -149,6 +177,7 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
           <FlexboxGrid.Item>Filters</FlexboxGrid.Item>
           <FlexboxGrid.Item>
             <StyledToggle
+              data-testid="album-filter-enabled-toggle"
               size="md"
               checkedChildren="On"
               unCheckedChildren="Off"
@@ -164,7 +193,7 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
       <StyledCheckbox
         defaultChecked={filter.properties.starred}
         checked={filter.properties.starred}
-        onChange={(_v: any, e: boolean) => {
+        onChange={(_v: unknown, e: boolean) => {
           dispatch(
             setAdvancedFilters({
               listType: Item.Album,
@@ -174,12 +203,12 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
           );
         }}
       >
-        Is favorite
+        {t('Is favorite')}
       </StyledCheckbox>
       <StyledCheckbox
         defaultChecked={filter.properties.notStarred}
         checked={filter.properties.notStarred}
-        onChange={(_v: any, e: boolean) => {
+        onChange={(_v: unknown, e: boolean) => {
           dispatch(
             setAdvancedFilters({
               listType: Item.Album,
@@ -189,14 +218,15 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
           );
         }}
       >
-        Is not favorite
+        {t('Is not favorite')}
       </StyledCheckbox>
       <Divider />
       <FilterHeader>
         <FlexboxGrid justify="space-between">
-          <FlexboxGrid.Item>Genres</FlexboxGrid.Item>
+          <FlexboxGrid.Item>{t('Genres')}</FlexboxGrid.Item>
           <FlexboxGrid.Item>
             <StyledButton
+              data-testid="album-filter-genre-reset-button"
               size="xs"
               appearance={filter.properties.genre.list.length > 0 ? 'primary' : 'subtle'}
               disabled={filter.properties.genre.list.length === 0}
@@ -218,68 +248,111 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
       <RadioGroup
         inline
         defaultValue={filter.properties.genre.type}
-        onChange={(e: string) => {
+        onChange={(e) => {
           dispatch(
             setAdvancedFilters({
               listType: Item.Album,
               filter: 'genre',
-              value: { ...filter.properties.genre, type: e },
+              value: { ...filter.properties.genre, type: e as string },
             })
           );
         }}
       >
-        <StyledRadio value="and">AND</StyledRadio>
-        <StyledRadio value="or">OR</StyledRadio>
+        <StyledRadio value="and">{t('AND')}</StyledRadio>
+        <StyledRadio value="or">{t('OR')}</StyledRadio>
       </RadioGroup>
-      <StyledInputPickerContainer ref={genreFilterPickerContainerRef}>
-        <ButtonToolbar>
-          <StyledCheckPicker
-            container={() => genreFilterPickerContainerRef.current}
-            data={_.concat(
-              availableGenres,
-              _.compact(
-                filter.properties.genre.list.map((genre: any) => {
-                  if (!_.includes(_.map(availableGenres, 'title'), genre)) {
-                    return { title: genre };
-                  }
+      <div style={{ position: 'relative' }}>
+        {/* Hidden native multi-select — same e2e-testability workaround as
+            player-backend-select in PlaybackConfig.tsx, extended to a
+            multi-select since this is a CheckPicker (checkbox list), not a
+            single-value picker. Wrapped together with the picker container
+            in this shared relatively-positioned parent so the select's
+            absolute positioning actually resolves against it (it's hidden
+            either way, but a sibling-only position:relative on just the
+            picker container wouldn't establish that context). */}
+        <select
+          data-testid="album-filter-genre-select"
+          multiple
+          value={filter.properties.genre.list}
+          onChange={(e) => {
+            const selected = Array.from(e.target.selectedOptions).map((o) => o.value);
+            dispatch(
+              setAdvancedFilters({
+                listType: Item.Album,
+                filter: 'genre',
+                value: { ...filter.properties.genre, list: selected },
+              })
+            );
+          }}
+          style={{
+            position: 'absolute',
+            width: '1px',
+            height: '1px',
+            opacity: 0.01,
+            top: 0,
+            left: 0,
+          }}
+          aria-hidden="true"
+          tabIndex={-1}
+        >
+          {availableGenres.map((g) => (
+            <option key={g.title} value={g.title}>
+              {g.title}
+            </option>
+          ))}
+        </select>
+        <StyledInputPickerContainer ref={genreFilterPickerContainerRef}>
+          <ButtonToolbar>
+            <StyledCheckPicker
+              container={() => genreFilterPickerContainerRef.current as HTMLElement}
+              data={_.concat(
+                availableGenres,
+                _.compact(
+                  (filter.properties.genre.list as string[]).map((genre) => {
+                    if (!_.includes(_.map(availableGenres, 'title'), genre)) {
+                      return { title: genre };
+                    }
 
-                  return undefined;
-                })
-              )
-            )}
-            value={filter.properties.genre.list}
-            labelKey="title"
-            valueKey="title"
-            virtualized
-            cleanable={false}
-            onEntered={() => {
-              (document.querySelectorAll('.rs-picker-search-bar-input')[0] as HTMLElement).focus();
-            }}
-            renderMenuItem={(label: string, item: any) => {
-              return (
-                <div>
-                  {label} ({item.count || 0})
-                </div>
-              );
-            }}
-            sticky
-            style={{ width: '250px' }}
-            onChange={(e: string[]) => {
-              dispatch(
-                setAdvancedFilters({
-                  listType: Item.Album,
-                  filter: 'genre',
-                  value: { ...filter.properties.genre, list: e },
-                })
-              );
-            }}
-          />
-        </ButtonToolbar>
-      </StyledInputPickerContainer>
+                    return undefined;
+                  })
+                )
+              )}
+              value={filter.properties.genre.list}
+              labelKey="title"
+              valueKey="title"
+              virtualized
+              cleanable={false}
+              onEntered={() => {
+                (
+                  document.querySelectorAll('.rs-picker-search-bar-input')[0] as HTMLElement
+                ).focus();
+              }}
+              renderMenuItem={(label: React.ReactNode, item: { count?: number }) => {
+                return (
+                  <div>
+                    {label} ({item.count || 0})
+                  </div>
+                );
+              }}
+              sticky
+              style={{ width: '250px' }}
+              onChange={(e) => {
+                dispatch(
+                  setAdvancedFilters({
+                    listType: Item.Album,
+                    filter: 'genre',
+                    value: { ...filter.properties.genre, list: e as string[] },
+                  })
+                );
+              }}
+            />
+          </ButtonToolbar>
+        </StyledInputPickerContainer>
+      </div>
       <Divider />
       <FilterHeader>
         <FlexboxGrid justify="space-between">
-          <FlexboxGrid.Item>Artists</FlexboxGrid.Item>
+          <FlexboxGrid.Item>{t('Artists')}</FlexboxGrid.Item>
           <FlexboxGrid.Item>
             <StyledButton
               size="xs"
@@ -303,27 +376,27 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
       <RadioGroup
         inline
         defaultValue={filter.properties.artist.type}
-        onChange={(e: string) => {
+        onChange={(e) => {
           dispatch(
             setAdvancedFilters({
               listType: Item.Album,
               filter: 'artist',
-              value: { ...filter.properties.artist, type: e },
+              value: { ...filter.properties.artist, type: e as string },
             })
           );
         }}
       >
-        <StyledRadio value="and">AND</StyledRadio>
-        <StyledRadio value="or">OR</StyledRadio>
+        <StyledRadio value="and">{t('AND')}</StyledRadio>
+        <StyledRadio value="or">{t('OR')}</StyledRadio>
       </RadioGroup>
       <StyledInputPickerContainer ref={artistFilterPickerContainerRef}>
         <ButtonToolbar>
           <StyledCheckPicker
-            container={() => artistFilterPickerContainerRef.current}
+            container={() => artistFilterPickerContainerRef.current as HTMLElement}
             data={_.concat(
               availableArtists,
               _.compact(
-                filter.properties.artist.list.map((artistId: any) => {
+                (filter.properties.artist.list as string[]).map((artistId) => {
                   if (!_.includes(_.map(availableArtists, 'id'), artistId)) {
                     return { title: artistId, id: artistId };
                   }
@@ -340,7 +413,7 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
             onEntered={() => {
               (document.querySelectorAll('.rs-picker-search-bar-input')[0] as HTMLElement).focus();
             }}
-            renderMenuItem={(label: string, item: any) => {
+            renderMenuItem={(label: React.ReactNode, item: { count?: number }) => {
               return (
                 <div>
                   {label} ({item.count || 0})
@@ -349,12 +422,12 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
             }}
             sticky
             style={{ width: '250px' }}
-            onChange={(e: string[]) => {
+            onChange={(e) => {
               dispatch(
                 setAdvancedFilters({
                   listType: Item.Album,
                   filter: 'artist',
-                  value: { ...filter.properties.artist, list: e },
+                  value: { ...filter.properties.artist, list: e as string[] },
                 })
               );
             }}
@@ -391,9 +464,10 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
       </FilterHeader>
       <FlexboxGrid justify="space-between">
         <FlexboxGrid.Item>
-          <ControlLabel>{t('From')}</ControlLabel>
+          <Form.ControlLabel>{t('From')}</Form.ControlLabel>
           <StyledInputNumber
-            width={100}
+            data-testid="album-filter-year-from"
+            $width={100}
             min={0}
             max={3000}
             step={1}
@@ -411,9 +485,10 @@ const AdvancedFilters = ({ filteredData, originalData, filter, setAdvancedFilter
           />
         </FlexboxGrid.Item>
         <FlexboxGrid.Item>
-          <ControlLabel>{t('To')}</ControlLabel>
+          <Form.ControlLabel>{t('To')}</Form.ControlLabel>
           <StyledInputNumber
-            width={100}
+            data-testid="album-filter-year-to"
+            $width={100}
             min={0}
             max={3000}
             step={1}

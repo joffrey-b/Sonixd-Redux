@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { useQuery } from 'react-query';
+import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
-import { shell } from 'electron';
 import { Whisper, Nav, ButtonToolbar } from 'rsuite';
 import { useTranslation } from 'react-i18next';
 import GenericPage from '../layout/GenericPage';
 import DisconnectButton from './DisconnectButton';
 import GenericPageHeader from '../layout/GenericPageHeader';
-import { setDefaultSettings } from '../shared/setDefaultSettings';
+import { setDefaultSettings, shell } from '../shared/bridge';
 import { StyledButton, StyledNavItem } from '../shared/styled';
 import PlaybackConfig from './ConfigPanels/PlaybackConfig';
 import LookAndFeelConfig from './ConfigPanels/LookAndFeelConfig';
@@ -37,17 +36,15 @@ const Config = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
 
-  const { data: latestRelease } = useQuery(
-    ['github'],
-    async () => {
+  const { data: latestRelease } = useQuery({
+    queryKey: ['github'],
+    queryFn: async () => {
       const releases = await axios.get(GITHUB_RELEASE_URL);
       return releases?.data[0]?.name;
     },
-    {
-      staleTime: 60 * 60 * 1000, // Only fetch the latest release once per hour
-      initialData: packageJson.version,
-    }
-  );
+    staleTime: 60 * 60 * 1000, // Only fetch the latest release once per hour
+    initialData: packageJson.version,
+  });
 
   useEffect(() => {
     // Check scan status on render
@@ -59,7 +56,8 @@ const Config = () => {
         setIsScanning(false);
         return setScanProgress(0);
       })
-      .catch((err) => console.log(err));
+      // eslint-disable-next-line no-console
+      .catch((err) => console.error(err));
   }, [config.serverType]);
 
   useEffect(() => {
@@ -74,7 +72,8 @@ const Config = () => {
             setIsScanning(false);
             return setScanProgress(0);
           })
-          .catch((err) => console.log(err));
+          // eslint-disable-next-line no-console
+          .catch((err) => console.error(err));
       }, 1000);
 
       return () => clearInterval(interval);
@@ -82,13 +81,12 @@ const Config = () => {
     return undefined;
   }, [config.serverType, isScanning]);
 
-  const isLatestRelease = packageJson.version === latestRelease;
+  const isLatestRelease = packageJson.version === latestRelease?.replace(/^v/, '');
 
   return (
     <GenericPage
       padding="20px"
       hideDivider
-      id="settings"
       header={
         <GenericPageHeader
           title={t('Configuration')}
@@ -100,7 +98,8 @@ const Config = () => {
               >
                 <StyledNavItem
                   eventKey="playback"
-                  onKeyDown={(e: any) => {
+                  data-testid="settings-playback"
+                  onKeyDown={(e: React.KeyboardEvent) => {
                     if (e.key === ' ' || e.key === 'Enter') {
                       e.preventDefault();
                       dispatch(setActive({ ...config.active, tab: 'playback' }));
@@ -111,7 +110,8 @@ const Config = () => {
                 </StyledNavItem>
                 <StyledNavItem
                   eventKey="equalizer"
-                  onKeyDown={(e: any) => {
+                  data-testid="settings-equalizer"
+                  onKeyDown={(e: React.KeyboardEvent) => {
                     if (e.key === ' ' || e.key === 'Enter') {
                       e.preventDefault();
                       dispatch(setActive({ ...config.active, tab: 'equalizer' }));
@@ -122,7 +122,8 @@ const Config = () => {
                 </StyledNavItem>
                 <StyledNavItem
                   eventKey="lookandfeel"
-                  onKeyDown={(e: any) => {
+                  data-testid="settings-lookandfeel"
+                  onKeyDown={(e: React.KeyboardEvent) => {
                     if (e.key === ' ' || e.key === 'Enter') {
                       e.preventDefault();
                       dispatch(setActive({ ...config.active, tab: 'lookandfeel' }));
@@ -132,8 +133,9 @@ const Config = () => {
                   {t('Look & Feel')}
                 </StyledNavItem>
                 <StyledNavItem
+                  data-testid="settings-shortcuts"
                   eventKey="shortcuts"
-                  onKeyDown={(e: any) => {
+                  onKeyDown={(e: React.KeyboardEvent) => {
                     if (e.key === ' ' || e.key === 'Enter') {
                       e.preventDefault();
                       dispatch(setActive({ ...config.active, tab: 'shortcuts' }));
@@ -144,7 +146,8 @@ const Config = () => {
                 </StyledNavItem>
                 <StyledNavItem
                   eventKey="system"
-                  onKeyDown={(e: any) => {
+                  data-testid="settings-cache"
+                  onKeyDown={(e: React.KeyboardEvent) => {
                     if (e.key === ' ' || e.key === 'Enter') {
                       e.preventDefault();
                       dispatch(setActive({ ...config.active, tab: 'system' }));
@@ -155,7 +158,7 @@ const Config = () => {
                 </StyledNavItem>
                 <StyledNavItem
                   eventKey="integrations"
-                  onKeyDown={(e: any) => {
+                  onKeyDown={(e: React.KeyboardEvent) => {
                     if (e.key === ' ' || e.key === 'Enter') {
                       e.preventDefault();
                       dispatch(setActive({ ...config.active, tab: 'integrations' }));
@@ -196,6 +199,7 @@ const Config = () => {
                     <div>
                       <StyledButton
                         id="reset-submit-button"
+                        data-testid="reset-defaults-confirm-button"
                         size="sm"
                         onClick={() => {
                           setDefaultSettings(true);
@@ -209,7 +213,9 @@ const Config = () => {
                   </Popup>
                 }
               >
-                <StyledButton size="sm">{t('Reset defaults')}</StyledButton>
+                <StyledButton data-testid="reset-defaults-button" size="sm">
+                  {t('Reset defaults')}
+                </StyledButton>
               </Whisper>
               <Whisper
                 trigger="hover"
@@ -218,39 +224,41 @@ const Config = () => {
                 preventOverflow
                 speaker={
                   <Popup>
-                    <>
-                      {t('Current version:')} {packageJson.version}
-                      <br />
-                      {t('Latest version:')} {latestRelease}
-                      <br />
-                      Node: {process.versions.node}
-                      <br />
-                      Chrome: {process.versions.chrome}
-                      <br />
-                      Electron: {process.versions.electron}
-                      <StyledButton
-                        size="xs"
-                        block
-                        appearance="primary"
-                        onClick={() =>
-                          shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux')
-                        }
-                      >
-                        {t('View on GitHub')}
-                      </StyledButton>
-                      <StyledButton
-                        size="xs"
-                        block
-                        appearance="primary"
-                        onClick={() =>
-                          shell.openExternal(
-                            'https://github.com/joffrey-b/Sonixd-Redux/blob/main/CHANGELOG.md'
-                          )
-                        }
-                      >
-                        {t('View CHANGELOG')}
-                      </StyledButton>
-                    </>
+                    <div style={{ padding: '4px 2px', minWidth: 200 }}>
+                      <div style={{ marginBottom: 8, lineHeight: 1.6 }}>
+                        <div>
+                          {t('Current version:')} {packageJson.version}
+                        </div>
+                        <div>
+                          {t('Latest version:')} {latestRelease}
+                        </div>
+                        <div>Node: {process.versions.node}</div>
+                        <div>Chrome: {process.versions.chrome}</div>
+                        <div>Electron: {process.versions.electron}</div>
+                      </div>
+                      <ButtonToolbar>
+                        <StyledButton
+                          size="xs"
+                          appearance="primary"
+                          onClick={() =>
+                            shell.openExternal('https://github.com/joffrey-b/Sonixd-Redux')
+                          }
+                        >
+                          {t('View on GitHub')}
+                        </StyledButton>
+                        <StyledButton
+                          size="xs"
+                          appearance="primary"
+                          onClick={() =>
+                            shell.openExternal(
+                              'https://github.com/joffrey-b/Sonixd-Redux/blob/main/CHANGELOG.md'
+                            )
+                          }
+                        >
+                          {t('View CHANGELOG')}
+                        </StyledButton>
+                      </ButtonToolbar>
+                    </div>
                   </Popup>
                 }
               >
@@ -263,7 +271,7 @@ const Config = () => {
         />
       }
     >
-      {(config.active.tab === 'playback' || '') && (
+      {config.active.tab === 'playback' && (
         <>
           <PlaybackConfig bordered />
           <PlayerConfig bordered />

@@ -1,15 +1,17 @@
-/* eslint-disable jsx-a11y/no-static-element-interactions */
-/* eslint-disable jsx-a11y/click-events-have-key-events */
-/* eslint-disable react/no-array-index-key */
 import _ from 'lodash';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import styled from 'styled-components';
 import { useTranslation } from 'react-i18next';
-import { useInfiniteQuery, useQueryClient } from 'react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { useHistory } from 'react-router-dom';
-import { ButtonGroup, Icon, Loader, Whisper } from 'rsuite';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { ButtonGroup, Loader, Whisper } from 'rsuite';
+import CloseIcon from '@rsuite/icons/legacy/Close';
+import MinusSquareOIcon from '@rsuite/icons/legacy/MinusSquareO';
+import PlusSquareOIcon from '@rsuite/icons/legacy/PlusSquareO';
+import SearchIcon from '@rsuite/icons/legacy/Search';
+import ThumbTackIcon from '@rsuite/icons/legacy/ThumbTack';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { setSearchQuery } from '../../redux/miscSlice';
 import { apiController } from '../../api/controller';
@@ -20,7 +22,14 @@ import {
   StyledInputGroup,
   StyledInputGroupButton,
 } from '../shared/styled';
-import { Item, Song, Play } from '../../types';
+import { Album, Artist, Item, Song, Play } from '../../types';
+import type { WhisperInstance } from 'rsuite/Whisper';
+
+interface SearchPage {
+  song: { data: Song[]; nextCursor: number | undefined };
+  album: { data: Album[]; nextCursor: number | undefined };
+  artist: { data: Artist[]; nextCursor: number | undefined };
+}
 import Popup from '../shared/Popup';
 import { PlayAppendButton, PlayAppendNextButton, PlayButton } from '../shared/ToolbarButtons';
 import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
@@ -47,6 +56,7 @@ const SearchContainer = styled.div`
   .search-options {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     width: 100%;
 
     .rs-checkbox {
@@ -56,11 +66,12 @@ const SearchContainer = styled.div`
 `;
 
 const SectionTitle = styled.div`
-  background: rgba(50, 50, 50, 0.3);
+  background: var(--rs-bg-subtle);
   display: flex;
   justify-content: space-between;
   user-select: none;
   z-index: 50;
+  margin-top: 4px;
 
   .rs-btn {
     font-size: 14px;
@@ -74,8 +85,8 @@ const SectionTitle = styled.div`
   }
 `;
 
-const SectionResults = styled.div<{ show: boolean }>`
-  display: ${(props) => (props.show ? 'block' : 'none')};
+const SectionResults = styled.div<{ $show: boolean }>`
+  display: ${(props) => (props.$show ? 'block' : 'none')};
 
   .rs-btn {
     text-align: center;
@@ -92,7 +103,7 @@ const SearchResultContainer = styled.div`
 
   &:hover {
     cursor: pointer;
-    background-color: ${(props) => props.theme.colors.table.selectedRow} !important;
+    background-color: var(--app-selected-row) !important;
 
     .search-result-details {
       padding-right: 110px;
@@ -159,10 +170,36 @@ const SearchResultContainer = styled.div`
   }
 `;
 
-const SearchResult = ({ entry, handleClick, title, details, handlePlay }: any) => {
+interface PlayQueueAddOptions {
+  byData?: Song[];
+  byItemType?: { item: Item; id: string };
+  play: Play;
+}
+
+const SearchResult = ({
+  entry,
+  handleClick,
+  title,
+  details,
+  handlePlay,
+}: {
+  entry: Song | Album | Artist;
+  handleClick: (entry: Song | Album | Artist) => void;
+  title: React.ReactNode;
+  details: React.ReactNode;
+  handlePlay: (options: PlayQueueAddOptions) => void;
+}) => {
   return (
     <SearchResultContainer>
-      <div className="search-result" onClick={() => handleClick(entry)}>
+      <div
+        className="search-result"
+        role="button"
+        tabIndex={0}
+        onClick={() => handleClick(entry)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') handleClick(entry);
+        }}
+      >
         <div className="search-result-details">
           <div className="search-result-details-top">{title}</div>
           <div className="search-result-details-bottom">{details}</div>
@@ -178,8 +215,8 @@ const SearchResult = ({ entry, handleClick, title, details, handlePlay }: any) =
             appearance="subtle"
             onClick={() => {
               if (entry.type === Item.Music) {
-                handlePlay({ byData: [entry], play: Play.Play });
-              } else {
+                handlePlay({ byData: [entry as Song], play: Play.Play });
+              } else if (entry.type) {
                 handlePlay({ byItemType: { item: entry.type, id: entry.id }, play: Play.Play });
               }
             }}
@@ -189,8 +226,8 @@ const SearchResult = ({ entry, handleClick, title, details, handlePlay }: any) =
             appearance="subtle"
             onClick={() => {
               if (entry.type === Item.Music) {
-                handlePlay({ byData: [entry], play: Play.Next });
-              } else {
+                handlePlay({ byData: [entry as Song], play: Play.Next });
+              } else if (entry.type) {
                 handlePlay({ byItemType: { item: entry.type, id: entry.id }, play: Play.Next });
               }
             }}
@@ -200,8 +237,8 @@ const SearchResult = ({ entry, handleClick, title, details, handlePlay }: any) =
             appearance="subtle"
             onClick={() => {
               if (entry.type === Item.Music) {
-                handlePlay({ byData: [entry], play: Play.Later });
-              } else {
+                handlePlay({ byData: [entry as Song], play: Play.Later });
+              } else if (entry.type) {
                 handlePlay({ byItemType: { item: entry.type, id: entry.id }, play: Play.Later });
               }
             }}
@@ -215,16 +252,20 @@ const SearchResult = ({ entry, handleClick, title, details, handlePlay }: any) =
 const SearchBar = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const history = useHistory();
+  const navigate = useNavigate();
+  const location = useLocation();
   const config = useAppSelector((state) => state.config);
   const folder = useAppSelector((state) => state.folder);
   const queryClient = useQueryClient();
-  const searchPopupRef = useRef<any>(null);
-  const searchInputRef = useRef<any>(null);
+  const searchPopupRef = useRef<WhisperInstance | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [openSearch, setOpenSearch] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const [musicFolder, setMusicFolder] = useState({ loaded: false, id: undefined });
+  const [musicFolder, setMusicFolder] = useState<{ loaded: boolean; id: string | undefined }>({
+    loaded: false,
+    id: undefined,
+  });
   const [searchOptions, setSearchOptions] = useState<{
     global: boolean;
     local: boolean;
@@ -238,8 +279,8 @@ const SearchBar = () => {
     )
   );
 
-  useHotkeys(config.hotkeys.search, () => {
-    if (history.location?.pathname?.match('/search')) {
+  useHotkeys(config.hotkeys.search ?? '', () => {
+    if (location?.pathname?.match('/search')) {
       setTimeout(() => {
         const searchInputBar = document.getElementById('local-search-input') as HTMLInputElement;
         searchInputBar?.focus();
@@ -282,22 +323,28 @@ const SearchBar = () => {
 
   useEffect(() => {
     if (openSearch) {
-      searchPopupRef!.current!.open();
+      searchPopupRef.current?.open();
     } else {
-      searchPopupRef!.current!.close();
+      searchPopupRef.current?.close();
     }
   }, [openSearch]);
 
   const closeSearch = () => {
     setDebouncedSearchQuery('');
     dispatch(setSearchQuery('')); // Handles the search query sent for local page search
-    queryClient.removeQueries(['search']); // Retrieve fresh data on search bar open
+    queryClient.removeQueries({ queryKey: ['search'] }); // Retrieve fresh data on search bar open
     setOpenSearch(false);
   };
+
+  const [pinned, setPinned] = useState(() => localStorage.getItem('searchPinned') === 'true');
 
   useEffect(() => {
     localStorage.setItem('search', JSON.stringify(searchOptions));
   }, [searchOptions]);
+
+  useEffect(() => {
+    localStorage.setItem('searchPinned', String(pinned));
+  }, [pinned]);
 
   const {
     data: songResults,
@@ -306,9 +353,9 @@ const SearchBar = () => {
     fetchNextPage: fetchNextSongPage,
     isFetchingNextPage: isFetchingNextSongPage,
     hasNextPage: hasNextSongPage,
-  }: any = useInfiniteQuery(
-    ['search', debouncedSearchQuery, { type: Item.Music, count: 3 }, musicFolder.id],
-    ({ pageParam = 0 }) =>
+  } = useInfiniteQuery<SearchPage, Error>({
+    queryKey: ['search', debouncedSearchQuery, { type: Item.Music, count: 3 }, musicFolder.id],
+    queryFn: ({ pageParam }) =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getSearch',
@@ -321,12 +368,11 @@ const SearchBar = () => {
           musicFolderId: musicFolder.id,
         },
       }),
-    {
-      enabled: debouncedSearchQuery !== '' && searchOptions.global && musicFolder.loaded,
-      getNextPageParam: (lastPage) => lastPage.song.nextCursor,
-      staleTime: 5 * 60 * 1000,
-    }
-  );
+    initialPageParam: 0,
+    enabled: debouncedSearchQuery !== '' && searchOptions.global && musicFolder.loaded,
+    getNextPageParam: (lastPage) => lastPage.song.nextCursor,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const {
     data: albumResults,
@@ -335,9 +381,9 @@ const SearchBar = () => {
     fetchNextPage: fetchNextAlbumPage,
     isFetchingNextPage: isFetchingNextAlbumPage,
     hasNextPage: hasNextAlbumPage,
-  }: any = useInfiniteQuery(
-    ['search', debouncedSearchQuery, { type: Item.Album, count: 3 }, musicFolder.id],
-    ({ pageParam = 0 }) =>
+  } = useInfiniteQuery<SearchPage, Error>({
+    queryKey: ['search', debouncedSearchQuery, { type: Item.Album, count: 3 }, musicFolder.id],
+    queryFn: ({ pageParam }) =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getSearch',
@@ -350,12 +396,11 @@ const SearchBar = () => {
           musicFolderId: musicFolder.id,
         },
       }),
-    {
-      enabled: debouncedSearchQuery !== '' && searchOptions.global && musicFolder.loaded,
-      getNextPageParam: (lastPage) => lastPage.album.nextCursor,
-      staleTime: 5 * 60 * 1000,
-    }
-  );
+    initialPageParam: 0,
+    enabled: debouncedSearchQuery !== '' && searchOptions.global && musicFolder.loaded,
+    getNextPageParam: (lastPage) => lastPage.album.nextCursor,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const {
     data: artistResults,
@@ -364,9 +409,9 @@ const SearchBar = () => {
     fetchNextPage: fetchNextArtistPage,
     isFetchingNextPage: isFetchingNextArtistPage,
     hasNextPage: hasNextArtistPage,
-  }: any = useInfiniteQuery(
-    ['search', debouncedSearchQuery, { type: Item.Artist, count: 3 }, musicFolder.id],
-    ({ pageParam = 0 }) =>
+  } = useInfiniteQuery<SearchPage, Error>({
+    queryKey: ['search', debouncedSearchQuery, { type: Item.Artist, count: 3 }, musicFolder.id],
+    queryFn: ({ pageParam }) =>
       apiController({
         serverType: config.serverType,
         endpoint: 'getSearch',
@@ -379,12 +424,11 @@ const SearchBar = () => {
           musicFolderId: musicFolder.id,
         },
       }),
-    {
-      enabled: debouncedSearchQuery !== '' && searchOptions.global && musicFolder.loaded,
-      getNextPageParam: (lastPage) => lastPage.artist.nextCursor,
-      staleTime: 5 * 60 * 1000,
-    }
-  );
+    initialPageParam: 0,
+    enabled: debouncedSearchQuery !== '' && searchOptions.global && musicFolder.loaded,
+    getNextPageParam: (lastPage) => lastPage.artist.nextCursor,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const isLoading = [
     isLoadingSongs,
@@ -414,20 +458,21 @@ const SearchBar = () => {
             padding: '0px',
           }}
         >
-          <SearchContainer>
-            <StyledInputGroup inside>
+          <SearchContainer data-testid="search-results-popup">
+            <StyledInputGroup inside style={{ marginBottom: '6px' }}>
               <StyledInput
                 ref={searchInputRef}
                 placeholder={t('Search')}
                 size="sm"
                 id="global-search-input"
+                data-testid="search-input"
                 onChange={(e: string) => {
                   setSearch(e);
                   debouncedSearchHandler(e);
                 }}
                 onPressEnter={() => {
                   if (search) {
-                    history.push(`/search?query=${search}`);
+                    navigate(`/search?query=${search}`);
                   }
                   closeSearch();
                 }}
@@ -439,24 +484,27 @@ const SearchBar = () => {
                 spellCheck="false"
               />
               <StyledInputGroupButton
-                height={30}
+                $height={30}
                 appearance="subtle"
                 tabIndex={0}
                 onClick={closeSearch}
-                onKeyDown={(e: KeyboardEvent) => {
+                onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
                   if (e.key === ' ' || e.key === 'Enter') {
                     closeSearch();
                   }
                 }}
               >
-                {isLoading ? <Loader size="xs" /> : <Icon icon="close" />}
+                {isLoading ? <Loader size="xs" /> : <CloseIcon />}
               </StyledInputGroupButton>
             </StyledInputGroup>
-            <div className="search-options">
+            <div
+              className="search-options"
+              style={{ padding: '6px 12px 4px', boxSizing: 'border-box' }}
+            >
               <div>
                 <StyledCheckbox
                   defaultChecked={searchOptions.global}
-                  onChange={(_v: any, e: boolean) => {
+                  onChange={(_v: unknown, e: boolean) => {
                     setSearchOptions({ ...searchOptions, global: e });
                   }}
                   checked={searchOptions.global}
@@ -465,7 +513,7 @@ const SearchBar = () => {
                 </StyledCheckbox>
                 <StyledCheckbox
                   defaultChecked={searchOptions.local}
-                  onChange={(_v: any, e: boolean) => {
+                  onChange={(_v: unknown, e: boolean) => {
                     setSearchOptions({ ...searchOptions, local: e });
                     dispatch(setSearchQuery(e ? debouncedSearchQuery : ''));
                   }}
@@ -474,158 +522,167 @@ const SearchBar = () => {
                   {t('Search page')}
                 </StyledCheckbox>
               </div>
-              <StyledButton
-                size="xs"
-                appearance="subtle"
-                onClick={() => {
-                  return [searchOptions.albums, searchOptions.songs, searchOptions.artists].some(
-                    (v) => v
-                  )
-                    ? setSearchOptions({
-                        ...searchOptions,
-                        songs: false,
-                        albums: false,
-                        artists: false,
-                      })
-                    : setSearchOptions({
-                        ...searchOptions,
-                        songs: true,
-                        albums: true,
-                        artists: true,
-                      });
-                }}
-              >
-                {[searchOptions.albums, searchOptions.songs, searchOptions.artists].some((v) => v)
-                  ? t('Collapse')
-                  : t('Expand')}
-              </StyledButton>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <StyledButton size="xs" appearance="subtle" onClick={() => setPinned(!pinned)}>
+                  <span style={{ color: pinned ? 'var(--app-primary)' : undefined }}>
+                    <ThumbTackIcon />
+                  </span>
+                </StyledButton>
+                <StyledButton
+                  size="xs"
+                  appearance="subtle"
+                  onClick={() => {
+                    return [searchOptions.albums, searchOptions.songs, searchOptions.artists].some(
+                      (v) => v
+                    )
+                      ? setSearchOptions({
+                          ...searchOptions,
+                          songs: false,
+                          albums: false,
+                          artists: false,
+                        })
+                      : setSearchOptions({
+                          ...searchOptions,
+                          songs: true,
+                          albums: true,
+                          artists: true,
+                        });
+                  }}
+                >
+                  {[searchOptions.albums, searchOptions.songs, searchOptions.artists].some((v) => v)
+                    ? t('Collapse')
+                    : t('Expand')}
+                </StyledButton>
+              </div>
             </div>
 
             {debouncedSearchQuery !== '' ? (
               <>
-                {songResults?.pages[0]?.song.data.length < 1 &&
-                albumResults?.pages[0]?.album.data.length < 1 &&
-                artistResults?.pages[0]?.artist.data.length < 1 ? (
+                {(songResults?.pages[0]?.song?.data?.length ?? 0) < 1 &&
+                (albumResults?.pages[0]?.album?.data?.length ?? 0) < 1 &&
+                (artistResults?.pages[0]?.artist?.data?.length ?? 0) < 1 ? (
                   <div style={{ padding: '0 10px' }}>{t('No results found')}</div>
                 ) : (
                   <>
-                    {artistResults?.pages[0]?.artist.data.length > 0 && searchOptions.global && (
-                      <>
-                        <SectionTitle>
-                          <StyledButton
-                            size="xs"
-                            appearance="subtle"
-                            onClick={() =>
-                              setSearchOptions({
-                                ...searchOptions,
-                                artists: !searchOptions.artists,
-                              })
-                            }
-                          >
-                            <Icon
-                              icon={searchOptions.artists ? 'minus-square-o' : 'plus-square-o'}
-                            />
-                            {t('Artists')}
-                          </StyledButton>
+                    {(artistResults?.pages[0]?.artist.data.length ?? 0) > 0 &&
+                      searchOptions.global && (
+                        <>
+                          <SectionTitle>
+                            <StyledButton
+                              size="xs"
+                              appearance="subtle"
+                              onClick={() =>
+                                setSearchOptions({
+                                  ...searchOptions,
+                                  artists: !searchOptions.artists,
+                                })
+                              }
+                            >
+                              {searchOptions.artists ? <MinusSquareOIcon /> : <PlusSquareOIcon />}
+                              {t('Artists')}
+                            </StyledButton>
 
-                          <StyledButton
-                            size="xs"
-                            appearance="subtle"
-                            onClick={fetchNextArtistPage}
-                            disabled={!hasNextArtistPage}
-                            loading={isFetchingNextArtistPage}
-                          >
-                            {t('Load more')}
-                          </StyledButton>
-                        </SectionTitle>
-                        <SectionResults show={searchOptions.artists}>
-                          {artistResults?.pages?.map((group: any, i: number) => (
-                            <React.Fragment key={`${i}-artists`}>
-                              {group.artist.data.map((entry: any) => (
-                                <SearchResult
-                                  key={entry.uniqueId}
-                                  entry={entry}
-                                  handleClick={(lineEntry: Song) =>
-                                    history.push(`/library/artist/${lineEntry.id}`)
-                                  }
-                                  handlePlay={handlePlayQueueAdd}
-                                  title={<>{entry.title}</>}
-                                  details={
-                                    <>{entry.albumCount && `${entry.albumCount} ${t(' albums')}`}</>
-                                  }
-                                />
-                              ))}
-                            </React.Fragment>
-                          ))}
-                        </SectionResults>
-                      </>
-                    )}
+                            <StyledButton
+                              size="xs"
+                              appearance="subtle"
+                              onClick={fetchNextArtistPage}
+                              disabled={!hasNextArtistPage}
+                              loading={isFetchingNextArtistPage}
+                            >
+                              {t('Load more')}
+                            </StyledButton>
+                          </SectionTitle>
+                          <SectionResults $show={searchOptions.artists}>
+                            {artistResults?.pages?.map((group: SearchPage, i: number) => (
+                              <React.Fragment key={`${i}-artists`}>
+                                {group.artist.data.map((entry: Artist) => (
+                                  <SearchResult
+                                    key={entry.uniqueId}
+                                    entry={entry}
+                                    handleClick={(lineEntry) => {
+                                      navigate(`/library/artist/${lineEntry.id}`);
+                                      if (!pinned) closeSearch();
+                                    }}
+                                    handlePlay={handlePlayQueueAdd}
+                                    title={<>{entry.title}</>}
+                                    details={
+                                      <>
+                                        {entry.albumCount && `${entry.albumCount} ${t(' albums')}`}
+                                      </>
+                                    }
+                                  />
+                                ))}
+                              </React.Fragment>
+                            ))}
+                          </SectionResults>
+                        </>
+                      )}
 
-                    {albumResults?.pages[0]?.album.data.length > 0 && searchOptions.global && (
-                      <>
-                        <SectionTitle>
-                          <StyledButton
-                            size="xs"
-                            appearance="subtle"
-                            onClick={() =>
-                              setSearchOptions({
-                                ...searchOptions,
-                                albums: !searchOptions.albums,
-                              })
-                            }
-                          >
-                            <Icon
-                              icon={searchOptions.albums ? 'minus-square-o' : 'plus-square-o'}
-                            />
-                            {t('Albums')}
-                          </StyledButton>
-                          <StyledButton
-                            size="xs"
-                            appearance="subtle"
-                            onClick={fetchNextAlbumPage}
-                            disabled={!hasNextAlbumPage}
-                            loading={isFetchingNextAlbumPage}
-                          >
-                            {t('Load more')}
-                          </StyledButton>
-                        </SectionTitle>
-                        <SectionResults show={searchOptions.albums}>
-                          {albumResults?.pages?.map((group: any, i: number) => (
-                            <React.Fragment key={`${i}-albums`}>
-                              {group.album.data.map((entry: any) => (
-                                <SearchResult
-                                  key={entry.uniqueId}
-                                  entry={entry}
-                                  handleClick={(lineEntry: Song) =>
-                                    history.push(`/library/album/${lineEntry.id}`)
-                                  }
-                                  handlePlay={handlePlayQueueAdd}
-                                  title={<>{entry.title}</>}
-                                  details={
-                                    <>
-                                      {_.compact([entry.year, entry.albumArtist]).map(
-                                        (val, index: number) => (
-                                          <React.Fragment key={`${index}-albums-details`}>
-                                            {val && (
-                                              <>
-                                                {index > 0 && ' • '}
-                                                {val}
-                                              </>
-                                            )}
-                                          </React.Fragment>
-                                        )
-                                      )}
-                                    </>
-                                  }
-                                />
-                              ))}
-                            </React.Fragment>
-                          ))}
-                        </SectionResults>
-                      </>
-                    )}
+                    {(albumResults?.pages[0]?.album.data.length ?? 0) > 0 &&
+                      searchOptions.global && (
+                        <>
+                          <SectionTitle>
+                            <StyledButton
+                              size="xs"
+                              appearance="subtle"
+                              onClick={() =>
+                                setSearchOptions({
+                                  ...searchOptions,
+                                  albums: !searchOptions.albums,
+                                })
+                              }
+                            >
+                              {searchOptions.albums ? <MinusSquareOIcon /> : <PlusSquareOIcon />}
+                              {t('Albums')}
+                            </StyledButton>
+                            <StyledButton
+                              size="xs"
+                              appearance="subtle"
+                              onClick={fetchNextAlbumPage}
+                              disabled={!hasNextAlbumPage}
+                              loading={isFetchingNextAlbumPage}
+                            >
+                              {t('Load more')}
+                            </StyledButton>
+                          </SectionTitle>
+                          <SectionResults $show={searchOptions.albums}>
+                            {albumResults?.pages?.map((group: SearchPage, i: number) => (
+                              <React.Fragment key={`${i}-albums`}>
+                                {group.album.data.map((entry: Album) => (
+                                  <SearchResult
+                                    key={entry.uniqueId}
+                                    entry={entry}
+                                    handleClick={(lineEntry) => {
+                                      navigate(`/library/album/${lineEntry.id}`);
+                                      if (!pinned) closeSearch();
+                                    }}
+                                    handlePlay={handlePlayQueueAdd}
+                                    title={<>{entry.title}</>}
+                                    details={
+                                      <>
+                                        {_.compact([entry.year, entry.albumArtist]).map(
+                                          (val, index: number) => (
+                                            <React.Fragment key={`${index}-albums-details`}>
+                                              {val && (
+                                                <>
+                                                  {index > 0 && ' • '}
+                                                  {val}
+                                                </>
+                                              )}
+                                            </React.Fragment>
+                                          )
+                                        )}
+                                      </>
+                                    }
+                                  />
+                                ))}
+                              </React.Fragment>
+                            ))}
+                          </SectionResults>
+                        </>
+                      )}
 
-                    {songResults?.pages[0]?.song.data.length > 0 && searchOptions.global && (
+                    {(songResults?.pages[0]?.song.data.length ?? 0) > 0 && searchOptions.global && (
                       <>
                         <SectionTitle>
                           <StyledButton
@@ -635,7 +692,7 @@ const SearchBar = () => {
                               setSearchOptions({ ...searchOptions, songs: !searchOptions.songs })
                             }
                           >
-                            <Icon icon={searchOptions.songs ? 'minus-square-o' : 'plus-square-o'} />
+                            {searchOptions.songs ? <MinusSquareOIcon /> : <PlusSquareOIcon />}
                             {t('Songs')}
                           </StyledButton>
                           <StyledButton
@@ -648,16 +705,17 @@ const SearchBar = () => {
                             {t('Load more')}
                           </StyledButton>
                         </SectionTitle>
-                        <SectionResults show={searchOptions.songs}>
-                          {songResults?.pages?.map((group: any, i: number) => (
+                        <SectionResults $show={searchOptions.songs}>
+                          {songResults?.pages?.map((group: SearchPage, i: number) => (
                             <React.Fragment key={`${i}-songs`}>
-                              {group.song.data.map((entry: any) => (
+                              {group.song.data.map((entry: Song) => (
                                 <SearchResult
                                   key={entry.uniqueId}
                                   entry={entry}
-                                  handleClick={(lineEntry: Song) =>
-                                    history.push(`/library/album/${lineEntry.albumId}`)
-                                  }
+                                  handleClick={(lineEntry) => {
+                                    navigate(`/library/album/${(lineEntry as Song).albumId}`);
+                                    if (!pinned) closeSearch();
+                                  }}
                                   handlePlay={handlePlayQueueAdd}
                                   title={<>{entry.title}</>}
                                   details={
@@ -685,12 +743,13 @@ const SearchBar = () => {
                     )}
 
                     <StyledButton
+                      data-testid="search-view-all-button"
                       size="sm"
                       block
                       appearance="primary"
                       onClick={() => {
                         if (debouncedSearchQuery.trim()) {
-                          history.push(`/search?query=${debouncedSearchQuery}`);
+                          navigate(`/search?query=${debouncedSearchQuery}`);
                         }
                         closeSearch();
                       }}
@@ -710,6 +769,7 @@ const SearchBar = () => {
       <span style={{ display: 'inline-block' }}>
         <StyledButton
           aria-label="search"
+          data-testid="nav-search"
           onClick={() => {
             setOpenSearch(true);
             setTimeout(() => {
@@ -722,7 +782,7 @@ const SearchBar = () => {
           }}
           appearance="subtle"
         >
-          <Icon icon="search" />
+          <SearchIcon />
         </StyledButton>
       </span>
     </Whisper>

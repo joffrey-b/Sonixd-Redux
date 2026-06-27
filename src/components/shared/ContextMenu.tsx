@@ -1,9 +1,9 @@
-/* eslint-disable no-await-in-loop */
-import React, { useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
 import _ from 'lodash';
 import { nanoid } from 'nanoid/non-secure';
-import { useQuery, useQueryClient } from 'react-query';
-import { useHistory } from 'react-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+
 import { useTranslation } from 'react-i18next';
 import { ButtonToolbar, Form, Whisper } from 'rsuite';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
@@ -43,11 +43,19 @@ import {
 } from '../../shared/utils';
 import { setStatus } from '../../redux/playerSlice';
 import { apiController } from '../../api/controller';
-import { Server } from '../../types';
+import { Playlist, Server, Song } from '../../types';
 import SpectrogramModal from './SpectrogramModal';
 import { updateStarredInCache, updateRatingInCache } from '../../hooks/useLibraryCache';
 
-export const ContextMenuButton = ({ text, hotkey, ...rest }: any) => {
+export const ContextMenuButton = ({
+  text,
+  hotkey,
+  ...rest
+}: {
+  text: string;
+  hotkey?: string;
+  [key: string]: unknown;
+}) => {
   return (
     <StyledContextMenuButton {...rest} appearance="subtle" size="sm" block>
       <div style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
@@ -66,16 +74,25 @@ export const ContextMenu = ({
   numOfDividers,
   hasTitle,
   children,
-}: any) => {
+}: {
+  yPos?: number;
+  xPos?: number;
+  minWidth?: number;
+  maxWidth?: number;
+  numOfButtons: number;
+  numOfDividers: number;
+  hasTitle?: boolean;
+  children?: React.ReactNode;
+}) => {
   return (
     <ContextMenuWindow
-      yPos={yPos}
-      xPos={xPos}
-      minWidth={minWidth}
-      maxWidth={maxWidth}
-      numOfButtons={numOfButtons}
-      numOfDividers={numOfDividers}
-      hasTitle={hasTitle}
+      $yPos={yPos ?? 0}
+      $xPos={xPos ?? 0}
+      $minWidth={minWidth ?? 0}
+      $maxWidth={maxWidth ?? 0}
+      $numOfButtons={numOfButtons}
+      $numOfDividers={numOfDividers}
+      $hasTitle={hasTitle ?? false}
     >
       {children}
     </ContextMenuWindow>
@@ -84,7 +101,7 @@ export const ContextMenu = ({
 
 export const GlobalContextMenu = () => {
   const { t } = useTranslation();
-  const history = useHistory();
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const queryClient = useQueryClient();
   const playQueue = useAppSelector((state) => state.playQueue);
@@ -92,302 +109,317 @@ export const GlobalContextMenu = () => {
   const multiSelect = useAppSelector((state) => state.multiSelect);
   const config = useAppSelector((state) => state.config);
   const folder = useAppSelector((state) => state.folder);
-  const addToPlaylistTriggerRef = useRef<any>();
-  const deletePlaylistTriggerRef = useRef<any>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- WhisperInstance lacks getState() in RSuite 6 types; runtime call uses internal RSuite component API
+  const addToPlaylistTriggerRef = useRef<any>(null);
+  const playlistPickerContainerRef = useRef(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [selectedPlaylistId, setSelectedPlaylistId] = useState('');
   const [shouldCreatePlaylist, setShouldCreatePlaylist] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showSpectrogram, setShowSpectrogram] = useState(false);
-  const playlistPickerContainerRef = useRef(null);
 
-  const { data: playlists }: any = useQuery(['playlists'], () =>
-    apiController({ serverType: config.serverType, endpoint: 'getPlaylists' })
-  );
+  useEffect(() => {
+    if (!misc.contextMenu.show) setShowDeleteConfirm(false);
+  }, [misc.contextMenu.show]);
+
+  const { data: playlists } = useQuery<Playlist[]>({
+    queryKey: ['playlists'],
+    queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getPlaylists' }),
+  });
 
   const handlePlay = async () => {
     dispatch(setContextMenu({ show: false }));
     const promises = [];
+    try {
+      if (misc.contextMenu.type?.match('music|nowPlaying|folder')) {
+        const folders = multiSelect.selected.filter((entry) => entry.type === 'folder');
+        const music = multiSelect.selected
+          .filter((entry) => entry.type === 'music')
+          .map((entry) => {
+            return { ...entry, uniqueId: nanoid() };
+          });
 
-    if (misc.contextMenu.type.match('music|nowPlaying|folder')) {
-      const folders = multiSelect.selected.filter((entry: any) => entry.type === 'folder');
-      const music = multiSelect.selected
-        .filter((entry: any) => entry.type === 'music')
-        .map((entry: any) => {
-          return { ...entry, uniqueId: nanoid() };
-        });
+        for (let i = 0; i < folders.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getMusicDirectorySongs',
+              args: { id: folders[i].id },
+            })
+          );
+        }
 
-      for (let i = 0; i < folders.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getMusicDirectorySongs',
-            args: { id: folders[i].id },
-          })
-        );
+        const res = await Promise.all(promises);
+        res.push(_.orderBy(music, 'rowIndex', 'asc'));
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(res));
+
+        if (songs.entries.length > 0) {
+          dispatch(setPlayQueue({ entries: songs.entries }));
+          dispatch(setStatus('PLAYING'));
+          dispatch(fixPlayer2Index());
+        } else {
+          dispatch(clearPlayQueue());
+          dispatch(setStatus('PAUSED'));
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
+      } else if (misc.contextMenu.type === 'playlist') {
+        for (let i = 0; i < multiSelect.selected.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getPlaylist',
+              args: { id: multiSelect.selected[i].id },
+            })
+          );
+        }
+
+        const res = await Promise.all(promises);
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'song')));
+
+        if (songs.entries.length > 0) {
+          dispatch(setPlayQueue({ entries: songs.entries }));
+          dispatch(setStatus('PLAYING'));
+          dispatch(fixPlayer2Index());
+        } else {
+          dispatch(clearPlayQueue());
+          dispatch(setStatus('PAUSED'));
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
+      } else if (misc.contextMenu.type === 'album') {
+        for (let i = 0; i < multiSelect.selected.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getAlbum',
+              args: { id: multiSelect.selected[i].id },
+            })
+          );
+        }
+
+        const res = await Promise.all(promises);
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'song')));
+
+        if (songs.entries.length > 0) {
+          dispatch(setPlayQueue({ entries: songs.entries }));
+          dispatch(setStatus('PLAYING'));
+          dispatch(fixPlayer2Index());
+        } else {
+          dispatch(clearPlayQueue());
+          dispatch(setStatus('PAUSED'));
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
+      } else if (misc.contextMenu.type === 'artist') {
+        for (let i = 0; i < multiSelect.selected.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getArtistSongs',
+              args: {
+                id: multiSelect.selected[i].id,
+                musicFolderId: folder.applied.music && folder.musicFolder,
+              },
+            })
+          );
+        }
+
+        const res = await Promise.all(promises);
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(res));
+
+        if (songs.entries.length > 0) {
+          dispatch(setPlayQueue({ entries: songs.entries }));
+          dispatch(setStatus('PLAYING'));
+          dispatch(fixPlayer2Index());
+        } else {
+          dispatch(clearPlayQueue());
+          dispatch(setStatus('PAUSED'));
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
+      } else if (misc.contextMenu.type === 'genre') {
+        for (let i = 0; i < multiSelect.selected.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getSongsByGenre',
+              args: {
+                type: 'byGenre',
+                genre: multiSelect.selected[i].title,
+                musicFolderId:
+                  (folder.applied.music || folder.applied.albums) && folder.musicFolder,
+                size: 500,
+                offset: 0,
+                recursive: true,
+                totalSongs: multiSelect.selected[i]?.songCount,
+              },
+            })
+          );
+        }
+
+        const res = await Promise.all(promises);
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'data')));
+        if (songs.entries.length > 0) {
+          dispatch(setPlayQueue({ entries: songs.entries }));
+          dispatch(setStatus('PLAYING'));
+          dispatch(fixPlayer2Index());
+        } else {
+          dispatch(clearPlayQueue());
+          dispatch(setStatus('PAUSED'));
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
       }
-
-      const res = await Promise.all(promises);
-      res.push(_.orderBy(music, 'rowIndex', 'asc'));
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(res));
-
-      if (songs.entries.length > 0) {
-        dispatch(setPlayQueue({ entries: songs.entries }));
-        dispatch(setStatus('PLAYING'));
-        dispatch(fixPlayer2Index());
-      } else {
-        dispatch(clearPlayQueue());
-        dispatch(setStatus('PAUSED'));
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
-    } else if (misc.contextMenu.type === 'playlist') {
-      for (let i = 0; i < multiSelect.selected.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getPlaylist',
-            args: { id: multiSelect.selected[i].id },
-          })
-        );
-      }
-
-      const res = await Promise.all(promises);
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'song')));
-
-      if (songs.entries.length > 0) {
-        dispatch(setPlayQueue({ entries: songs.entries }));
-        dispatch(setStatus('PLAYING'));
-        dispatch(fixPlayer2Index());
-      } else {
-        dispatch(clearPlayQueue());
-        dispatch(setStatus('PAUSED'));
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
-    } else if (misc.contextMenu.type === 'album') {
-      for (let i = 0; i < multiSelect.selected.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getAlbum',
-            args: { id: multiSelect.selected[i].id },
-          })
-        );
-      }
-
-      const res = await Promise.all(promises);
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'song')));
-
-      if (songs.entries.length > 0) {
-        dispatch(setPlayQueue({ entries: songs.entries }));
-        dispatch(setStatus('PLAYING'));
-        dispatch(fixPlayer2Index());
-      } else {
-        dispatch(clearPlayQueue());
-        dispatch(setStatus('PAUSED'));
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
-    } else if (misc.contextMenu.type === 'artist') {
-      for (let i = 0; i < multiSelect.selected.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getArtistSongs',
-            args: {
-              id: multiSelect.selected[i].id,
-              musicFolderId: folder.applied.music && folder.musicFolder,
-            },
-          })
-        );
-      }
-
-      const res = await Promise.all(promises);
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(res));
-
-      if (songs.entries.length > 0) {
-        dispatch(setPlayQueue({ entries: songs.entries }));
-        dispatch(setStatus('PLAYING'));
-        dispatch(fixPlayer2Index());
-      } else {
-        dispatch(clearPlayQueue());
-        dispatch(setStatus('PAUSED'));
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
-    } else if (misc.contextMenu.type === 'genre') {
-      for (let i = 0; i < multiSelect.selected.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getSongsByGenre',
-            args: {
-              type: 'byGenre',
-              genre: multiSelect.selected[i].title,
-              musicFolderId: (folder.applied.music || folder.applied.albums) && folder.musicFolder,
-              size: 500,
-              offset: 0,
-              recursive: true,
-              totalSongs: multiSelect.selected[i]?.songCount,
-            },
-          })
-        );
-      }
-
-      const res = await Promise.all(promises);
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'data')));
-      if (songs.entries.length > 0) {
-        dispatch(setPlayQueue({ entries: songs.entries }));
-        dispatch(setStatus('PLAYING'));
-        dispatch(fixPlayer2Index());
-      } else {
-        dispatch(clearPlayQueue());
-        dispatch(setStatus('PAUSED'));
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'play' }));
+    } catch (err) {
+      notifyToast('error', err);
     }
   };
 
   const handleAddToQueue = async (type: 'next' | 'later') => {
     dispatch(setContextMenu({ show: false }));
     const promises = [];
+    try {
+      if (misc.contextMenu.type?.match('music|nowPlaying|folder')) {
+        const folders = multiSelect.selected.filter((entry) => entry.type === 'folder');
+        const music = multiSelect.selected
+          .filter((entry) => entry.type === 'music')
+          .map((entry) => {
+            return { ...entry, uniqueId: nanoid() };
+          });
 
-    if (misc.contextMenu.type.match('music|nowPlaying|folder')) {
-      const folders = multiSelect.selected.filter((entry: any) => entry.type === 'folder');
-      const music = multiSelect.selected
-        .filter((entry: any) => entry.type === 'music')
-        .map((entry: any) => {
-          return { ...entry, uniqueId: nanoid() };
-        });
+        for (let i = 0; i < folders.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getMusicDirectorySongs',
+              args: { id: folders[i].id },
+            })
+          );
+        }
 
-      for (let i = 0; i < folders.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getMusicDirectorySongs',
-            args: { id: folders[i].id },
-          })
-        );
+        const res = await Promise.all(promises);
+        res.push(_.orderBy(music, 'rowIndex', 'asc'));
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(res));
+
+        if (songs.entries.length > 0) {
+          dispatch(appendPlayQueue({ entries: songs.entries, type }));
+          dispatch(fixPlayer2Index());
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
+      } else if (misc.contextMenu.type === 'playlist') {
+        for (let i = 0; i < multiSelect.selected.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getPlaylist',
+              args: { id: multiSelect.selected[i].id },
+            })
+          );
+        }
+
+        const res = await Promise.all(promises);
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'song')));
+
+        if (songs.entries.length > 0) {
+          dispatch(appendPlayQueue({ entries: songs.entries, type }));
+          dispatch(fixPlayer2Index());
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
+      } else if (misc.contextMenu.type === 'album') {
+        for (let i = 0; i < multiSelect.selected.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getAlbum',
+              args: { id: multiSelect.selected[i].id },
+            })
+          );
+        }
+
+        const res = await Promise.all(promises);
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'song')));
+
+        if (songs.entries.length > 0) {
+          dispatch(appendPlayQueue({ entries: songs.entries, type }));
+          dispatch(fixPlayer2Index());
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
+      } else if (misc.contextMenu.type === 'artist') {
+        for (let i = 0; i < multiSelect.selected.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getArtistSongs',
+              args: {
+                id: multiSelect.selected[i].id,
+                musicFolderId: folder.applied.artists && folder.musicFolder,
+              },
+            })
+          );
+        }
+
+        const res = await Promise.all(promises);
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(res));
+
+        if (songs.entries.length > 0) {
+          dispatch(appendPlayQueue({ entries: songs.entries, type }));
+          dispatch(fixPlayer2Index());
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
+      } else if (misc.contextMenu.type === 'genre') {
+        for (let i = 0; i < multiSelect.selected.length; i += 1) {
+          promises.push(
+            apiController({
+              serverType: config.serverType,
+              endpoint: 'getSongsByGenre',
+              args: {
+                type: 'byGenre',
+                genre: multiSelect.selected[i].title,
+                musicFolderId:
+                  (folder.applied.albums || folder.applied.artists) && folder.musicFolder,
+                size: 500,
+                offset: 0,
+                recursive: true,
+                totalSongs: multiSelect.selected[i]?.songCount,
+              },
+            })
+          );
+        }
+
+        const res = await Promise.all(promises);
+        const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'data')));
+
+        if (songs.entries.length > 0) {
+          dispatch(appendPlayQueue({ entries: songs.entries, type }));
+          dispatch(fixPlayer2Index());
+        }
+
+        notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
       }
-
-      const res = await Promise.all(promises);
-      res.push(_.orderBy(music, 'rowIndex', 'asc'));
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(res));
-
-      if (songs.entries.length > 0) {
-        dispatch(appendPlayQueue({ entries: songs.entries, type }));
-        dispatch(fixPlayer2Index());
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
-    } else if (misc.contextMenu.type === 'playlist') {
-      for (let i = 0; i < multiSelect.selected.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getPlaylist',
-            args: { id: multiSelect.selected[i].id },
-          })
-        );
-      }
-
-      const res = await Promise.all(promises);
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'song')));
-
-      if (songs.entries.length > 0) {
-        dispatch(appendPlayQueue({ entries: songs.entries, type }));
-        dispatch(fixPlayer2Index());
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
-    } else if (misc.contextMenu.type === 'album') {
-      for (let i = 0; i < multiSelect.selected.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getAlbum',
-            args: { id: multiSelect.selected[i].id },
-          })
-        );
-      }
-
-      const res = await Promise.all(promises);
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'song')));
-
-      if (songs.entries.length > 0) {
-        dispatch(appendPlayQueue({ entries: songs.entries, type }));
-        dispatch(fixPlayer2Index());
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
-    } else if (misc.contextMenu.type === 'artist') {
-      for (let i = 0; i < multiSelect.selected.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getArtistSongs',
-            args: {
-              id: multiSelect.selected[i].id,
-              musicFolderId: folder.applied.artist && folder.musicFolder,
-            },
-          })
-        );
-      }
-
-      const res = await Promise.all(promises);
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(res));
-
-      if (songs.entries.length > 0) {
-        dispatch(appendPlayQueue({ entries: songs.entries, type }));
-        dispatch(fixPlayer2Index());
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
-    } else if (misc.contextMenu.type === 'genre') {
-      for (let i = 0; i < multiSelect.selected.length; i += 1) {
-        promises.push(
-          apiController({
-            serverType: config.serverType,
-            endpoint: 'getSongsByGenre',
-            args: {
-              type: 'byGenre',
-              genre: multiSelect.selected[i].title,
-              musicFolderId: (folder.applied.album || folder.applied.artist) && folder.musicFolder,
-              size: 500,
-              offset: 0,
-              recursive: true,
-              totalSongs: multiSelect.selected[i]?.songCount,
-            },
-          })
-        );
-      }
-
-      const res = await Promise.all(promises);
-      const songs = filterPlayQueue(config.playback.filters, _.flatten(_.map(res, 'data')));
-
-      if (songs.entries.length > 0) {
-        dispatch(appendPlayQueue({ entries: songs.entries, type }));
-        dispatch(fixPlayer2Index());
-      }
-
-      notifyToast('info', getPlayedSongsNotification({ ...songs.count, type: 'add' }));
+    } catch (err) {
+      notifyToast('error', err);
     }
   };
 
   const handleRemoveSelected = async () => {
+    const songEntries = multiSelect.selected.filter((e) => e.type === 'music') as unknown as Song[];
     if (misc.contextMenu.type === 'nowPlaying') {
       if (multiSelect.selected.length === playQueue.entry.length) {
         dispatch(clearPlayQueue());
         dispatch(setStatus('PAUSED'));
       } else {
-        dispatch(removeFromPlayQueue({ entries: multiSelect.selected }));
+        dispatch(removeFromPlayQueue({ entries: songEntries }));
         if (playQueue.currentPlayer === 1) {
           dispatch(fixPlayer2Index());
         }
       }
     } else {
-      dispatch(removeFromPlaylist({ selectedEntries: multiSelect.selected }));
+      dispatch(removeFromPlaylist({ selectedEntries: songEntries }));
     }
 
     dispatch(setContextMenu({ show: false }));
@@ -398,13 +430,13 @@ export const GlobalContextMenu = () => {
       'success',
       t('Added {{songCount}} item(s) to playlist {{playlist}}', {
         songCount,
-        playlist: playlists.find((pl: any) => pl.id === playlistId)?.title,
+        playlist: playlists?.find((pl: Playlist) => pl.id === playlistId)?.title,
       }),
       <>
         <StyledButton
           appearance="link"
           onClick={() => {
-            history.push(`/playlist/${playlistId}`);
+            navigate(`/playlist/${playlistId}`);
             dispatch(setContextMenu({ show: false }));
           }}
         >
@@ -423,12 +455,12 @@ export const GlobalContextMenu = () => {
     dispatch(addProcessingPlaylist(selectedPlaylistId));
 
     try {
-      if (misc.contextMenu.type.match('music|nowPlaying|folder')) {
+      if (misc.contextMenu.type?.match('music|nowPlaying|folder')) {
         if (config.serverType === Server.Subsonic) {
-          const folders = multiSelect.selected.filter((entry: any) => entry.type === 'folder');
+          const folders = multiSelect.selected.filter((entry) => entry.type === 'folder');
           const music = multiSelect.selected
-            .filter((entry: any) => entry.type === 'music')
-            .map((entry: any) => {
+            .filter((entry) => entry.type === 'music')
+            .map((entry) => {
               return { ...entry, uniqueId: nanoid() };
             });
 
@@ -545,12 +577,10 @@ export const GlobalContextMenu = () => {
       notifyToast('error', t('Error adding to playlist'));
     } finally {
       dispatch(removeProcessingPlaylist(localSelectedPlaylistId));
-      queryClient.removeQueries(['playlist', localSelectedPlaylistId]);
+      queryClient.removeQueries({ queryKey: ['playlist', localSelectedPlaylistId] });
     }
 
-    await queryClient.refetchQueries(['playlists'], {
-      active: true,
-    });
+    await queryClient.refetchQueries({ queryKey: ['playlists'], type: 'active' });
   };
 
   const handleDeletePlaylist = async () => {
@@ -567,22 +597,24 @@ export const GlobalContextMenu = () => {
       );
     }
 
-    const res = await Promise.all(promises);
+    try {
+      const res = await Promise.all(promises);
 
-    if (isFailedResponse(res)) {
-      notifyToast('error', errorMessages(res)[0]);
-    } else {
-      notifyToast(
-        'info',
-        t('Deleted {{n}} playlists', {
-          n: multiSelect.selected.length,
-        })
-      );
+      if (isFailedResponse(res)) {
+        notifyToast('error', errorMessages(res)[0]);
+      } else {
+        notifyToast(
+          'info',
+          t('Deleted {{n}} playlists', {
+            n: multiSelect.selected.length,
+          })
+        );
+      }
+
+      await queryClient.refetchQueries({ queryKey: ['playlists'], type: 'active' });
+    } catch (err) {
+      notifyToast('error', err);
     }
-
-    await queryClient.refetchQueries(['playlists'], {
-      active: true,
-    });
   };
 
   const handleCreatePlaylist = async () => {
@@ -596,9 +628,7 @@ export const GlobalContextMenu = () => {
       if (isFailedResponse(res)) {
         notifyToast('error', errorMessages(res)[0]);
       } else {
-        await queryClient.refetchQueries(['playlists'], {
-          active: true,
-        });
+        await queryClient.refetchQueries({ queryKey: ['playlists'], type: 'active' });
         notifyToast('success', t('Playlist "{{newPlaylistName}}" created!', { newPlaylistName }));
       }
     } catch (err) {
@@ -607,37 +637,23 @@ export const GlobalContextMenu = () => {
   };
 
   const refetchActive = async () => {
-    await queryClient.refetchQueries(['starred'], {
-      active: true,
-    });
-    await queryClient.refetchQueries(['album'], {
-      active: true,
-    });
-    await queryClient.refetchQueries(['albumList'], {
-      active: true,
-    });
-    await queryClient.refetchQueries(['playlist'], {
-      active: true,
-    });
-    await queryClient.refetchQueries(['artist'], {
-      active: true,
-    });
-    await queryClient.refetchQueries(['artistList'], {
-      active: true,
-    });
-    await queryClient.refetchQueries(['folder'], {
-      active: true,
-    });
+    await queryClient.refetchQueries({ queryKey: ['starred'], type: 'active' });
+    await queryClient.refetchQueries({ queryKey: ['album'], type: 'active' });
+    await queryClient.refetchQueries({ queryKey: ['albumList'], type: 'active' });
+    await queryClient.refetchQueries({ queryKey: ['playlist'], type: 'active' });
+    await queryClient.refetchQueries({ queryKey: ['artist'], type: 'active' });
+    await queryClient.refetchQueries({ queryKey: ['artistList'], type: 'active' });
+    await queryClient.refetchQueries({ queryKey: ['folder'], type: 'active' });
   };
 
   const handleFavorite = async () => {
     dispatch(setContextMenu({ show: false }));
 
     const sortedEntries = [...multiSelect.selected].sort(
-      (a: any, b: any) => a.rowIndex - b.rowIndex
+      (a, b) => (a.rowIndex as number) - (b.rowIndex as number)
     );
 
-    const ids = _.map(sortedEntries, 'id');
+    const ids = _.map(sortedEntries, 'id') as string[];
 
     try {
       const res = await apiController({
@@ -664,7 +680,7 @@ export const GlobalContextMenu = () => {
 
     // Run the unstar on all entries regardless of their starred status, since Airsonic
     // does not output the 'starred' property for starred artists
-    const ids = _.map(multiSelect.selected, 'id');
+    const ids = _.map(multiSelect.selected, 'id') as string[];
 
     try {
       // Infer the type from the first selected entry
@@ -689,11 +705,15 @@ export const GlobalContextMenu = () => {
 
   const handleViewInModal = () => {
     dispatch(setContextMenu({ show: false }));
-    if (misc.contextMenu.type !== 'music' && multiSelect.selected.length === 1) {
+    if (
+      misc.contextMenu.type &&
+      misc.contextMenu.type !== 'music' &&
+      multiSelect.selected.length === 1
+    ) {
       dispatch(
         addModalPage({
           pageType: misc.contextMenu.type,
-          id: misc.contextMenu.details.id,
+          id: (misc.contextMenu.details as { id?: string } | undefined)?.id ?? '',
         })
       );
     } else {
@@ -703,8 +723,8 @@ export const GlobalContextMenu = () => {
 
   const handleViewInFolder = () => {
     dispatch(setContextMenu({ show: false }));
-    if (misc.contextMenu.type.match('music|nowPlaying') && multiSelect.selected.length === 1) {
-      history.push(`/library/folder?folderId=${multiSelect.selected[0].parent}`);
+    if (misc.contextMenu.type?.match('music|nowPlaying') && multiSelect.selected.length === 1) {
+      navigate(`/library/folder?folderId=${multiSelect.selected[0].parent}`);
     } else {
       notifyToast('error', t('Select only one row'));
     }
@@ -721,7 +741,7 @@ export const GlobalContextMenu = () => {
 
   const handleRating = async (rating: number) => {
     dispatch(setContextMenu({ show: false }));
-    const ids = _.map(multiSelect.selected, 'id');
+    const ids = _.map(multiSelect.selected, 'id') as string[];
     await apiController({
       serverType: config.serverType,
       endpoint: 'setRating',
@@ -747,22 +767,25 @@ export const GlobalContextMenu = () => {
           <ContextMenuButton
             text={t('Play')}
             onClick={handlePlay}
-            disabled={misc.contextMenu.disabledOptions.includes('play')}
+            disabled={misc.contextMenu.disabledOptions?.includes('play')}
           />
           <ContextMenuButton
+            data-testid="context-menu-play-next"
             text={t('Add to queue (next)')}
             onClick={() => handleAddToQueue('next')}
-            disabled={misc.contextMenu.disabledOptions.includes('addToQueueNext')}
+            disabled={misc.contextMenu.disabledOptions?.includes('addToQueueNext')}
           />
           <ContextMenuButton
+            data-testid="context-menu-play-later"
             text={t('Add to queue (later)')}
             onClick={() => handleAddToQueue('later')}
-            disabled={misc.contextMenu.disabledOptions.includes('addToQueueLast')}
+            disabled={misc.contextMenu.disabledOptions?.includes('addToQueueLast')}
           />
           <ContextMenuButton
+            data-testid="context-menu-remove-selected"
             text={t('Remove selected')}
             onClick={handleRemoveSelected}
-            disabled={misc.contextMenu.disabledOptions.includes('removeSelected')}
+            disabled={misc.contextMenu.disabledOptions?.includes('removeSelected')}
           />
           <ContextMenuDivider />
 
@@ -776,6 +799,7 @@ export const GlobalContextMenu = () => {
                 <StyledInputPickerContainer ref={playlistPickerContainerRef}>
                   <StyledInputGroup>
                     <StyledInputPicker
+                      data-testid="add-to-playlist-select"
                       container={() => playlistPickerContainerRef.current}
                       data={playlists}
                       placement="autoVerticalStart"
@@ -784,9 +808,10 @@ export const GlobalContextMenu = () => {
                       valueKey="id"
                       width={200}
                       placeholder={t('Select')}
-                      onChange={(e: any) => setSelectedPlaylistId(e)}
+                      onChange={(e: string) => setSelectedPlaylistId(e)}
                     />
                     <StyledButton
+                      data-testid="add-to-playlist-confirm-button"
                       disabled={
                         !selectedPlaylistId ||
                         misc.isProcessingPlaylist.includes(selectedPlaylistId)
@@ -794,12 +819,13 @@ export const GlobalContextMenu = () => {
                       loading={misc.isProcessingPlaylist.includes(selectedPlaylistId)}
                       onClick={handleAddToPlaylist}
                     >
-                      Add
+                      {t('Add')}
                     </StyledButton>
                   </StyledInputGroup>
                 </StyledInputPickerContainer>
                 <div>
                   <StyledButton
+                    data-testid="context-menu-create-new-playlist-toggle"
                     size="sm"
                     appearance="subtle"
                     onClick={() => setShouldCreatePlaylist(!shouldCreatePlaylist)}
@@ -812,11 +838,13 @@ export const GlobalContextMenu = () => {
                     <br />
                     <StyledInputGroup>
                       <StyledInput
+                        data-testid="context-menu-new-playlist-name-input"
                         placeholder={t('Enter name...')}
                         value={newPlaylistName}
                         onChange={(e: string) => setNewPlaylistName(e)}
                       />
                       <StyledButton
+                        data-testid="context-menu-new-playlist-ok-button"
                         size="sm"
                         type="submit"
                         loading={false}
@@ -836,64 +864,64 @@ export const GlobalContextMenu = () => {
             }
           >
             <ContextMenuButton
+              data-testid="context-menu-add-to-playlist"
               text={t('Add to playlist')}
               onClick={() =>
-                addToPlaylistTriggerRef.current.state.isOverlayShown
+                addToPlaylistTriggerRef.current.getState().open
                   ? addToPlaylistTriggerRef.current.close()
                   : addToPlaylistTriggerRef.current.open()
               }
-              disabled={misc.contextMenu.disabledOptions.includes('addToPlaylist')}
+              disabled={misc.contextMenu.disabledOptions?.includes('addToPlaylist')}
             />
           </Whisper>
-          <Whisper
-            ref={deletePlaylistTriggerRef}
-            enterable
-            placement="autoHorizontal"
-            trigger="none"
-            speaker={
-              <ContextMenuPopover>
-                <p>
-                  {t('Are you sure you want to delete {{n}} playlist(s)?', {
-                    n: String(multiSelect?.selected?.length),
-                  })}
-                </p>
-                <StyledButton size="sm" onClick={handleDeletePlaylist} appearance="primary">
+          {showDeleteConfirm ? (
+            <div style={{ padding: '8px 10px' }}>
+              <p style={{ marginBottom: 8 }}>
+                {t('Are you sure you want to delete {{n}} playlist(s)?', {
+                  n: String(multiSelect?.selected?.length),
+                })}
+              </p>
+              <ButtonToolbar>
+                <StyledButton size="sm" appearance="primary" onClick={handleDeletePlaylist}>
                   {t('Yes')}
                 </StyledButton>
-              </ContextMenuPopover>
-            }
-          >
+                <StyledButton
+                  size="sm"
+                  appearance="subtle"
+                  onClick={() => setShowDeleteConfirm(false)}
+                >
+                  {t('No')}
+                </StyledButton>
+              </ButtonToolbar>
+            </div>
+          ) : (
             <ContextMenuButton
               text={t('Delete playlist(s)')}
-              onClick={() =>
-                deletePlaylistTriggerRef.current.state.isOverlayShown
-                  ? deletePlaylistTriggerRef.current.close()
-                  : deletePlaylistTriggerRef.current.open()
-              }
-              disabled={misc.contextMenu.disabledOptions.includes('deletePlaylist')}
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={misc.contextMenu.disabledOptions?.includes('deletePlaylist')}
             />
-          </Whisper>
+          )}
           <ContextMenuDivider />
           <ContextMenuButton
             text={t('Add to favorites')}
             onClick={handleFavorite}
-            disabled={misc.contextMenu.disabledOptions.includes('addToFavorites')}
+            disabled={misc.contextMenu.disabledOptions?.includes('addToFavorites')}
           />
           <ContextMenuButton
             text={t('Remove from favorites')}
             onClick={handleUnfavorite}
-            disabled={misc.contextMenu.disabledOptions.includes('removeFromFavorites')}
+            disabled={misc.contextMenu.disabledOptions?.includes('removeFromFavorites')}
           />
           <Whisper
             enterable
             placement="autoHorizontal"
             trigger={
-              misc.contextMenu.disabledOptions.includes('setRating') ||
+              misc.contextMenu.disabledOptions?.includes('setRating') ||
               config.serverType === Server.Jellyfin
                 ? 'none'
                 : 'hover'
             }
-            delayShow={300}
+            delayOpen={300}
             speaker={
               <ContextMenuPopover>
                 <ButtonToolbar>
@@ -909,9 +937,8 @@ export const GlobalContextMenu = () => {
           >
             <ContextMenuButton
               text={t('Set rating')}
-              onClick={handleUnfavorite}
               disabled={
-                misc.contextMenu.disabledOptions.includes('setRating') ||
+                misc.contextMenu.disabledOptions?.includes('setRating') ||
                 config.serverType === Server.Jellyfin
               }
             />
@@ -920,18 +947,19 @@ export const GlobalContextMenu = () => {
           <ContextMenuButton
             text={t('View in modal')}
             onClick={handleViewInModal}
-            disabled={misc.contextMenu.disabledOptions.includes('viewInModal')}
+            disabled={misc.contextMenu.disabledOptions?.includes('viewInModal')}
           />
           <ContextMenuButton
             text={t('View in folder')}
             onClick={handleViewInFolder}
-            disabled={misc.contextMenu.disabledOptions.includes('viewInFolder')}
+            disabled={misc.contextMenu.disabledOptions?.includes('viewInFolder')}
           />
           <ContextMenuButton
+            data-testid="spectrogram-button"
             text={t('Show spectrogram')}
             onClick={handleShowSpectrogram}
             disabled={
-              !misc.contextMenu.type.match('music|nowPlaying') || multiSelect.selected.length !== 1
+              !misc.contextMenu.type?.match('music|nowPlaying') || multiSelect.selected.length !== 1
             }
           />
         </ContextMenu>
@@ -939,9 +967,11 @@ export const GlobalContextMenu = () => {
       <SpectrogramModal
         show={showSpectrogram}
         handleHide={() => setShowSpectrogram(false)}
-        streamUrl={multiSelect.selected[0]?.streamUrl}
-        title={multiSelect.selected[0]?.title}
-        artist={multiSelect.selected[0]?.artist?.map((a: any) => a.title).join(', ')}
+        streamUrl={(multiSelect.selected[0] as unknown as Song)?.streamUrl}
+        title={(multiSelect.selected[0] as unknown as Song)?.title}
+        artist={(multiSelect.selected[0] as unknown as Song)?.artist
+          ?.map((a: { title: string }) => a.title)
+          .join(', ')}
       />
     </>
   );

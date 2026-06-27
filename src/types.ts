@@ -29,7 +29,6 @@ export type APIEndpoints =
   | 'getRandomSongs'
   | 'getArtist'
   | 'getArtists'
-  | 'getArtistInfo'
   | 'getArtistSongs'
   | 'startScan'
   | 'getScanStatus'
@@ -40,10 +39,6 @@ export type APIEndpoints =
   | 'setRating'
   | 'getSimilarSongs'
   | 'updatePlaylistSongs'
-  | 'updatePlaylistSongsLg'
-  | 'deletePlaylist'
-  | 'createPlaylist'
-  | 'updatePlaylist'
   | 'updatePlaylistSongsLg'
   | 'deletePlaylist'
   | 'createPlaylist'
@@ -86,6 +81,7 @@ export interface Album {
   title: string;
   isDir?: boolean;
   albumId: string;
+  parent?: string;
   albumArtist?: string;
   albumArtistId: string;
   artist?: Artist[];
@@ -193,6 +189,7 @@ export interface Song {
   uniqueId: string;
   isRadio?: boolean;
   isPodcast?: boolean;
+  playNextBlock?: boolean;
 }
 
 export interface ScanStatus {
@@ -207,7 +204,7 @@ export interface Sort {
 
 export interface Pagination {
   pages?: number;
-  activePage?: number;
+  activePage: number;
   serverSide?: boolean;
   recordsPerPage: number;
 }

@@ -1,7 +1,8 @@
-import { AnyAction, configureStore, Dispatch, EnhancedStore, Middleware } from '@reduxjs/toolkit';
-import { forwardToMain, replayActionRenderer } from 'electron-redux';
+import { configureStore, createListenerMiddleware } from '@reduxjs/toolkit';
+import { stateSyncEnhancer } from 'electron-redux/renderer';
+import { settings } from '../components/shared/bridge';
 import playerReducer from './playerSlice';
-import playQueueReducer, { PlayQueue } from './playQueueSlice';
+import playQueueReducer from './playQueueSlice';
 import multiSelectReducer from './multiSelectSlice';
 import miscReducer from './miscSlice';
 import playlistReducer from './playlistSlice';
@@ -12,14 +13,49 @@ import artistReducer from './artistSlice';
 import viewReducer from './viewSlice';
 import eqReducer from './eqSlice';
 import peqReducer from './peqSlice';
-import smartPlaylistReducer from './smartPlaylistSlice';
+import smartPlaylistReducer, {
+  addSmartPlaylist,
+  updateSmartPlaylist,
+  deleteSmartPlaylist,
+  setLibrarySyncedAt,
+} from './smartPlaylistSlice';
 import jukeboxReducer from './jukeboxSlice';
+import type { SmartPlaylist } from '../types';
 
-export const store: EnhancedStore<
-  any,
-  AnyAction,
-  [Middleware<Record<string, any>, any, Dispatch<AnyAction>>]
-> = configureStore<PlayQueue | any>({
+const smartPlaylistListener = createListenerMiddleware();
+
+smartPlaylistListener.startListening({
+  actionCreator: addSmartPlaylist,
+  effect: (_action, api) => {
+    const state = api.getState() as { smartPlaylist: { playlists: SmartPlaylist[] } };
+    settings.set('smartPlaylists', state.smartPlaylist.playlists);
+  },
+});
+
+smartPlaylistListener.startListening({
+  actionCreator: updateSmartPlaylist,
+  effect: (_action, api) => {
+    const state = api.getState() as { smartPlaylist: { playlists: SmartPlaylist[] } };
+    settings.set('smartPlaylists', state.smartPlaylist.playlists);
+  },
+});
+
+smartPlaylistListener.startListening({
+  actionCreator: deleteSmartPlaylist,
+  effect: (_action, api) => {
+    const state = api.getState() as { smartPlaylist: { playlists: SmartPlaylist[] } };
+    settings.set('smartPlaylists', state.smartPlaylist.playlists);
+  },
+});
+
+smartPlaylistListener.startListening({
+  actionCreator: setLibrarySyncedAt,
+  effect: (action) => {
+    settings.set('librarySyncedAt', action.payload);
+  },
+});
+
+export const store = configureStore({
   reducer: {
     player: playerReducer,
     playQueue: playQueueReducer,
@@ -36,12 +72,17 @@ export const store: EnhancedStore<
     smartPlaylist: smartPlaylistReducer,
     jukebox: jukeboxReducer,
   },
-  middleware: [forwardToMain],
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({
+      serializableCheck: {
+        ignoredActions: [],
+        ignoredPaths: [],
+      },
+      immutabilityCheck: true,
+    }).prepend(smartPlaylistListener.middleware),
+  enhancers: (getDefaultEnhancers) => getDefaultEnhancers().concat(stateSyncEnhancer()),
 });
 
-replayActionRenderer(store);
-
-// Infer the `RootState` and `AppDispatch` types from the store itself
 export type RootState = ReturnType<typeof store.getState>;
 
 // Inferred type: {posts: PostsState, comments: CommentsState, users: UsersState}

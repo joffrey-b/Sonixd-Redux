@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import _ from 'lodash';
 import { ButtonToolbar, Nav, Whisper } from 'rsuite';
-import { useQuery, useQueryClient } from 'react-query';
-import { useHistory } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import i18n from '../../i18n/i18n';
+import type { TFunction } from 'i18next';
 import GridViewType from '../viewtypes/GridViewType';
-import ListViewType from '../viewtypes/ListViewType';
+import ListViewType, { ListViewHandle } from '../viewtypes/ListViewType';
 import useSearchQuery from '../../hooks/useSearchQuery';
 import GenericPageHeader from '../layout/GenericPageHeader';
 import GenericPage from '../layout/GenericPage';
@@ -20,7 +20,20 @@ import {
 import { FilterButton, RefreshButton } from '../shared/ToolbarButtons';
 import { setSearchQuery } from '../../redux/miscSlice';
 import { apiController } from '../../api/controller';
-import { Item, Server } from '../../types';
+import { Album, Genre, Item, Server } from '../../types';
+import type { RowDataType } from 'rsuite-table';
+
+interface AlbumSortType {
+  label: string;
+  value: string;
+  role: string;
+}
+
+interface AlbumListData {
+  data: Album[];
+  totalRecordCount: number;
+}
+
 import AdvancedFilters from './AdvancedFilters';
 import useAdvancedFilter from '../../hooks/useAdvancedFilter';
 import ColumnSort from '../shared/ColumnSort';
@@ -32,35 +45,38 @@ import useListClickHandler from '../../hooks/useListClickHandler';
 import Popup from '../shared/Popup';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
 
-export const ALBUM_SORT_TYPES = [
-  { label: i18n.t('A-Z (Name)'), value: 'alphabeticalByName', role: i18n.t('Default') },
-  { label: i18n.t('A-Z (Artist)'), value: 'alphabeticalByArtist', role: i18n.t('Default') },
-  { label: i18n.t('Most Played'), value: 'frequent', role: i18n.t('Default') },
-  { label: i18n.t('Random'), value: 'random', role: i18n.t('Default') },
-  { label: i18n.t('Recently Added'), value: 'newest', role: i18n.t('Default') },
-  { label: i18n.t('Recently Played'), value: 'recent', role: i18n.t('Default') },
+export const getAlbumSortTypes = (t: TFunction) => [
+  { label: t('A-Z (Name)'), value: 'alphabeticalByName', role: t('Default') },
+  { label: t('A-Z (Artist)'), value: 'alphabeticalByArtist', role: t('Default') },
+  { label: t('Most Played'), value: 'frequent', role: t('Default') },
+  { label: t('Random'), value: 'random', role: t('Default') },
+  { label: t('Recently Added'), value: 'newest', role: t('Default') },
+  { label: t('Recently Played'), value: 'recent', role: t('Default') },
 ];
 
 const AlbumList = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
-  const history = useHistory();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const folder = useAppSelector((state) => state.folder);
   const config = useAppSelector((state) => state.config);
   const misc = useAppSelector((state) => state.misc);
   const view = useAppSelector((state) => state.view);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [sortTypes, setSortTypes] = useState<any[]>([]);
-  const [viewType, setViewType] = useState(settings.get('albumViewType'));
-  const [musicFolder, setMusicFolder] = useState({ loaded: false, id: undefined });
+  const [sortTypes, setSortTypes] = useState<AlbumSortType[]>([]);
+  const [viewType, setViewType] = useState(settings.get('albumViewType') || 'list');
+  const [musicFolder, setMusicFolder] = useState<{ loaded: boolean; id: string | undefined }>({
+    loaded: false,
+    id: undefined,
+  });
   const albumFilterPickerContainerRef = useRef(null);
-  const [currentQueryKey, setCurrentQueryKey] = useState<any>(['albumList']);
+  const [currentQueryKey, setCurrentQueryKey] = useState<unknown[]>(['albumList']);
 
-  const gridRef = useRef<any>();
-  const listRef = useRef<any>();
+  const gridRef = useRef(null);
+  const listRef = useRef<ListViewHandle | null>(null);
   const { gridScroll } = useGridScroll(gridRef);
   const { listScroll } = useListScroll(listRef);
 
@@ -86,9 +102,9 @@ const AlbumList = () => {
     isError,
     data: albums,
     error,
-  }: any = useQuery(
-    currentQueryKey,
-    () =>
+  } = useQuery<AlbumListData>({
+    queryKey: currentQueryKey,
+    queryFn: () =>
       view.album.filter === 'random' ||
       (view.album.pagination.recordsPerPage !== 0 && view.album.pagination.serverSide)
         ? apiController({
@@ -133,38 +149,41 @@ const AlbumList = () => {
                     musicFolderId: musicFolder.id,
                   },
           }),
-    {
-      cacheTime:
-        view.album.pagination.recordsPerPage !== 0 && config.serverType === Server.Jellyfin
-          ? 600000
-          : Infinity,
-      staleTime:
-        view.album.pagination.recordsPerPage !== 0 && config.serverType === Server.Jellyfin
-          ? 600000
-          : Infinity,
-      enabled: musicFolder.loaded,
-    }
-  );
-
-  const { data: genres }: any = useQuery(['genreList'], async () => {
-    const res = await apiController({
-      serverType: config.serverType,
-      endpoint: 'getGenres',
-      args: { musicFolderId: folder.musicFolder },
-    });
-    return res.map((genre: any) => {
-      if (genre.albumCount !== 0) {
-        return {
-          label: `${genre.title}${genre.albumCount ? ` (${genre.albumCount})` : ''}`,
-          value: genre.title,
-          role: 'Genre',
-        };
-      }
-      return null;
-    });
+    gcTime:
+      view.album.pagination.recordsPerPage !== 0 && config.serverType === Server.Jellyfin
+        ? 600000
+        : Infinity,
+    staleTime:
+      view.album.pagination.recordsPerPage !== 0 && config.serverType === Server.Jellyfin
+        ? 600000
+        : Infinity,
+    enabled: musicFolder.loaded,
   });
 
-  const searchedData = useSearchQuery(misc.searchQuery, albums?.data, [
+  const { data: genres } = useQuery<AlbumSortType[]>({
+    queryKey: ['genreList'],
+    queryFn: async () => {
+      const res = await apiController({
+        serverType: config.serverType,
+        endpoint: 'getGenres',
+        args: { musicFolderId: folder.musicFolder },
+      });
+      return _.compact(
+        (res as Genre[]).map((genre: Genre) => {
+          if (genre.albumCount !== 0) {
+            return {
+              label: `${genre.title}${genre.albumCount ? ` (${genre.albumCount})` : ''}`,
+              value: genre.title,
+              role: 'Genre',
+            };
+          }
+          return null;
+        })
+      );
+    },
+  });
+
+  const searchedData = useSearchQuery(misc.searchQuery, albums?.data ?? [], [
     'title',
     'artist',
     'genre',
@@ -172,13 +191,13 @@ const AlbumList = () => {
   ]);
 
   const { filteredData, byArtistData, byArtistBaseData, byGenreData, byStarredData, byYearData } =
-    useAdvancedFilter(albums?.data, view.album.advancedFilters);
+    useAdvancedFilter(albums?.data ?? [], view.album.advancedFilters);
 
   const { sortColumns, sortedData } = useColumnSort(filteredData, Item.Album, view.album.sort);
 
   useEffect(() => {
-    setSortTypes(_.compact(_.concat(ALBUM_SORT_TYPES, genres)));
-  }, [genres]);
+    setSortTypes(_.compact(_.concat(getAlbumSortTypes(t), genres)));
+  }, [genres, t]);
 
   useEffect(() => {
     if (albums?.data && sortedData?.length) {
@@ -202,12 +221,12 @@ const AlbumList = () => {
   }, [albums, config.serverType, dispatch, sortedData?.length, view.album.pagination]);
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
-    doubleClick: (rowData: any) => history.push(`/library/album/${rowData.id}`),
+    doubleClick: (rowData: RowDataType) => navigate(`/library/album/${rowData.id as string}`),
   });
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await queryClient.refetchQueries(['albumList'], { active: true });
+    await queryClient.refetchQueries({ queryKey: ['albumList'], type: 'active' });
     setIsRefreshing(false);
   };
 
@@ -237,18 +256,16 @@ const AlbumList = () => {
                   defaultValue={view.album.filter}
                   value={view.album.filter}
                   groupBy="role"
-                  data={sortTypes || ALBUM_SORT_TYPES}
+                  data={sortTypes || getAlbumSortTypes(t)}
                   disabledItemValues={
                     config.serverType === Server.Jellyfin ? ['frequent', 'recent'] : []
                   }
                   cleanable={false}
                   placeholder={t('Sort Type')}
                   onChange={async (value: string) => {
-                    await queryClient.cancelQueries([
-                      'albumList',
-                      view.album.filter,
-                      musicFolder.id,
-                    ]);
+                    await queryClient.cancelQueries({
+                      queryKey: ['albumList', view.album.filter, musicFolder.id],
+                    });
                     dispatch(setSearchQuery(''));
                     dispatch(setFilter({ listType: Item.Album, data: value }));
                     dispatch(setPagination({ listType: Item.Album, data: { activePage: 1 } }));
@@ -281,8 +298,8 @@ const AlbumList = () => {
                       justified
                       appearance="tabs"
                     >
-                      <StyledNavItem eventKey="filters">Filters</StyledNavItem>
-                      <StyledNavItem eventKey="sort">Sort</StyledNavItem>
+                      <StyledNavItem eventKey="filters">{t('Filters')}</StyledNavItem>
+                      <StyledNavItem eventKey="sort">{t('Sort')}</StyledNavItem>
                     </Nav>
                     <br />
                     {view.album.advancedFilters.nav === 'filters' && (
@@ -295,7 +312,7 @@ const AlbumList = () => {
                           byStarredData,
                           byYearData,
                         }}
-                        originalData={albums?.data}
+                        originalData={albums?.data ?? []}
                         filter={view.album.advancedFilters}
                         setAdvancedFilters={setAdvancedFilters}
                       />
@@ -324,7 +341,7 @@ const AlbumList = () => {
                           dispatch(
                             setColumnSort({
                               listType: Item.Album,
-                              data: { ...view.album.sort, type: e },
+                              data: { ...view.album.sort, type: e as 'asc' | 'desc' },
                             })
                           )
                         }
@@ -342,6 +359,7 @@ const AlbumList = () => {
                 }
               >
                 <FilterButton
+                  data-testid="album-filter-button"
                   size="sm"
                   appearance={
                     view.album.advancedFilters.enabled || view.album.sort.column
@@ -359,7 +377,7 @@ const AlbumList = () => {
         />
       }
     >
-      {isError && <div>{(error as any)?.message || 'Failed to load.'}</div>}
+      {isError && <div>{(error as Error)?.message || 'Failed to load.'}</div>}
       {!isError && viewType === 'list' && (
         <ListViewType
           ref={listRef}
@@ -367,19 +385,19 @@ const AlbumList = () => {
             misc.searchQuery !== ''
               ? searchedData
               : (config.serverType === Server.Subsonic || !view.album.pagination.serverSide) &&
-                view.album.pagination.recordsPerPage !== 0
-              ? sortedData?.slice(
-                  (view.album.pagination.activePage - 1) * view.album.pagination.recordsPerPage,
-                  view.album.pagination.activePage * view.album.pagination.recordsPerPage
-                )
-              : sortedData
+                  view.album.pagination.recordsPerPage !== 0
+                ? sortedData?.slice(
+                    (view.album.pagination.activePage - 1) * view.album.pagination.recordsPerPage,
+                    view.album.pagination.activePage * view.album.pagination.recordsPerPage
+                  )
+                : sortedData
           }
           tableColumns={config.lookAndFeel.listView.album.columns}
           rowHeight={config.lookAndFeel.listView.album.rowHeight}
           fontSize={config.lookAndFeel.listView.album.fontSize}
           handleRowClick={handleRowClick}
           handleRowDoubleClick={handleRowDoubleClick}
-          handleRating={(rowData: any, rating: number) =>
+          handleRating={(rowData: RowDataType, rating: number) =>
             handleRating(rowData, {
               queryKey: ['albumList', view.album.filter, musicFolder.id],
               rating,
@@ -400,7 +418,7 @@ const AlbumList = () => {
             'viewInFolder',
           ]}
           loading={isLoading}
-          handleFavorite={(rowData: any) =>
+          handleFavorite={(rowData: RowDataType) =>
             handleFavorite(rowData, { queryKey: ['albumList', view.album.filter, musicFolder.id] })
           }
           initialScrollOffset={Number(localStorage.getItem('scroll_list_albumList'))}
@@ -409,7 +427,7 @@ const AlbumList = () => {
           }}
           paginationProps={
             view.album.pagination.recordsPerPage !== 0 && {
-              disabled: misc.searchQuery !== '' ? true : null,
+              disabled: misc.searchQuery !== '' ? true : undefined,
               pages: view.album.pagination.pages,
               activePage: view.album.pagination.activePage,
               maxButtons: 3,
@@ -433,7 +451,7 @@ const AlbumList = () => {
               },
               onSelect: async (e: number) => {
                 localStorage.setItem('scroll_list_albumList', '0');
-                await queryClient.cancelQueries(['albumList'], { active: true });
+                await queryClient.cancelQueries({ queryKey: ['albumList'], type: 'active' });
                 dispatch(
                   setPagination({
                     listType: Item.Album,
@@ -455,12 +473,12 @@ const AlbumList = () => {
             misc.searchQuery !== ''
               ? searchedData
               : (config.serverType === Server.Subsonic || !view.album.pagination.serverSide) &&
-                view.album.pagination.recordsPerPage !== 0
-              ? sortedData?.slice(
-                  (view.album.pagination.activePage - 1) * view.album.pagination.recordsPerPage,
-                  view.album.pagination.activePage * view.album.pagination.recordsPerPage
-                )
-              : sortedData
+                  view.album.pagination.recordsPerPage !== 0
+                ? sortedData?.slice(
+                    (view.album.pagination.activePage - 1) * view.album.pagination.recordsPerPage,
+                    view.album.pagination.activePage * view.album.pagination.recordsPerPage
+                  )
+                : sortedData
           }
           cardTitle={{
             prefix: '/library/album',
@@ -476,7 +494,7 @@ const AlbumList = () => {
           playClick={{ type: 'album', idProperty: 'id' }}
           size={config.lookAndFeel.gridView.cardSize}
           cacheType="album"
-          handleFavorite={(rowData: any) =>
+          handleFavorite={(rowData: RowDataType) =>
             handleFavorite(rowData, { queryKey: ['albumList', view.album.filter, musicFolder.id] })
           }
           initialScrollOffset={Number(localStorage.getItem('scroll_grid_albumList'))}
@@ -486,7 +504,7 @@ const AlbumList = () => {
           loading={isLoading}
           paginationProps={
             view.album.pagination.recordsPerPage !== 0 && {
-              disabled: misc.searchQuery !== '' ? true : null,
+              disabled: misc.searchQuery !== '' ? true : undefined,
               pages: view.album.pagination.pages,
               activePage: view.album.pagination.activePage,
               maxButtons: 3,
@@ -510,7 +528,7 @@ const AlbumList = () => {
               },
               onSelect: async (e: number) => {
                 localStorage.setItem('scroll_grid_albumList', '0');
-                await queryClient.cancelQueries(['albumList']);
+                await queryClient.cancelQueries({ queryKey: ['albumList'] });
                 dispatch(
                   setPagination({
                     listType: Item.Album,

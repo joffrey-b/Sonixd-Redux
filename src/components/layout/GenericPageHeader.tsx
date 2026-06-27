@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
-import { useHistory } from 'react-router-dom';
-import { Icon, InputGroup } from 'rsuite';
+import { useNavigate } from 'react-router-dom';
+import { InputGroup } from 'rsuite';
+import CloseIcon from '@rsuite/icons/legacy/Close';
+import SearchIcon from '@rsuite/icons/legacy/Search';
 import ViewTypeButtons from '../viewtypes/ViewTypeButtons';
 import {
   StyledIconButton,
@@ -18,8 +20,34 @@ import {
   PageHeaderWrapper,
 } from './styled';
 import cacheImage from '../shared/cacheImage';
-import { settings } from '../shared/setDefaultSettings';
+import { settings } from '../shared/bridge';
 import CustomTooltip from '../shared/CustomTooltip';
+
+interface CacheImagesConfig {
+  enabled: boolean;
+  cacheType: string;
+  id: string;
+}
+
+interface GenericPageHeaderProps {
+  image?: string | string[] | React.ReactNode;
+  imageHeight?: number;
+  title?: React.ReactNode;
+  subtitle?: React.ReactNode;
+  sidetitle?: React.ReactNode;
+  subsidetitle?: React.ReactNode;
+  searchQuery?: string;
+  clearSearchQuery?: () => void;
+  handleSearch?: (v: string) => void;
+  showViewTypeButtons?: boolean;
+  showSearchBar?: boolean;
+  handleListClick?: () => void;
+  handleGridClick?: () => void;
+  viewTypeSetting?: string;
+  cacheImages?: CacheImagesConfig;
+  showTitleTooltip?: boolean;
+  isDark?: boolean;
+}
 
 const GenericPageHeader = ({
   image,
@@ -39,24 +67,24 @@ const GenericPageHeader = ({
   cacheImages,
   showTitleTooltip,
   isDark,
-}: any) => {
-  const history = useHistory();
+}: GenericPageHeaderProps) => {
+  const navigate = useNavigate();
   const [openSearch, setOpenSearch] = useState(false);
 
   return (
     <>
       {image && !Array.isArray(image) && (
-        <CoverArtWrapper size={imageHeight || '195px'} card={typeof image !== 'string'}>
+        <CoverArtWrapper $size={imageHeight || 195} $card={typeof image !== 'string'}>
           {typeof image !== 'string' ? (
             <>{image}</>
           ) : (
             <LazyLoadImage
               src={image}
               alt="header-img"
-              height={imageHeight || '195px'}
+              height={imageHeight || 195}
               visibleByDefault
               afterLoad={() => {
-                if (cacheImages.enabled && settings.get('cacheImages')) {
+                if (cacheImages?.enabled && settings.get('cacheImages')) {
                   cacheImage(
                     `${cacheImages.cacheType}_${cacheImages.id}.jpg`,
                     image.replaceAll(/=150/gi, '=350')
@@ -69,49 +97,58 @@ const GenericPageHeader = ({
       )}
 
       {image && Array.isArray(image) && (
-        <CoverArtWrapper size={imageHeight || '195px'}>
+        <CoverArtWrapper $size={imageHeight ?? 195}>
           <CustomImageGridWrapper>
             <CustomImageGrid $gridArea="1 / 1 / 2 / 2">
-              <LazyLoadImage
-                src={image[0]}
-                alt="header-img"
-                height={imageHeight / 2}
-                width={imageHeight / 2}
-              />
+              {image[0] && (
+                <LazyLoadImage
+                  src={image[0]}
+                  alt="header-img"
+                  height={(imageHeight ?? 0) / 2}
+                  width={(imageHeight ?? 0) / 2}
+                />
+              )}
             </CustomImageGrid>
             <CustomImageGrid $gridArea="1 / 2 / 2 / 3">
-              <LazyLoadImage
-                src={image[1]}
-                alt="header-img"
-                height={imageHeight / 2}
-                width={imageHeight / 2}
-              />
+              {image[1] && (
+                <LazyLoadImage
+                  src={image[1]}
+                  alt="header-img"
+                  height={(imageHeight ?? 0) / 2}
+                  width={(imageHeight ?? 0) / 2}
+                />
+              )}
             </CustomImageGrid>
             <CustomImageGrid $gridArea="2 / 1 / 3 / 2">
-              <LazyLoadImage
-                src={image[2]}
-                alt="header-img"
-                height={imageHeight / 2}
-                width={imageHeight / 2}
-              />
+              {image[2] && (
+                <LazyLoadImage
+                  src={image[2]}
+                  alt="header-img"
+                  height={(imageHeight ?? 0) / 2}
+                  width={(imageHeight ?? 0) / 2}
+                />
+              )}
             </CustomImageGrid>
             <CustomImageGrid $gridArea="2 / 2 / 3 / 3">
-              <LazyLoadImage
-                src={image[3]}
-                alt="header-img"
-                height={imageHeight / 2}
-                width={imageHeight / 2}
-              />
+              {image[3] && (
+                <LazyLoadImage
+                  src={image[3]}
+                  alt="header-img"
+                  height={(imageHeight ?? 0) / 2}
+                  width={(imageHeight ?? 0) / 2}
+                />
+              )}
             </CustomImageGrid>
           </CustomImageGridWrapper>
         </CoverArtWrapper>
       )}
 
-      <PageHeaderWrapper isDark={isDark} hasImage={image} imageHeight={imageHeight || 195}>
+      <PageHeaderWrapper $isDark={isDark} $hasImage={!!image} $imageHeight={imageHeight || 195}>
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
+            flexShrink: 0,
           }}
         >
           <span
@@ -140,21 +177,21 @@ const GenericPageHeader = ({
                 {searchQuery !== '' || openSearch ? (
                   <StyledInputGroup inside>
                     <InputGroup.Addon>
-                      <Icon icon="search" />
+                      <SearchIcon />
                     </InputGroup.Addon>
                     <StyledInput
-                      opacity={0.6}
+                      $opacity={0.6}
                       id="local-search-input"
                       value={searchQuery}
                       onChange={handleSearch}
                       onPressEnter={() => {
-                        if (searchQuery.trim()) {
-                          history.push(`/search?query=${searchQuery}`);
+                        if (searchQuery?.trim()) {
+                          navigate(`/search?query=${searchQuery}`);
                         }
                       }}
                       onKeyDown={(e: KeyboardEvent) => {
                         if (e.key === 'Escape') {
-                          clearSearchQuery();
+                          clearSearchQuery?.();
                           setOpenSearch(false);
                         }
                       }}
@@ -164,17 +201,17 @@ const GenericPageHeader = ({
                       tabIndex={0}
                       appearance="subtle"
                       onClick={() => {
-                        clearSearchQuery();
+                        clearSearchQuery?.();
                         setOpenSearch(false);
                       }}
-                      onKeyDown={(e: any) => {
+                      onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
                         if (e.key === ' ' || e.key === 'Enter') {
-                          clearSearchQuery();
+                          clearSearchQuery?.();
                           setOpenSearch(false);
                         }
                       }}
                     >
-                      <Icon icon="close" />
+                      <CloseIcon />
                     </StyledInputGroupButton>
                   </StyledInputGroup>
                 ) : (
@@ -190,7 +227,7 @@ const GenericPageHeader = ({
                       }, 50);
                     }}
                     appearance="subtle"
-                    icon={<Icon icon="search" />}
+                    icon={<SearchIcon />}
                   />
                 )}
               </span>
@@ -201,9 +238,10 @@ const GenericPageHeader = ({
           style={{
             display: 'flex',
             justifyContent: 'space-between',
-            height: '50%',
+            flex: 1,
             whiteSpace: 'nowrap',
             overflow: 'visible',
+            minHeight: 0,
           }}
         >
           <PageHeaderSubtitleWrapper>{subtitle}</PageHeaderSubtitleWrapper>
@@ -212,9 +250,9 @@ const GenericPageHeader = ({
             {showViewTypeButtons && (
               <span style={{ display: 'inline-block' }}>
                 <ViewTypeButtons
-                  handleListClick={handleListClick}
-                  handleGridClick={handleGridClick}
-                  viewTypeSetting={viewTypeSetting}
+                  handleListClick={handleListClick ?? (() => {})}
+                  handleGridClick={handleGridClick ?? (() => {})}
+                  viewTypeSetting={viewTypeSetting ?? ''}
                 />
               </span>
             )}

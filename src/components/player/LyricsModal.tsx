@@ -1,16 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { Icon } from 'rsuite';
+import PauseCircleIcon from '@rsuite/icons/legacy/PauseCircle';
+import PlayCircleIcon from '@rsuite/icons/legacy/PlayCircle';
+import StepBackwardIcon from '@rsuite/icons/legacy/StepBackward';
+import StepForwardIcon from '@rsuite/icons/legacy/StepForward';
 import format from 'format-duration';
 import { InfoModal } from '../modal/Modal';
 import { LyricsData } from '../../hooks/useGetLyrics';
 import { StyledIconButton } from '../shared/styled';
 import Slider from '../slider/Slider';
+import { settings } from '../shared/bridge';
 
 const ModalInner = styled.div`
   display: flex;
   flex-direction: column;
   height: 75vh;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
 `;
 
 const LyricsContainer = styled.div`
@@ -34,7 +41,9 @@ const Line = styled.p<{ $active: boolean; $past: boolean; $clickable: boolean }>
     if (p.$past) return 0.35;
     return 0.6;
   }};
-  transition: opacity 0.3s ease, font-size 0.2s ease;
+  transition:
+    opacity 0.3s ease,
+    font-size 0.2s ease;
   line-height: 1.7;
   cursor: ${(p) => (p.$clickable ? 'pointer' : 'default')};
   &:hover {
@@ -128,10 +137,9 @@ const LyricsModal = ({
 }: Props) => {
   const lineRefs = useRef<(HTMLParagraphElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [fontSize, setFontSize] = useState<number>(() => {
-    const saved = localStorage.getItem('lyricsFontSize');
-    return saved ? Number(saved) : 15;
-  });
+  const [fontSize, setFontSize] = useState<number>(
+    () => settings.get<'lyricsFontSize'>('lyricsFontSize') ?? 15
+  );
   // Keep the last valid lyrics while a new song's lyrics are loading so the
   // modal never unmounts mid-transition (prevents the visible flash).
   const lastLyricsRef = useRef<LyricsData | null>(null);
@@ -158,7 +166,8 @@ const LyricsModal = ({
     if (!displayLyrics?.synced || !displayLyrics.lines.length) return -1;
     let idx = -1;
     for (let i = 0; i < displayLyrics.lines.length; i += 1) {
-      if (displayLyrics.lines[i].time !== null && displayLyrics.lines[i].time! <= currentTimeMs) {
+      const lineTime = displayLyrics.lines[i].time;
+      if (lineTime !== null && lineTime <= currentTimeMs) {
         idx = i;
       }
     }
@@ -187,7 +196,8 @@ const LyricsModal = ({
       return;
     }
     if (activeIndex >= 0 && lineRefs.current[activeIndex]) {
-      lineRefs.current[activeIndex]!.scrollIntoView({
+      const activeEl = lineRefs.current[activeIndex];
+      activeEl.scrollIntoView({
         behavior: 'smooth',
         block: 'center',
       });
@@ -197,17 +207,26 @@ const LyricsModal = ({
   if (!displayLyrics?.lines?.length) return null;
 
   return (
-    <InfoModal width="560px" show={show} handleHide={handleHide}>
-      <ModalInner>
+    <InfoModal size="sm" show={show} handleHide={handleHide}>
+      <ModalInner data-testid="lyrics-modal">
         {(title || artist) && (
-          <SongHeader>{artist && title ? `${artist} — ${title}` : artist || title}</SongHeader>
+          <SongHeader data-testid="lyrics-header">
+            {artist && title ? `${artist} — ${title}` : artist || title}
+          </SongHeader>
         )}
-        <LyricsContainer ref={containerRef} style={{ fontSize }}>
+        <LyricsContainer
+          data-testid="lyrics-scroll-container"
+          ref={containerRef}
+          style={{ fontSize }}
+        >
           {displayLyrics.lines.map((line, i) => (
             <Line
-              // eslint-disable-next-line react/no-array-index-key
               key={i}
-              ref={(el) => {
+              data-testid="lyrics-line"
+              data-index={i}
+              data-time={line.time ?? ''}
+              data-active={i === activeIndex}
+              ref={(el: HTMLParagraphElement | null) => {
                 lineRefs.current[i] = el;
               }}
               $active={i === activeIndex}
@@ -228,6 +247,7 @@ const LyricsModal = ({
             <TimeLabel>{format(currentTime * 1000)}</TimeLabel>
             <div style={{ flex: 1 }}>
               <Slider
+                className="lyrics-seek-bar"
                 value={currentTime}
                 min={0}
                 max={duration || 0}
@@ -239,19 +259,22 @@ const LyricsModal = ({
           </SeekRow>
           <ButtonRow>
             <StyledIconButton
+              data-testid="lyrics-previous"
               appearance="subtle"
-              icon={<Icon icon="step-backward" />}
+              icon={<StepBackwardIcon />}
               onClick={handlePrevTrack}
             />
             <StyledIconButton
+              data-testid="lyrics-play-pause"
               appearance="subtle"
               size="lg"
-              icon={<Icon icon={playerStatus === 'PLAYING' ? 'pause-circle' : 'play-circle'} />}
+              icon={playerStatus === 'PLAYING' ? <PauseCircleIcon /> : <PlayCircleIcon />}
               onClick={handlePlayPause}
             />
             <StyledIconButton
+              data-testid="lyrics-next"
               appearance="subtle"
-              icon={<Icon icon="step-forward" />}
+              icon={<StepForwardIcon />}
               onClick={handleNextTrack}
             />
           </ButtonRow>
@@ -259,13 +282,14 @@ const LyricsModal = ({
             <ZoomLabel>A</ZoomLabel>
             <div style={{ width: 80 }}>
               <Slider
+                className="lyrics-zoom-slider"
                 min={10}
                 max={28}
                 step={1}
                 value={fontSize}
                 onAfterChange={(val: number) => {
                   setFontSize(val);
-                  localStorage.setItem('lyricsFontSize', String(val));
+                  settings.set('lyricsFontSize', val);
                 }}
               />
             </div>
