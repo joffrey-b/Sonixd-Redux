@@ -143,6 +143,32 @@ export async function getOpenExternalCalls(app: ElectronApplication): Promise<st
   });
 }
 
+// Overrides clipboard.writeText in the Electron main process to record calls
+// instead of touching the real OS clipboard — clipboard.writeText needs a running
+// X11 clipboard manager/selection owner that a bare Xvfb session doesn't provide
+// (confirmed separately), so the real clipboard can't be asserted on in CI. The
+// app-level flow (dialog -> Cancel/Copy anyway -> bridge:clipboard:write-text IPC)
+// is still fully exercisable by mocking at this boundary, same technique as
+// mockOpenExternal above. Must be called BEFORE the click that triggers it.
+export async function mockClipboardWriteText(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ clipboard }) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__clipboardWriteTextCalls = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (clipboard as any).writeText = (text: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__clipboardWriteTextCalls.push(text);
+    };
+  });
+}
+
+export async function getClipboardWriteTextCalls(app: ElectronApplication): Promise<string[]> {
+  return app.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (globalThis as any).__clipboardWriteTextCalls || [];
+  });
+}
+
 /* eslint-disable react-hooks/rules-of-hooks */
 export const test = base.extend<{
   freshApp: AppFixture;

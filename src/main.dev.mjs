@@ -29,6 +29,7 @@ import {
   Tray,
   dialog,
   nativeTheme,
+  clipboard,
 } from 'electron';
 import { configureStore } from '@reduxjs/toolkit';
 import { stateSyncEnhancer } from 'electron-redux/main';
@@ -1395,6 +1396,14 @@ ipcMain.handle('file-path', async () => {
 
 ipcMain.on('minimize', () => {
   mainWindow?.minimize();
+});
+
+// clipboard.writeText is unavailable inside a sandboxed preload (Electron 20+,
+// see bridge.ts's `clipboard.writeText`) — proxied through main exactly like
+// shell.openExternal/openPath, since main always retains full Electron API access.
+ipcMain.on('bridge:clipboard:write-text', (_event, text) => {
+  if (typeof text !== 'string') return;
+  clipboard.writeText(text);
 });
 
 ipcMain.on('maximize', () => {

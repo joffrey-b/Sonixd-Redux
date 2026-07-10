@@ -9,6 +9,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
+  CopyToClipboardButton,
   DownloadButton,
   FavoriteButton,
   PlayAppendButton,
@@ -43,6 +44,7 @@ import Popup from '../shared/Popup';
 import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
+import { useCopyToClipboardConfirm } from '../../hooks/useCopyToClipboardConfirm';
 
 const fac = new FastAverageColor();
 
@@ -174,6 +176,7 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
   const { handleFavorite } = useFavorite();
   const { handlePlayQueueAdd } = usePlayQueueHandler();
   const { handleRating } = useRating();
+  const { requestCopyConfirmation, confirmCopyModal } = useCopyToClipboardConfirm();
 
   const handleDownload = async (type: 'copy' | 'download') => {
     if (config.serverType === Server.Jellyfin) {
@@ -587,35 +590,18 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
                         })
                       }
                     />
-                    <Whisper
-                      trigger="hover"
-                      placement="bottom"
-                      delay={500}
-                      enterable
-                      preventOverflow
-                      speaker={
-                        <Popup>
-                          <ButtonToolbar>
-                            <StyledButton onClick={() => handleDownload('download')}>
-                              {t('Download')}
-                            </StyledButton>
-                            <StyledButton onClick={() => handleDownload('copy')}>
-                              {t('Copy to clipboard')}
-                            </StyledButton>
-                          </ButtonToolbar>
-                        </Popup>
-                      }
-                    >
-                      {/* DownloadButton renders its own CustomTooltip, which is itself a
-                          Whisper — nesting that directly as this outer Whisper's child
-                          leaves it without a plain DOM node to measure for positioning,
-                          so the popup fell back to the viewport origin (top-left)
-                          instead of anchoring under the button. A plain wrapper element
-                          gives it one, same as nav-search's Whisper in SearchBar.tsx. */}
-                      <span style={{ display: 'inline-block' }}>
-                        <DownloadButton size="lg" appearance="subtle" />
-                      </span>
-                    </Whisper>
+                    <DownloadButton
+                      data-testid="download-action-download"
+                      size="lg"
+                      appearance="subtle"
+                      onClick={() => handleDownload('download')}
+                    />
+                    <CopyToClipboardButton
+                      data-testid="download-action-copy"
+                      size="lg"
+                      appearance="subtle"
+                      onClick={() => requestCopyConfirmation(() => handleDownload('copy'))}
+                    />
                     <Whisper
                       trigger="hover"
                       placement="bottom"
@@ -1063,6 +1049,7 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
           )}
         </>
       </GenericPage>
+      {confirmCopyModal}
     </>
   );
 };

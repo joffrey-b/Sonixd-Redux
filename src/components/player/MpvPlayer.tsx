@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ipcRenderer, settings } from '../shared/bridge';
+import { cache, ipcRenderer, settings } from '../shared/bridge';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import {
@@ -14,6 +14,7 @@ import { setMpvAudioDeviceId } from '../../redux/configSlice';
 import { EqState } from '../../redux/eqSlice';
 import { PeqState } from '../../redux/peqSlice';
 import { buildMpvAfChain } from '../../shared/mpvEqFilter';
+import { resolveSongPlaybackSource } from '../../shared/resolveSongPlaybackSource';
 import cacheSong from '../shared/cacheSong';
 import { notifyToast } from '../shared/toast';
 import { apiController } from '../../api/controller';
@@ -33,6 +34,7 @@ const MpvPlayer = () => {
   const playQueue = useAppSelector((state) => state.playQueue);
   const player = useAppSelector((state) => state.player);
   const config = useAppSelector((state) => state.config);
+  const misc = useAppSelector((state) => state.misc);
   const isJukebox = useAppSelector((state) => state.jukebox?.enabled ?? false);
   const eq = useAppSelector((state) => state.eq as EqState);
   const peq = useAppSelector((state) => state.peq as PeqState);
@@ -50,6 +52,9 @@ const MpvPlayer = () => {
   // Tracks the latest playQueue in event handlers to avoid stale closures
   const playQueueRef = useRef(playQueue);
   const configRef = useRef(config);
+  // Tracks the latest songCachePath so effects that don't list `misc` in their
+  // deps (to avoid changing when they fire) still read a fresh value
+  const miscRef = useRef(misc);
   // Tracks the latest player status so the init callback reads the live value
   const playerStatusRef = useRef(player.status);
   // Set before dispatching auto-next to suppress the queue-reload effect
@@ -64,6 +69,10 @@ const MpvPlayer = () => {
   }, [config]);
 
   useEffect(() => {
+    miscRef.current = misc;
+  }, [misc]);
+
+  useEffect(() => {
     playerStatusRef.current = player.status;
   }, [player.status]);
 
@@ -72,9 +81,9 @@ const MpvPlayer = () => {
     return pq[entryListKey(pq)] ?? [];
   };
 
-  // Returns the URL to preload as the next track after `fromIndex`.
+  // Returns the song to preload as the next track after `fromIndex`.
   // Returns null when there is nothing to preload (end of queue with no repeat).
-  const getNextUrl = (fromIndex?: number) => {
+  const getNextSong = (fromIndex?: number) => {
     const pq = playQueueRef.current;
     const list = pq[entryListKey(pq)] ?? [];
     if (list.length === 0) return null;
@@ -82,7 +91,7 @@ const MpvPlayer = () => {
     // Don't wrap around at the end when repeat is off
     if (pq.repeat === 'none' && base >= list.length - 1) return null;
     const nextIndex = getNextPlayerIndex(list.length, pq.repeat, base) ?? 0;
-    return list[nextIndex]?.streamUrl || null;
+    return list[nextIndex] ?? null;
   };
 
   // Initialize MPV once on mount
@@ -113,15 +122,25 @@ const MpvPlayer = () => {
         // Load initial queue if a song is already selected
         const pq = playQueueRef.current;
         const list = pq[entryListKey(pq)] ?? [];
-        const currentUrl = list[pq.currentIndex]?.streamUrl;
+        const currentSong = list[pq.currentIndex];
+        const currentUrl = currentSong?.streamUrl;
         if (currentUrl) {
           currentUrlRef.current = currentUrl;
-          const nextUrl = getNextUrl();
+          const nextSong = getNextSong();
+          const nextUrl = nextSong?.streamUrl || null;
           preloadedNextUrlRef.current = nextUrl;
           const pause = playerStatusRef.current !== 'PLAYING';
+          const [resolvedCurrentUrl, resolvedNextUrl] = await Promise.all([
+            resolveSongPlaybackSource(currentSong, miscRef.current.songCachePath, cache.exists),
+            resolveSongPlaybackSource(
+              nextSong ?? undefined,
+              miscRef.current.songCachePath,
+              cache.exists
+            ),
+          ]);
           ipcRenderer.send('player-set-queue', {
-            current: currentUrl,
-            next: nextUrl,
+            current: resolvedCurrentUrl,
+            next: resolvedNextUrl,
             pause,
           });
         }
@@ -186,7 +205,8 @@ const MpvPlayer = () => {
       const nextSong = list[nextIndex];
 
       // Compute next-next from OLD state before dispatching, to avoid stale playQueueRef
-      const newNextUrl = getNextUrl(nextIndex);
+      const newNextSong = getNextSong(nextIndex);
+      const newNextUrl = newNextSong?.streamUrl || null;
 
       const nextUrl = nextSong?.streamUrl || '';
       // Only arm the flag when the URL actually changes. For single-song repeat-all
@@ -214,7 +234,19 @@ const MpvPlayer = () => {
       }
 
       preloadedNextUrlRef.current = newNextUrl;
-      ipcRenderer.send('player-auto-next', { url: newNextUrl });
+      resolveSongPlaybackSource(
+        newNextSong ?? undefined,
+        miscRef.current.songCachePath,
+        cache.exists
+      )
+        .then((resolvedNewNextUrl) => {
+          // A newer auto-next or queue change may have superseded this preload
+          // while it was in flight — don't let a stale lookup override it.
+          if (preloadedNextUrlRef.current !== newNextUrl) return null;
+          ipcRenderer.send('player-auto-next', { url: resolvedNewNextUrl });
+          return null;
+        })
+        .catch(() => {});
     };
 
     const onPlay = () => dispatch(setStatus('PLAYING'));
@@ -260,25 +292,38 @@ const MpvPlayer = () => {
 
     const pq = playQueueRef.current;
     const list = pq[entryListKey(pq)] ?? [];
-    const currentUrl = list[pq.currentIndex]?.streamUrl;
+    const currentSong = list[pq.currentIndex];
+    const currentUrl = currentSong?.streamUrl;
     if (!currentUrl || currentUrl === currentUrlRef.current) {
       return;
     }
 
     currentUrlRef.current = currentUrl;
 
-    const nextUrl = getNextUrl();
+    const nextSong = getNextSong();
+    const nextUrl = nextSong?.streamUrl || null;
     preloadedNextUrlRef.current = nextUrl;
     // Use playerStatusRef.current (not player.status) to avoid stale closure issues.
     // player-set-queue pre-pauses MPV before loading, so any player-play arriving
     // from the play-effect (separate render due to electron-redux batching) will
     // override the pre-pause and make MPV play correctly.
     const shouldPause = playerStatusRef.current !== 'PLAYING';
-    ipcRenderer.send('player-set-queue', {
-      current: currentUrl,
-      next: nextUrl,
-      pause: shouldPause,
-    });
+    Promise.all([
+      resolveSongPlaybackSource(currentSong, miscRef.current.songCachePath, cache.exists),
+      resolveSongPlaybackSource(nextSong ?? undefined, miscRef.current.songCachePath, cache.exists),
+    ])
+      .then(([resolvedCurrentUrl, resolvedNextUrl]) => {
+        // A newer track change may have superseded this resolution while it was
+        // in flight — don't let a stale lookup override the latest selection.
+        if (currentUrlRef.current !== currentUrl) return null;
+        ipcRenderer.send('player-set-queue', {
+          current: resolvedCurrentUrl,
+          next: resolvedNextUrl,
+          pause: shouldPause,
+        });
+        return null;
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playQueue.currentIndex, playQueue.currentSongId]);
 
@@ -286,10 +331,19 @@ const MpvPlayer = () => {
   useEffect(() => {
     if (!initializedRef.current) return;
     if (autoNextPendingRef.current) return;
-    const nextUrl = getNextUrl();
+    const nextSong = getNextSong();
+    const nextUrl = nextSong?.streamUrl || null;
     if (nextUrl === preloadedNextUrlRef.current) return;
     preloadedNextUrlRef.current = nextUrl;
-    ipcRenderer.send('player-set-queue-next', { url: nextUrl });
+    resolveSongPlaybackSource(nextSong ?? undefined, miscRef.current.songCachePath, cache.exists)
+      .then((resolvedNextUrl) => {
+        // A newer queue change may have superseded this preload while it was
+        // in flight — don't let a stale lookup override it.
+        if (preloadedNextUrlRef.current !== nextUrl) return null;
+        ipcRenderer.send('player-set-queue-next', { url: resolvedNextUrl });
+        return null;
+      })
+      .catch(() => {});
   }, [
     playQueue.currentIndex,
     playQueue.repeat,
@@ -375,8 +429,10 @@ const MpvPlayer = () => {
 
     const pq = playQueueRef.current;
     const list = pq[entryListKey(pq)] ?? [];
-    const currentUrl = list[pq.currentIndex]?.streamUrl;
-    const nextUrl = getNextUrl();
+    const currentSong = list[pq.currentIndex];
+    const currentUrl = currentSong?.streamUrl;
+    const nextSong = getNextSong();
+    const nextUrl = nextSong?.streamUrl || null;
 
     let cancelled = false;
     ipcRenderer
@@ -385,15 +441,24 @@ const MpvPlayer = () => {
         extraParameters,
         properties,
       })
-      .then(() => {
+      .then(async () => {
         if (cancelled) return null;
         initializedRef.current = true;
         setMpvReady((v) => v + 1);
         if (currentUrl) {
           preloadedNextUrlRef.current = nextUrl;
+          const [resolvedCurrentUrl, resolvedNextUrl] = await Promise.all([
+            resolveSongPlaybackSource(currentSong, miscRef.current.songCachePath, cache.exists),
+            resolveSongPlaybackSource(
+              nextSong ?? undefined,
+              miscRef.current.songCachePath,
+              cache.exists
+            ),
+          ]);
+          if (cancelled) return null;
           ipcRenderer.send('player-set-queue', {
-            current: currentUrl,
-            next: nextUrl,
+            current: resolvedCurrentUrl,
+            next: resolvedNextUrl,
             pause: playerStatusRef.current !== 'PLAYING',
           });
         }

@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
+  CopyToClipboardButton,
   DeleteButton,
   DownloadButton,
   EditButton,
@@ -56,6 +57,7 @@ import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
 import { useBrowserDownload } from '../../hooks/useBrowserDownload';
+import { useCopyToClipboardConfirm } from '../../hooks/useCopyToClipboardConfirm';
 import { settings, cache, recovery as recoveryBridge } from '../shared/bridge';
 
 const PlaylistView = ({ ...rest }) => {
@@ -171,6 +173,7 @@ const PlaylistView = ({ ...rest }) => {
 
   const { handlePlayQueueAdd } = usePlayQueueHandler();
   const { handleDownload } = useBrowserDownload();
+  const { requestCopyConfirmation, confirmCopyModal } = useCopyToClipboardConfirm();
 
   const handleSave = async (recovery: boolean) => {
     dispatch(clearSelected());
@@ -426,278 +429,268 @@ const PlaylistView = ({ ...rest }) => {
   }
 
   return (
-    <GenericPage
-      hideDivider
-      header={
-        <GenericPageHeader
-          image={
-            <Card
-              title={t('None')}
-              subtitle=""
-              coverArt={
-                data?.image?.match('placeholder')
-                  ? customPlaylistImage
-                  : isPlaylistImageCached
-                    ? playlistImagePath
-                    : data?.image
-              }
-              size={185}
-              hasHoverButtons
-              noInfoPanel
-              noModalButton
-              details={data}
-              playClick={{ type: 'playlist', id: data.id }}
-              url={`/playlist/${data.id}`}
-            />
-          }
-          cacheImages={{
-            enabled: settings.get('cacheImages') ?? false,
-            cacheType: 'playlist',
-            id: data.id,
-          }}
-          imageHeight={185}
-          title={data.title}
-          subtitle={
-            <div>
-              <PageHeaderSubtitleDataLine $top>
-                <StyledLink onClick={() => navigate('/playlist')}>
-                  <strong>{t('Playlist')}</strong>
-                </StyledLink>{' '}
-                • {data.songCount} songs, {formatDuration(data.duration)} •{' '}
-                {data.public ? t('Public') : t('Private')}
-              </PageHeaderSubtitleDataLine>
-              <PageHeaderSubtitleDataLine>
-                {data.owner && t('By {{dataOwner}} • ', { dataOwner: data.owner })}
-                {data.created && t('Created {{val, datetime}}', { val: formatDate(data.created) })}
-                {data.changed &&
-                  t(' • Modified {{val, datetime}}', { val: formatDateTime(data.changed) })}
-              </PageHeaderSubtitleDataLine>
-              {data.comment && (
-                <CustomTooltip text={data.comment} placement="bottomStart" disabled={!data.comment}>
-                  <PageHeaderSubtitleDataLine
-                    style={{
-                      minHeight: '1.2rem',
-                      maxHeight: '1.2rem',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'pre-wrap',
-                    }}
+    <>
+      <GenericPage
+        hideDivider
+        header={
+          <GenericPageHeader
+            image={
+              <Card
+                title={t('None')}
+                subtitle=""
+                coverArt={
+                  data?.image?.match('placeholder')
+                    ? customPlaylistImage
+                    : isPlaylistImageCached
+                      ? playlistImagePath
+                      : data?.image
+                }
+                size={185}
+                hasHoverButtons
+                noInfoPanel
+                noModalButton
+                details={data}
+                playClick={{ type: 'playlist', id: data.id }}
+                url={`/playlist/${data.id}`}
+              />
+            }
+            cacheImages={{
+              enabled: settings.get('cacheImages') ?? false,
+              cacheType: 'playlist',
+              id: data.id,
+            }}
+            imageHeight={185}
+            title={data.title}
+            subtitle={
+              <div>
+                <PageHeaderSubtitleDataLine $top>
+                  <StyledLink onClick={() => navigate('/playlist')}>
+                    <strong>{t('Playlist')}</strong>
+                  </StyledLink>{' '}
+                  • {data.songCount} songs, {formatDuration(data.duration)} •{' '}
+                  {data.public ? t('Public') : t('Private')}
+                </PageHeaderSubtitleDataLine>
+                <PageHeaderSubtitleDataLine>
+                  {data.owner && t('By {{dataOwner}} • ', { dataOwner: data.owner })}
+                  {data.created &&
+                    t('Created {{val, datetime}}', { val: formatDate(data.created) })}
+                  {data.changed &&
+                    t(' • Modified {{val, datetime}}', { val: formatDateTime(data.changed) })}
+                </PageHeaderSubtitleDataLine>
+                {data.comment && (
+                  <CustomTooltip
+                    text={data.comment}
+                    placement="bottomStart"
+                    disabled={!data.comment}
                   >
-                    <span>{data.comment ? data.comment : ''}</span>
-                  </PageHeaderSubtitleDataLine>
-                </CustomTooltip>
-              )}
-              <div style={{ marginTop: '10px' }}>
-                <ButtonToolbar>
-                  <PlayButton
-                    appearance="primary"
-                    size="lg"
-                    $circle
-                    onClick={() =>
-                      handlePlayQueueAdd({
-                        byData: playlist[getCurrentEntryList(playlist)],
-                        play: Play.Play,
-                      })
-                    }
-                    disabled={playlist.entry?.length < 1}
-                  />
-                  <PlayAppendNextButton
-                    appearance="subtle"
-                    size="md"
-                    onClick={() =>
-                      handlePlayQueueAdd({
-                        byData: playlist[getCurrentEntryList(playlist)],
-                        play: Play.Next,
-                      })
-                    }
-                    disabled={playlist.entry?.length < 1}
-                  />
-                  <PlayAppendButton
-                    appearance="subtle"
-                    size="md"
-                    onClick={() =>
-                      handlePlayQueueAdd({
-                        byData: playlist[getCurrentEntryList(playlist)],
-                        play: Play.Later,
-                      })
-                    }
-                    disabled={playlist.entry?.length < 1}
-                  />
-                  <SaveButton
-                    data-testid="playlist-save-button"
-                    size="md"
-                    appearance="subtle"
-                    text={
-                      needsRecovery
-                        ? t('Recover playlist')
-                        : t(
-                            'Save (WARNING: Closing the application while saving may result in data loss)'
-                          )
-                    }
-                    color={needsRecovery ? 'red' : undefined}
-                    disabled={
-                      (!needsRecovery && !isModified) ||
-                      misc.isProcessingPlaylist.includes(data?.id)
-                    }
-                    loading={misc.isProcessingPlaylist.includes(data?.id)}
-                    onClick={() => handleSave(needsRecovery)}
-                  />
-                  <UndoButton
-                    size="md"
-                    appearance="subtle"
-                    color={needsRecovery ? 'red' : undefined}
-                    disabled={
-                      needsRecovery || !isModified || misc.isProcessingPlaylist.includes(data?.id)
-                    }
-                    onClick={() => dispatch(setPlaylistData(data?.song))}
-                  />
-                  <Whisper
-                    ref={editTriggerRef}
-                    enterable
-                    placement="auto"
-                    trigger="click"
-                    speaker={
-                      <Popup>
-                        <Form>
-                          <Form.ControlLabel>{t('Name')}</Form.ControlLabel>
-                          <StyledInput
-                            data-testid="edit-playlist-name-input"
-                            placeholder={t('Name')}
-                            value={editName}
-                            onChange={(e: string) => setEditName(e)}
-                          />
-                          <Form.ControlLabel>{t('Description')}</Form.ControlLabel>
-                          <StyledInput
-                            data-testid="edit-playlist-description-input"
-                            placeholder={t('Description')}
-                            value={editDescription}
-                            onChange={(e: string) => setEditDescription(e)}
-                          />
-                          <StyledCheckbox
-                            data-testid="edit-playlist-public-checkbox"
-                            checked={editPublic}
-                            onChange={(_v: unknown, e: boolean) => setEditPublic(e)}
-                            disabled={config.serverType === Server.Jellyfin}
-                          >
-                            {t('Public')}
-                          </StyledCheckbox>
-                          <StyledButton
-                            data-testid="edit-playlist-save-button"
-                            size="md"
-                            type="submit"
-                            block
-                            loading={isSubmittingEdit}
-                            disabled={isSubmittingEdit}
-                            onClick={handleEdit}
-                            appearance="primary"
-                          >
-                            {t('Save')}
-                          </StyledButton>
-                        </Form>
-                      </Popup>
-                    }
-                  >
-                    <EditButton
-                      data-testid="edit-playlist-button"
+                    <PageHeaderSubtitleDataLine
+                      style={{
+                        minHeight: '1.2rem',
+                        maxHeight: '1.2rem',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      <span>{data.comment ? data.comment : ''}</span>
+                    </PageHeaderSubtitleDataLine>
+                  </CustomTooltip>
+                )}
+                <div style={{ marginTop: '10px' }}>
+                  <ButtonToolbar>
+                    <PlayButton
+                      appearance="primary"
+                      size="lg"
+                      $circle
+                      onClick={() =>
+                        handlePlayQueueAdd({
+                          byData: playlist[getCurrentEntryList(playlist)],
+                          play: Play.Play,
+                        })
+                      }
+                      disabled={playlist.entry?.length < 1}
+                    />
+                    <PlayAppendNextButton
+                      appearance="subtle"
+                      size="md"
+                      onClick={() =>
+                        handlePlayQueueAdd({
+                          byData: playlist[getCurrentEntryList(playlist)],
+                          play: Play.Next,
+                        })
+                      }
+                      disabled={playlist.entry?.length < 1}
+                    />
+                    <PlayAppendButton
+                      appearance="subtle"
+                      size="md"
+                      onClick={() =>
+                        handlePlayQueueAdd({
+                          byData: playlist[getCurrentEntryList(playlist)],
+                          play: Play.Later,
+                        })
+                      }
+                      disabled={playlist.entry?.length < 1}
+                    />
+                    <SaveButton
+                      data-testid="playlist-save-button"
                       size="md"
                       appearance="subtle"
-                      disabled={misc.isProcessingPlaylist.includes(data?.id)}
+                      text={
+                        needsRecovery
+                          ? t('Recover playlist')
+                          : t(
+                              'Save (WARNING: Closing the application while saving may result in data loss)'
+                            )
+                      }
+                      color={needsRecovery ? 'red' : undefined}
+                      disabled={
+                        (!needsRecovery && !isModified) ||
+                        misc.isProcessingPlaylist.includes(data?.id)
+                      }
+                      loading={misc.isProcessingPlaylist.includes(data?.id)}
+                      onClick={() => handleSave(needsRecovery)}
                     />
-                  </Whisper>
-                  <Whisper
-                    trigger="hover"
-                    placement="bottom"
-                    delay={250}
-                    enterable
-                    preventOverflow
-                    speaker={
-                      <Popup>
-                        <ButtonToolbar>
-                          <StyledButton onClick={() => handleDownload(data, 'download', true)}>
-                            {t('Download')}
-                          </StyledButton>
-                          <StyledButton onClick={() => handleDownload(data, 'copy', true)}>
-                            {t('Copy to clipboard')}
-                          </StyledButton>
-                        </ButtonToolbar>
-                      </Popup>
-                    }
-                  >
-                    {/* DownloadButton renders its own CustomTooltip, which is itself a
-                        Whisper — nesting that directly as this outer Whisper's child
-                        leaves it without a plain DOM node to measure for positioning,
-                        so the popup fell back to the viewport origin (top-left)
-                        instead of anchoring under the button. A plain wrapper element
-                        gives it one, same as nav-search's Whisper in SearchBar.tsx. */}
-                    <span style={{ display: 'inline-block' }}>
-                      <DownloadButton
-                        size="lg"
+                    <UndoButton
+                      size="md"
+                      appearance="subtle"
+                      color={needsRecovery ? 'red' : undefined}
+                      disabled={
+                        needsRecovery || !isModified || misc.isProcessingPlaylist.includes(data?.id)
+                      }
+                      onClick={() => dispatch(setPlaylistData(data?.song))}
+                    />
+                    <Whisper
+                      ref={editTriggerRef}
+                      enterable
+                      placement="auto"
+                      trigger="click"
+                      speaker={
+                        <Popup>
+                          <Form>
+                            <Form.ControlLabel>{t('Name')}</Form.ControlLabel>
+                            <StyledInput
+                              data-testid="edit-playlist-name-input"
+                              placeholder={t('Name')}
+                              value={editName}
+                              onChange={(e: string) => setEditName(e)}
+                            />
+                            <Form.ControlLabel>{t('Description')}</Form.ControlLabel>
+                            <StyledInput
+                              data-testid="edit-playlist-description-input"
+                              placeholder={t('Description')}
+                              value={editDescription}
+                              onChange={(e: string) => setEditDescription(e)}
+                            />
+                            <StyledCheckbox
+                              data-testid="edit-playlist-public-checkbox"
+                              checked={editPublic}
+                              onChange={(_v: unknown, e: boolean) => setEditPublic(e)}
+                              disabled={config.serverType === Server.Jellyfin}
+                            >
+                              {t('Public')}
+                            </StyledCheckbox>
+                            <StyledButton
+                              data-testid="edit-playlist-save-button"
+                              size="md"
+                              type="submit"
+                              block
+                              loading={isSubmittingEdit}
+                              disabled={isSubmittingEdit}
+                              onClick={handleEdit}
+                              appearance="primary"
+                            >
+                              {t('Save')}
+                            </StyledButton>
+                          </Form>
+                        </Popup>
+                      }
+                    >
+                      <EditButton
+                        data-testid="edit-playlist-button"
+                        size="md"
                         appearance="subtle"
-                        downloadSize={getAlbumSize(data.song)}
+                        disabled={misc.isProcessingPlaylist.includes(data?.id)}
                       />
-                    </span>
-                  </Whisper>
-                  {showDeleteConfirm ? (
-                    <>
-                      <StyledButton
-                        data-testid="delete-playlist-confirm-yes"
-                        size="sm"
-                        appearance="primary"
-                        onClick={handleDelete}
-                      >
-                        {t('Yes')}
-                      </StyledButton>
-                      <StyledButton
-                        size="sm"
-                        appearance="subtle"
-                        onClick={() => setShowDeleteConfirm(false)}
-                      >
-                        {t('No')}
-                      </StyledButton>
-                    </>
-                  ) : (
-                    <DeleteButton
-                      data-testid="delete-playlist-button"
-                      size="md"
+                    </Whisper>
+                    <DownloadButton
+                      data-testid="download-action-download"
+                      size="lg"
                       appearance="subtle"
-                      disabled={misc.isProcessingPlaylist.includes(data?.id)}
-                      onClick={() => setShowDeleteConfirm(true)}
+                      downloadSize={getAlbumSize(data.song)}
+                      onClick={() => handleDownload(data, 'download', true)}
                     />
-                  )}
-                </ButtonToolbar>
+                    <CopyToClipboardButton
+                      data-testid="download-action-copy"
+                      size="lg"
+                      appearance="subtle"
+                      onClick={() =>
+                        requestCopyConfirmation(() => handleDownload(data, 'copy', true))
+                      }
+                    />
+                    {showDeleteConfirm ? (
+                      <>
+                        <StyledButton
+                          data-testid="delete-playlist-confirm-yes"
+                          size="sm"
+                          appearance="primary"
+                          onClick={handleDelete}
+                        >
+                          {t('Yes')}
+                        </StyledButton>
+                        <StyledButton
+                          size="sm"
+                          appearance="subtle"
+                          onClick={() => setShowDeleteConfirm(false)}
+                        >
+                          {t('No')}
+                        </StyledButton>
+                      </>
+                    ) : (
+                      <DeleteButton
+                        data-testid="delete-playlist-button"
+                        size="md"
+                        appearance="subtle"
+                        disabled={misc.isProcessingPlaylist.includes(data?.id)}
+                        onClick={() => setShowDeleteConfirm(true)}
+                      />
+                    )}
+                  </ButtonToolbar>
+                </div>
               </div>
-            </div>
-          }
-        />
-      }
-    >
-      <ListViewType
-        ref={tableRef}
-        data={misc.searchQuery !== '' ? filteredData : playlist[getCurrentEntryList(playlist)]}
-        tableColumns={config.lookAndFeel.listView.music.columns}
-        handleRowClick={handleRowClick}
-        handleRowDoubleClick={handleRowDoubleClick}
-        handleDragEnd={handleDragEnd}
-        virtualized
-        rowHeight={config.lookAndFeel.listView.music.rowHeight}
-        fontSize={config.lookAndFeel.listView.music.fontSize}
-        cacheImages={{
-          enabled: settings.get('cacheImages'),
-          cacheType: 'album',
-          cacheIdProperty: 'albumId',
-        }}
-        listType="music"
-        playlist
-        dnd
-        isModal={rest.isModal}
-        disabledContextMenuOptions={['deletePlaylist', 'viewInModal']}
-        handleFavorite={(rowData: RowDataType) =>
-          handleFavorite(rowData, { queryKey: ['playlist', playlistId] })
+            }
+          />
         }
-        handleRating={(rowData: RowDataType, rating: number) => handleRating(rowData, { rating })}
-        loading={isLoading}
-      />
-    </GenericPage>
+      >
+        <ListViewType
+          ref={tableRef}
+          data={misc.searchQuery !== '' ? filteredData : playlist[getCurrentEntryList(playlist)]}
+          tableColumns={config.lookAndFeel.listView.music.columns}
+          handleRowClick={handleRowClick}
+          handleRowDoubleClick={handleRowDoubleClick}
+          handleDragEnd={handleDragEnd}
+          virtualized
+          rowHeight={config.lookAndFeel.listView.music.rowHeight}
+          fontSize={config.lookAndFeel.listView.music.fontSize}
+          cacheImages={{
+            enabled: settings.get('cacheImages'),
+            cacheType: 'album',
+            cacheIdProperty: 'albumId',
+          }}
+          listType="music"
+          playlist
+          dnd
+          isModal={rest.isModal}
+          disabledContextMenuOptions={['deletePlaylist', 'viewInModal']}
+          handleFavorite={(rowData: RowDataType) =>
+            handleFavorite(rowData, { queryKey: ['playlist', playlistId] })
+          }
+          handleRating={(rowData: RowDataType, rating: number) => handleRating(rowData, { rating })}
+          loading={isLoading}
+        />
+      </GenericPage>
+      {confirmCopyModal}
+    </>
   );
 };
 

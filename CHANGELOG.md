@@ -4,6 +4,23 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.1.1]
+
+### Fixed
+
+- **MPV backend not using the local song cache**: The MPV backend always streamed from the server even when a fully cached copy of the track already existed on disk, unlike the web backend which already preferred the cache in this situation. This included gapless auto-advance between tracks - playing through an already-cached album would still stream every track from the server instead of reading it from disk. MPV now checks the cache first and only streams over the network when no cached copy exists, for both manually selected tracks and gapless auto-advance, saving bandwidth for tracks you've already listened to with caching enabled. Covered by 6 new automated unit tests and 3 new end-to-end tests.
+- **"Copy to clipboard" (Album/Artist/Playlist download links) not working since 1.1.0**: Clicking it silently did nothing, it now has the expected behavior.
+
+### Security
+
+- **Copy to clipboard did not previously warn before copying, and now does**: The copied download link embeds live, replayable server credentials (a plaintext password, a salted auth token, or an API key, depending on server type), and clicking "Copy to clipboard" used to copy it immediately to clipboard, which other apps can read, with no warning at all. It now shows a confirmation dialog explaining the risk before anything is fetched or copied - "Cancel" does nothing further, "Copy anyway" proceeds exactly as the old behavior did. Covered by 5 new automated unit tests and 3 new end-to-end tests.
+
+### Changed
+
+- **"Download" and "Copy to clipboard" are now separate buttons**: Previously both actions were hidden behind a hover popup on a single Download button. They're now two standalone, always-visible icon buttons on the Album, Artist, and Playlist pages, for better discoverability.
+
+---
+
 ## [1.1.0]
 
 This release covers a large body of work since the last public version, including

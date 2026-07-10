@@ -5,7 +5,7 @@
  * access.  With contextIsolation: false the bridge is set on window directly;
  * with contextIsolation: true it is exposed via contextBridge.
  */
-import { contextBridge, ipcRenderer, clipboard, webFrame } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 // electron-redux/preload calls preload() automatically at module evaluation time
 // (see its line: `preload();`). Importing for side effects only avoids a second
 // invocation that would cause contextBridge.exposeInMainWorld to throw on the
@@ -243,8 +243,11 @@ const bridge = {
     openPath: (path) => ipcRenderer.invoke('bridge:shell:open-path', path),
   },
 
+  // clipboard is unavailable in a sandboxed preload since Electron 20 (Process:
+  // "Main, Renderer (non-sandboxed only)" per Electron's own docs) — proxied
+  // through main via IPC instead, exactly like `shell` above.
   clipboard: {
-    writeText: (text) => clipboard.writeText(text),
+    writeText: (text) => ipcRenderer.send('bridge:clipboard:write-text', text),
   },
 
   webFrame: {

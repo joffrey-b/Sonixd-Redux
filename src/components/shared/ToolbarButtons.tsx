@@ -4,6 +4,7 @@ import HeartIcon from '@rsuite/icons/legacy/Heart';
 import HeartOIcon from '@rsuite/icons/legacy/HeartO';
 import AngleUpIcon from '@rsuite/icons/legacy/AngleUp';
 import CloseIcon from '@rsuite/icons/legacy/Close';
+import CopyIcon from '@rsuite/icons/legacy/Copy';
 import DownloadIcon from '@rsuite/icons/legacy/Download';
 import Edit2Icon from '@rsuite/icons/legacy/Edit2';
 import FilterIcon from '@rsuite/icons/legacy/Filter';
@@ -158,6 +159,16 @@ export const DownloadButton = ({
         tabIndex={0}
       >
         <DownloadIcon />
+      </StyledButton>
+    </CustomTooltip>
+  );
+};
+
+export const CopyToClipboardButton = ({ ...rest }: ButtonWrapperProps) => {
+  return (
+    <CustomTooltip text={i18n.t('Copy to clipboard')}>
+      <StyledButton aria-label={i18n.t('Copy to clipboard')} {...rest} tabIndex={0}>
+        <CopyIcon />
       </StyledButton>
     </CustomTooltip>
   );
