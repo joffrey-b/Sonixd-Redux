@@ -31,23 +31,44 @@ async function openThemeSettings(window: Page) {
   await window.click('[data-testid="settings-lookandfeel"]');
 }
 
-async function selectTheme(window: Page, value: string) {
-  await window.selectOption('[data-testid="theme-select"]', value);
-  // Applying a theme is a multi-step chain, not a single state update:
-  // Redux dispatch -> App.tsx resolves the string to a theme object via
-  // getTheme() in one effect -> a SECOND effect (keyed on that object) then
-  // writes the CSS custom properties to document.body. A real run showed a
-  // second selectTheme() call back-to-back with no intervening navigation
-  // read a stale value — the first call in each test happened to have
-  // enough incidental delay (clicking through settings tabs) for the chain
-  // to settle; consecutive calls don't without an explicit wait.
-  await window.waitForTimeout(300);
-}
+// Confirmed pairwise-distinct built-in themes (setDefaultSettings.ts), used
+// below to wait for the SPECIFIC expected color rather than merely "changed
+// from before" -- the default theme setting is 'followSystem', which
+// resolves to defaultDark's exact palette when the OS/CI environment
+// prefers dark mode (App.tsx), so a test's very first selectTheme() call
+// could otherwise be waiting for a change that never visibly happens.
+const THEME_PRIMARY_COLORS: Record<string, string> = {
+  defaultDark: '#2196F3',
+  defaultLight: '#285DA0',
+  spotifyLike: '#1DB954',
+};
 
 async function readPrimaryColor(window: Page): Promise<string> {
   return window.evaluate(() =>
     getComputedStyle(document.body).getPropertyValue('--app-primary').trim()
   );
+}
+
+async function selectTheme(window: Page, value: string) {
+  // Audit fix: Playwright's default 30s action timeout was observed to be
+  // exhausted on a live full-suite run, even though the error-context
+  // snapshot at failure time showed the Look & Feel panel fully and
+  // correctly rendered (picker present, showing its then-current value) --
+  // not a stuck/broken render, just slower than the default budget under
+  // real system load late in a long sequential run. Widened rather than
+  // treated as a hang.
+  await window.selectOption('[data-testid="theme-select"]', value, { timeout: 60_000 });
+  // Applying a theme is a multi-step chain, not a single state update:
+  // Redux dispatch -> App.tsx resolves the string to a theme object via
+  // getTheme() in one effect -> a SECOND effect (keyed on that object) then
+  // writes the CSS custom properties to document.body. A fixed wait here
+  // previously raced this chain on a live run (a later readPrimaryColor()
+  // call read back the PREVIOUS theme's color, still in mid-transition) --
+  // poll for the actual expected CSS variable value instead of assuming a
+  // fixed delay is always enough.
+  await expect
+    .poll(() => readPrimaryColor(window), { timeout: 10_000 })
+    .toBe(THEME_PRIMARY_COLORS[value]);
 }
 
 test.describe('Theme switching', () => {
@@ -86,7 +107,14 @@ test.describe('Theme switching', () => {
   test('selected theme persists across app restart', async ({
     navidromeApp: { app, window, userDataDir },
   }) => {
-    test.setTimeout(60_000);
+    // Audit fix: 60s was exhausted on a live full-suite run purely on
+    // cumulative real work (login, 2 tab navigations, theme switch, app
+    // close, second app launch, second readback) taking longer than usual
+    // under load late in a long sequential run -- the trace showed no single
+    // stuck step, just several ordinary steps each taking a few seconds
+    // longer than their fast-path timing. Doubled to match this suite's
+    // established practice of generous margin for genuinely multi-step flows.
+    test.setTimeout(120_000);
     await openThemeSettings(window);
     await selectTheme(window, 'spotifyLike');
     const themeValue = await readPrimaryColor(window);

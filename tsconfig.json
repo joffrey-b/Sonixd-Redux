@@ -21,5 +21,15 @@
     "allowJs": true,
     "skipLibCheck": true
   },
-  "exclude": ["test", "release", "src/main.prod.js", "src/renderer.prod.js", "src/dist", ".erb/dll"]
+  "exclude": [
+    "test",
+    "release",
+    "src/dist",
+    ".erb/dll",
+    "src/*.prod.js",
+    "src/*.dev.built.js",
+    "src/node_modules",
+    "coverage",
+    "e2e/playwright-report"
+  ]
 }

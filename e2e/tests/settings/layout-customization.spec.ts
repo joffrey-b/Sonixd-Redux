@@ -35,9 +35,12 @@ import { TRACKS } from '../../fixtures/constants';
 //     popup, and the column-reorder preview grid below the picker (which
 //     lists currently-selected columns as rows) — a real run hit a strict
 //     mode violation clicking "Duration" by plain text for exactly this
-//     reason. RSuite's picker popup carries its own data-testid
-//     ("picker-popup", confirmed from that same error's resolved locator
-//     suggestion) — scope the click to it to disambiguate.
+//     reason. Correction: the originally-assumed disambiguating testid
+//     ("picker-popup") does not actually exist anywhere in the app -- no
+//     element carries it, so this helper's click silently never matched
+//     anything until fixed. The real fix scopes to the dropdown's actual
+//     RSuite popup class ('.rs-picker-check-menu', confirmed against the
+//     installed package) instead.
 //   - Column headers (ListViewTable.tsx's StyledTableHeaderCell) render the
 //     label text in two separate DOM nodes (confirmed via a real run's
 //     strict-mode violation on a plain `text=Duration` check, despite the
@@ -63,8 +66,27 @@ async function toggleSongColumn(window: Page, pickerItemLabel: string) {
   const picker = window.locator('[data-testid="column-picker-music"]');
   await expect(picker).toBeVisible({ timeout: 10_000 });
   await picker.click();
-  await window.getByTestId('picker-popup').getByText(pickerItemLabel, { exact: true }).click();
+  // No element in the app actually carries data-testid="picker-popup" (that
+  // locator never matched anything, so this never actually ran) -- the real
+  // scoping this needs, per the comment above about the 3-place label
+  // collision, is the dropdown's own popup content, RSuite's real
+  // '.rs-picker-check-menu' class (confirmed against the installed rsuite
+  // package, and reused from the identical fix in rating.spec.ts). Scoped
+  // to `window`, not `picker` -- the popup no longer renders inside the
+  // trigger's own container (a real, long-standing bug: the picker's
+  // custom `container` prop pointed at a div sized only for the toggle
+  // button itself, which broke scrolling once this list grew past what fit
+  // in that tiny space -- fixed by removing the prop in ListViewConfig.tsx
+  // so RSuite positions/sizes the popup against the real viewport instead).
+  await window.locator('.rs-picker-check-menu').getByText(pickerItemLabel, { exact: true }).click();
   await window.keyboard.press('Escape');
+  // Escape closes the CheckPicker dropdown asynchronously (RSuite's
+  // useRootClose + a focus-return side effect) -- a live run of the
+  // identical helper in rating.spec.ts caught the very next click stalling
+  // for a full 30s timeout because the popup hadn't actually finished
+  // closing yet. Wait for it to be gone rather than assuming the keypress
+  // landed.
+  await expect(window.locator('.rs-picker-check-menu')).toBeHidden({ timeout: 5_000 });
   // Settle wait for settings.set() + the Redux dispatch to land.
   await window.waitForTimeout(300);
 }
@@ -115,6 +137,43 @@ test.describe('Layout customization — column visibility', () => {
     await toggleSongColumn(window, 'Duration');
     await navigateToTestAlbum(window);
     await expect.poll(() => isColumnHeaderVisible(window, 'Duration')).toBe(true);
+  });
+
+  // Phase 3 — Offline Status column. Same StyledCheckPicker mechanism as
+  // every other column (Lesson #5 from CLAUDE.md anticipated a new
+  // StyledCheckbox-style control here, but confirmed against source: column
+  // visibility for every column, including this new one, goes through the
+  // existing picker, not a per-column checkbox toggle — no new
+  // force-click-input gotcha actually applies to this control). The picker
+  // item is "Offline Status" (getSongColumnPicker); the resulting header
+  // text is the shorter "Offline" (getSongColumnListAuto's id), mirroring
+  // the same Rating-vs-Rate distinction already documented above. Enabled
+  // by default (setDefaultSettings.ts), unlike Duration/Rating above.
+  test('the Offline Status column is visible by default', async ({ navidromeApp: { window } }) => {
+    await navigateToTestAlbum(window);
+    await expect.poll(() => isColumnHeaderVisible(window, 'Offline')).toBe(true);
+  });
+
+  test('hiding the Offline Status column removes it from the track list', async ({
+    navidromeApp: { window },
+  }) => {
+    await navigateToTestAlbum(window);
+    await expect.poll(() => isColumnHeaderVisible(window, 'Offline')).toBe(true);
+
+    await toggleSongColumn(window, 'Offline Status');
+
+    await navigateToTestAlbum(window);
+    await expect.poll(() => isColumnHeaderVisible(window, 'Offline')).toBe(false);
+  });
+
+  test('re-showing the Offline Status column restores it', async ({ navidromeApp: { window } }) => {
+    await toggleSongColumn(window, 'Offline Status');
+    await navigateToTestAlbum(window);
+    await expect.poll(() => isColumnHeaderVisible(window, 'Offline')).toBe(false);
+
+    await toggleSongColumn(window, 'Offline Status');
+    await navigateToTestAlbum(window);
+    await expect.poll(() => isColumnHeaderVisible(window, 'Offline')).toBe(true);
   });
 
   test('column visibility persists across app restart', async ({

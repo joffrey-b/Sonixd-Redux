@@ -31,6 +31,35 @@ async function openLyrics(window: Page) {
   await expect(window.locator('[data-testid="lyrics-modal"]')).toBeVisible({ timeout: 5_000 });
 }
 
+// RSuite's Modal has a fade/scale open transition -- a plain boundingBox()
+// call right after toBeVisible() can sample the element mid-transition (its
+// visibility flips before layout finishes settling). A relative click
+// position computed from that box's width is then wrong once the layout
+// settles, silently seeking to the wrong timestamp. Polling until two
+// consecutive reads agree confirms the transition has actually finished,
+// rather than a fixed wait that just guesses at the transition's duration.
+async function waitForStableBoundingBox(locator: ReturnType<Page['locator']>) {
+  let previous = await locator.boundingBox();
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 100);
+    });
+    const current = await locator.boundingBox();
+    if (
+      previous &&
+      current &&
+      previous.width === current.width &&
+      previous.height === current.height &&
+      previous.x === current.x &&
+      previous.y === current.y
+    ) {
+      return current;
+    }
+    previous = current;
+  }
+  throw new Error('boundingBox never stabilized');
+}
+
 test.describe('Lyrics bubble visibility', () => {
   test('bubble appears next to song title when a lyrics sidecar exists', async ({
     navidromeApp: { window },
@@ -179,13 +208,38 @@ test.describe('Synced lyrics — in-window controls', () => {
   test('the progress bar inside the lyrics window seeks playback', async ({
     navidromeApp: { window },
   }) => {
+    // Audit fix: RSuite's Modal has a default open transition (fade/scale) --
+    // openLyrics only waits for the modal to become *visible*, not for that
+    // transition to *settle*. This test is the only seek-bar test that clicks
+    // a raw coordinate INSIDE the modal right after opening it (the sibling
+    // "seeking via the main player bar" test deliberately closes the modal
+    // first, so it never hits this window); a mouse.click() at a coordinate
+    // computed from a bounding box measured mid-transition can land on the
+    // wrong spot once the layout finishes settling, silently seeking to the
+    // wrong position -- caught by a live e2e run where the highlight never
+    // reached the expected line. Switched to a locator-based click with a
+    // relative `position`, which waits for the element to be visible AND
+    // stable (Playwright's own actionability check) before clicking, so it
+    // naturally rides out the transition instead of racing it.
+    //
+    // Follow-up fix: that first pass still raced under CI load. The click
+    // itself waits for the target to be visible+stable, but box.width below
+    // was captured by a plain boundingBox() call right after only a
+    // visibility check -- no stability guarantee -- so on a slower runner it
+    // could still sample the seek bar mid-transition, computing the relative
+    // click position from a too-narrow width and landing short of the
+    // intended timestamp. waitForStableBoundingBox() polls until the box
+    // stops changing before it's used for that computation.
     const seekBar = window.locator('.lyrics-seek-bar');
-    const box = await seekBar.boundingBox();
+    await expect(seekBar).toBeVisible();
+    const box = await waitForStableBoundingBox(seekBar);
     if (!box) throw new Error('lyrics-seek-bar not found or not visible');
-    await window.mouse.click(
-      box.x + box.width * (44 / TRACKS.track01.durationSeconds),
-      box.y + box.height / 2
-    );
+    await seekBar.click({
+      position: {
+        x: box.width * (44 / TRACKS.track01.durationSeconds),
+        y: box.height / 2,
+      },
+    });
     await window.waitForTimeout(500);
     await expect(window.locator('[data-testid="lyrics-line"][data-index="5"]')).toHaveAttribute(
       'data-active',

@@ -164,6 +164,23 @@ The System tab combines server configuration, cache management, window behavior,
 | Cache Location | Folder where cached files are stored                     |
 | Clear Cache    | Remove cached songs or images (by type)                  |
 
+### Downloads
+
+| Setting         | Description                                                                   |
+| --------------- | ----------------------------------------------------------------------------- |
+| Download Folder | Folder for explicitly downloaded songs, set via Choose folder...              |
+| View Downloads  | Opens the downloads overview - total space used, full content list, clear all |
+
+See [Offline Mode](offline-mode.md) for the full picture, including how Downloads differ from the Song Cache above.
+
+### Connectivity
+
+| Setting            | Description                                                                  |
+| ------------------ | ---------------------------------------------------------------------------- |
+| Force Offline Mode | Stop the app from trying to reach your server at all, until turned off again |
+
+See [Offline Mode](offline-mode.md) for automatic offline detection and everything that works while offline.
+
 ### Window
 
 | Setting              | Description                                                      |

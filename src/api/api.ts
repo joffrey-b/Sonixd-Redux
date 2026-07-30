@@ -6,6 +6,8 @@ import axiosRetry from 'axios-retry';
 import { mockSettings } from '../shared/mockSettings';
 import { Item } from '../types';
 import { settings } from '../components/shared/bridge';
+import { emitRequestSuccess } from '../shared/connectivityEvents';
+import { mapWithConcurrency } from '../shared/mapWithConcurrency';
 
 interface CoverArtItem {
   coverArt?: string;
@@ -281,6 +283,13 @@ api.interceptors.response.use(
   (res) => {
     // Return the subsonic response directly
     res.data = res.data['subsonic-response'];
+    // Any successful response is evidence of connectivity -- notify listeners
+    // (offlineQueueFlush.ts subscribes to attempt a queue flush, cheap no-op
+    // when the queue is empty). An event rather than a direct call/import to
+    // avoid a real import/no-cycle dependency cycle -- see
+    // connectivityEvents.ts. Fire-and-forget: stays sync/non-blocking,
+    // matching this interceptor's existing discipline.
+    emitRequestSuccess();
     return res;
   },
   (err) => {
@@ -805,17 +814,10 @@ export const getArtists = async (options: { musicFolderId?: string | number }) =
 export const getArtistSongs = async (options: { id: string }) => {
   const { data } = await api.get(`/getArtist.view`, { params: options });
   const albums = (data.artist.album || []) as SubsonicRawAlbum[];
-  const CONCURRENCY = 5;
-  const results: Array<{ data: { album?: { song?: SubsonicRawSong[] } } }> = [];
 
-  for (let i = 0; i < albums.length; i += CONCURRENCY) {
-    const chunk = albums.slice(i, i + CONCURRENCY);
-
-    const chunkRes = await Promise.all(
-      chunk.map((album) => api.get(`/getAlbum.view`, { params: { id: album.id } }))
-    );
-    results.push(...chunkRes);
-  }
+  const results = await mapWithConcurrency(albums, 5, (album) =>
+    api.get(`/getAlbum.view`, { params: { id: album.id } })
+  );
 
   return _.flatten(results.map((entry) => entry.data.album?.song ?? []) || []).map((entry) =>
     normalizeSong(entry)

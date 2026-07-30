@@ -18,6 +18,7 @@ import Config from './components/settings/Config';
 import NowPlayingView from './components/player/NowPlayingView';
 import Login from './components/settings/Login';
 import StarredView from './components/starred/StarredView';
+import DownloadsOverview from './components/downloads/DownloadsOverview';
 import Dashboard from './components/dashboard/Dashboard';
 import PlayerBar from './components/player/PlayerBar';
 import AlbumView from './components/library/AlbumView';
@@ -40,6 +41,10 @@ import MusicList from './components/library/MusicList';
 import { notifyToast } from './components/shared/toast';
 import useCheckForUpdates from './hooks/useCheckForUpdates';
 import useLibraryCache from './hooks/useLibraryCache';
+import usePlaylistsCache from './hooks/usePlaylistsCache';
+import useConnectivityMonitor from './hooks/useConnectivityMonitor';
+import useCachedSongsIndex from './hooks/useCachedSongsIndex';
+import useDownloadedSongsIndex from './hooks/useDownloadedSongsIndex';
 
 class ErrorBoundary extends Component<
   { children: React.ReactNode },
@@ -291,16 +296,37 @@ const App = () => {
   }, [theme]);
 
   useCheckForUpdates();
+  useConnectivityMonitor();
+  useCachedSongsIndex();
+  useDownloadedSongsIndex();
 
   const dispatch = useAppDispatch();
   const { syncLibrary } = useLibraryCache();
+  const { syncPlaylists } = usePlaylistsCache();
 
   // Auto-sync library cache on every launch so play counts from other devices stay current.
+  // Audit fix: deliberately delayed a couple seconds past mount, rather than
+  // fired immediately -- this burst (two full-library-scale API round trips,
+  // one of which ends in a synchronous library-cache write) used to compete
+  // directly with MpvPlayer.tsx's own startup work (spawning the native MPV
+  // process and completing its IPC handshake) for the same renderer/main
+  // event loop right at the moment MPV is most timing-sensitive. A live e2e
+  // run surfaced this as intermittent MPV scrobble-timing test failures under
+  // full-suite load that didn't reproduce running those tests alone -- a few
+  // seconds' delay here is imperceptible to a real user opening the app, but
+  // gives MPV's startup a clear run first.
   useEffect(() => {
-    if (!settings.get('server') || !settings.get('serverBase64')) return;
-    syncLibrary()
-      .then(() => dispatch(setLibrarySyncedAt(new Date().toISOString())))
-      .catch(() => {});
+    if (!settings.get('server') || !settings.get('serverBase64')) return undefined;
+    const timer = setTimeout(() => {
+      syncLibrary()
+        .then(() => dispatch(setLibrarySyncedAt(new Date().toISOString())))
+        .catch(() => {});
+      // Playlists sync (Phase 3) -- same trigger as the song sync above, run
+      // independently rather than chained after it so one doesn't wait on the
+      // other's request volume.
+      syncPlaylists().catch(() => {});
+    }, 2500);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -347,6 +373,7 @@ const App = () => {
                 <Route path="/podcasts" element={<PodcastList />} />
                 <Route path="/podcasts/:id" element={<PodcastChannelView />} />
                 <Route path="/starred" element={<StarredView />} />
+                <Route path="/downloads" element={<DownloadsOverview />} />
                 <Route path="/config" element={<Config />} />
                 <Route path="/search" element={<SearchView />} />
                 <Route path="/*" element={<Dashboard />} />

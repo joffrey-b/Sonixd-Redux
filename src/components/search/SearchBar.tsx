@@ -24,6 +24,14 @@ import {
 } from '../shared/styled';
 import { Album, Artist, Item, Song, Play } from '../../types';
 import type { WhisperInstance } from 'rsuite/Whisper';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
+import useLibraryCache from '../../hooks/useLibraryCache';
+import {
+  buildAlbumsFromSongs,
+  buildArtistsFromSongs,
+  libraryCacheSongToSong,
+  searchSongsOffline,
+} from '../../shared/offlineLibrary';
 
 interface SearchPage {
   song: { data: Song[]; nextCursor: number | undefined };
@@ -346,13 +354,16 @@ const SearchBar = () => {
     localStorage.setItem('searchPinned', String(pinned));
   }, [pinned]);
 
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { getCachedSongs } = useLibraryCache();
+
   const {
-    data: songResults,
+    data: onlineSongResults,
     isLoading: isLoadingSongs,
     isRefetching: isRefetchingSongs,
-    fetchNextPage: fetchNextSongPage,
+    fetchNextPage: onlineFetchNextSongPage,
     isFetchingNextPage: isFetchingNextSongPage,
-    hasNextPage: hasNextSongPage,
+    hasNextPage: onlineHasNextSongPage,
   } = useInfiniteQuery<SearchPage, Error>({
     queryKey: ['search', debouncedSearchQuery, { type: Item.Music, count: 3 }, musicFolder.id],
     queryFn: ({ pageParam }) =>
@@ -369,18 +380,22 @@ const SearchBar = () => {
         },
       }),
     initialPageParam: 0,
-    enabled: debouncedSearchQuery !== '' && searchOptions.global && musicFolder.loaded,
+    enabled:
+      debouncedSearchQuery !== '' &&
+      searchOptions.global &&
+      musicFolder.loaded &&
+      !effectiveOffline,
     getNextPageParam: (lastPage) => lastPage.song.nextCursor,
     staleTime: 5 * 60 * 1000,
   });
 
   const {
-    data: albumResults,
+    data: onlineAlbumResults,
     isLoading: isLoadingAlbums,
     isRefetching: isRefetchingAlbums,
-    fetchNextPage: fetchNextAlbumPage,
+    fetchNextPage: onlineFetchNextAlbumPage,
     isFetchingNextPage: isFetchingNextAlbumPage,
-    hasNextPage: hasNextAlbumPage,
+    hasNextPage: onlineHasNextAlbumPage,
   } = useInfiniteQuery<SearchPage, Error>({
     queryKey: ['search', debouncedSearchQuery, { type: Item.Album, count: 3 }, musicFolder.id],
     queryFn: ({ pageParam }) =>
@@ -397,18 +412,22 @@ const SearchBar = () => {
         },
       }),
     initialPageParam: 0,
-    enabled: debouncedSearchQuery !== '' && searchOptions.global && musicFolder.loaded,
+    enabled:
+      debouncedSearchQuery !== '' &&
+      searchOptions.global &&
+      musicFolder.loaded &&
+      !effectiveOffline,
     getNextPageParam: (lastPage) => lastPage.album.nextCursor,
     staleTime: 5 * 60 * 1000,
   });
 
   const {
-    data: artistResults,
+    data: onlineArtistResults,
     isLoading: isLoadingArtists,
     isRefetching: isRefetchingArtists,
-    fetchNextPage: fetchNextArtistPage,
+    fetchNextPage: onlineFetchNextArtistPage,
     isFetchingNextPage: isFetchingNextArtistPage,
-    hasNextPage: hasNextArtistPage,
+    hasNextPage: onlineHasNextArtistPage,
   } = useInfiniteQuery<SearchPage, Error>({
     queryKey: ['search', debouncedSearchQuery, { type: Item.Artist, count: 3 }, musicFolder.id],
     queryFn: ({ pageParam }) =>
@@ -425,19 +444,75 @@ const SearchBar = () => {
         },
       }),
     initialPageParam: 0,
-    enabled: debouncedSearchQuery !== '' && searchOptions.global && musicFolder.loaded,
+    enabled:
+      debouncedSearchQuery !== '' &&
+      searchOptions.global &&
+      musicFolder.loaded &&
+      !effectiveOffline,
     getNextPageParam: (lastPage) => lastPage.artist.nextCursor,
     staleTime: 5 * 60 * 1000,
   });
 
-  const isLoading = [
-    isLoadingSongs,
-    isLoadingAlbums,
-    isLoadingArtists,
-    isRefetchingSongs,
-    isRefetchingAlbums,
-    isRefetchingArtists,
-  ].some((q) => q);
+  // Offline browsing (ADR Section 5.1) -- SearchBar's popup gets the same
+  // client-side-computation-over-the-local-snapshot branch already built for
+  // SearchView.tsx (Fix 5/searchSongsOffline), reusing that exact helper
+  // rather than reimplementing search matching here. No pagination offline --
+  // every match is returned in one pass, matching SearchView's own decision.
+  const offlineSearchResults = useMemo(() => {
+    if (!effectiveOffline || debouncedSearchQuery === '' || !searchOptions.global) {
+      return { song: [] as Song[], album: [] as Album[], artist: [] as Artist[] };
+    }
+    const query = debouncedSearchQuery.trim().toLowerCase();
+    const songs = getCachedSongs();
+    return {
+      song: searchSongsOffline(songs, debouncedSearchQuery).map(libraryCacheSongToSong),
+      album: buildAlbumsFromSongs(songs).filter((a) => a.title?.toLowerCase().includes(query)),
+      artist: buildArtistsFromSongs(songs).filter((a) => a.title?.toLowerCase().includes(query)),
+    };
+  }, [effectiveOffline, debouncedSearchQuery, searchOptions.global, getCachedSongs]);
+
+  const buildOfflinePage = (
+    song: Song[],
+    album: Album[],
+    artist: Artist[]
+  ): { pages: SearchPage[]; pageParams: number[] } => ({
+    pages: [
+      {
+        song: { data: song, nextCursor: undefined },
+        album: { data: album, nextCursor: undefined },
+        artist: { data: artist, nextCursor: undefined },
+      },
+    ],
+    pageParams: [0],
+  });
+
+  const songResults = effectiveOffline
+    ? buildOfflinePage(offlineSearchResults.song, [], [])
+    : onlineSongResults;
+  const albumResults = effectiveOffline
+    ? buildOfflinePage([], offlineSearchResults.album, [])
+    : onlineAlbumResults;
+  const artistResults = effectiveOffline
+    ? buildOfflinePage([], [], offlineSearchResults.artist)
+    : onlineArtistResults;
+
+  const hasNextSongPage = effectiveOffline ? false : onlineHasNextSongPage;
+  const hasNextAlbumPage = effectiveOffline ? false : onlineHasNextAlbumPage;
+  const hasNextArtistPage = effectiveOffline ? false : onlineHasNextArtistPage;
+  const fetchNextSongPage = effectiveOffline ? () => {} : onlineFetchNextSongPage;
+  const fetchNextAlbumPage = effectiveOffline ? () => {} : onlineFetchNextAlbumPage;
+  const fetchNextArtistPage = effectiveOffline ? () => {} : onlineFetchNextArtistPage;
+
+  const isLoading = effectiveOffline
+    ? false
+    : [
+        isLoadingSongs,
+        isLoadingAlbums,
+        isLoadingArtists,
+        isRefetchingSongs,
+        isRefetchingAlbums,
+        isRefetchingArtists,
+      ].some((q) => q);
 
   return (
     <Whisper

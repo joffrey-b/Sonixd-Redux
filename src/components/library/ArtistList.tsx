@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ButtonToolbar } from 'rsuite';
@@ -22,6 +22,10 @@ import useListClickHandler from '../../hooks/useListClickHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
 import { settings } from '../shared/bridge';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
+import useLibraryCache from '../../hooks/useLibraryCache';
+import { buildArtistsFromSongs } from '../../shared/offlineLibrary';
+import { notifyToast } from '../shared/toast';
 
 const ArtistList = () => {
   const { t } = useTranslation();
@@ -42,10 +46,13 @@ const ArtistList = () => {
     }
   }, [folder.applied.artists, folder.musicFolder]);
 
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { getCachedSongs } = useLibraryCache();
+
   const {
-    isLoading,
-    isError,
-    data: artists,
+    isLoading: onlineIsLoading,
+    isError: onlineIsError,
+    data: onlineArtists,
     error,
   } = useQuery({
     queryKey: ['artistList', musicFolder],
@@ -57,7 +64,20 @@ const ArtistList = () => {
       }),
     gcTime: 3600000, // Stay in cache for 1 hour
     staleTime: Infinity, // Only allow manual refresh
+    enabled: !effectiveOffline,
   });
+
+  // Offline browsing (ADR Section 5.1) -- additive branch alongside the
+  // online query above; downstream search/sort keep operating unchanged.
+  const offlineArtists = useMemo(() => {
+    if (!effectiveOffline) return undefined;
+    return buildArtistsFromSongs(getCachedSongs());
+  }, [effectiveOffline, getCachedSongs]);
+
+  const artists = effectiveOffline ? offlineArtists : onlineArtists;
+  const isLoading = effectiveOffline ? false : onlineIsLoading;
+  const isError = effectiveOffline ? false : onlineIsError;
+
   const filteredData = useSearchQuery(misc.searchQuery, artists, ['title', 'genre']);
   const { sortedData, sortColumns } = useColumnSort(artists, Item.Artist, artist.active.list.sort);
 
@@ -174,7 +194,9 @@ const ArtistList = () => {
             'viewInFolder',
           ]}
           handleFavorite={(rowData: RowDataType) =>
-            handleFavorite(rowData, { queryKey: ['artistList', musicFolder] })
+            effectiveOffline
+              ? notifyToast('warning', t("Favorite status isn't available offline"))
+              : handleFavorite(rowData, { queryKey: ['artistList', musicFolder] })
           }
           initialScrollOffset={Number(localStorage.getItem('scroll_list_artistList'))}
           onScroll={(scrollIndex: number) => {
@@ -201,7 +223,9 @@ const ArtistList = () => {
           size={config.lookAndFeel.gridView.cardSize}
           cacheType="artist"
           handleFavorite={(rowData: RowDataType) =>
-            handleFavorite(rowData, { queryKey: ['artistList', musicFolder] })
+            effectiveOffline
+              ? notifyToast('warning', t("Favorite status isn't available offline"))
+              : handleFavorite(rowData, { queryKey: ['artistList', musicFolder] })
           }
           initialScrollOffset={Number(localStorage.getItem('scroll_grid_artistList'))}
           onScroll={(scrollIndex: number) => {

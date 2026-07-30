@@ -188,6 +188,17 @@ export const getSongColumnList = (t: TFunction) => [
       label: t('Year'),
     },
   },
+  {
+    label: t('Offline Status'),
+    value: {
+      id: t('Offline'),
+      dataKey: 'offlineStatus',
+      alignment: 'center',
+      resizable: true,
+      width: 80,
+      label: t('Offline Status'),
+    },
+  },
 ];
 
 export const getSongColumnListAuto = (t: TFunction) => [
@@ -363,6 +374,16 @@ export const getSongColumnListAuto = (t: TFunction) => [
       label: t('Year'),
     },
   },
+  {
+    label: t('Offline Status'),
+    value: {
+      id: t('Offline'),
+      dataKey: 'offlineStatus',
+      alignment: 'center',
+      flexGrow: 1,
+      label: t('Offline Status'),
+    },
+  },
 ];
 
 export const getSongColumnPicker = (t: TFunction) => [
@@ -383,6 +404,7 @@ export const getSongColumnPicker = (t: TFunction) => [
   { label: t('Title') },
   { label: t('Title (Combined)') },
   { label: t('Year') },
+  { label: t('Offline Status') },
 ];
 
 export const getAlbumColumnList = (t: TFunction) => [

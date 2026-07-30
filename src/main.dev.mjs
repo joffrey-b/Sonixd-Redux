@@ -524,10 +524,32 @@ const CREDENTIAL_KEYS = new Set([
   'userId',
   'legacyAuth',
 ]);
-const SETTINGS_DENY_LIST = new Set([...CREDENTIAL_KEYS]);
+// Audit fix: downloadPath is the trusted base every bridge:download:* handler
+// validates writes/deletes against (assertUnderDir/getDownloadBaseDir below).
+// It used to be settable through the fully generic bridge:settings:set channel
+// like any other non-credential setting -- meaning any renderer-side code
+// (not just the real folder-picker flow) could set it to an arbitrary string
+// (e.g. '/') and every subsequent download file op would trust that as the
+// containment boundary. Blocked here the same way credentials are, with its
+// own narrow, dedicated write paths instead: select-download-folder sets it
+// directly from a real dialog.showOpenDialog result (never a renderer-supplied
+// value), and bridge:settings:clear-download-path takes no renderer-supplied
+// value at all.
+const NON_CREDENTIAL_DENY_LIST = new Set(['downloadPath']);
+const SETTINGS_DENY_LIST = new Set([...CREDENTIAL_KEYS, ...NON_CREDENTIAL_DENY_LIST]);
 
 // ─── Path validation helpers ──────────────────────────────────────────────────
 const getCacheBaseDir = () => settings.get('cachePath') || app.getPath('userData');
+
+// Downloads (ADR Section 8) live under a separate, user-chosen folder --
+// unlike getCacheBaseDir, there is deliberately no app-controlled fallback.
+// Returns null (never '') for "not configured" -- path.resolve('') resolves
+// to process.cwd(), a real directory, so assertUnderDir(x, '') would NOT
+// fail closed. Further audit fix: assertUnderDir itself now explicitly
+// rejects a falsy baseDir (see shared/assertUnderDir.ts) rather than this
+// relying on every caller remembering to check for null first, or on
+// path.resolve(null)'s incidental TypeError being caught as a side effect.
+const getDownloadBaseDir = () => settings.get('downloadPath') || null;
 
 // ─── MPV state (module-level so handlers registered once are safe across
 // macOS createWindow re-invocations) ──────────────────────────────────────────
@@ -790,6 +812,23 @@ ipcMain.handle('bridge:settings:getCredentials', () => {
   };
 });
 
+// Async (invoke, never sendSync) read of the single `cachePath` field --
+// added for the offline action queue's module-level path cache
+// (offlineActionQueue.ts), which resolves this once and caches it in memory
+// rather than paying a blocking sendSync round trip on every flush-trigger
+// check (mirrors bridge:settings:getCredentials' rationale, scoped to this
+// one field since cachePath isn't itself a credential).
+ipcMain.handle('bridge:settings:getCachePath', () => {
+  return settings.get('cachePath');
+});
+
+// Async (invoke, never sendSync) read of the `downloadPath` field -- same
+// rationale as bridge:settings:getCachePath above, added for the downloads
+// feature's own module-level path cache (shared/downloadPath.ts).
+ipcMain.handle('bridge:settings:getDownloadPath', () => {
+  return settings.get('downloadPath');
+});
+
 // Atomically clears all credential and server-config keys on disconnect.
 // DisconnectButton.tsx uses this instead of individual settings.set() calls
 // (which are blocked by the deny list).
@@ -1050,10 +1089,125 @@ ipcMain.handle('bridge:cache-dir:evict-if-needed', async (_event, dirPath, limit
     return;
   }
   try {
-    await evictOldestFilesUntilUnderLimit(dirPath, limitBytes);
+    const deletedFileNames = await evictOldestFilesUntilUnderLimit(dirPath, limitBytes);
+    // FIX D: notify the renderer's cached-songs index so it can drop exactly
+    // these ids -- without this, a song evicted mid-session keeps showing
+    // the "cached" offline-status icon and keeps being treated as playable
+    // offline until the app restarts. Pushed unconditionally regardless of
+    // which cache dir this was (song or image) -- image filenames simply
+    // won't match any real song id in the renderer's Set, a harmless no-op.
+    // sendToRenderer is the same push helper 'flush-cache-now' already uses;
+    // that precedent is pull-based only because of a startup-mount race that
+    // doesn't apply here (eviction only ever runs mid-session, well after
+    // the renderer is mounted and listening).
+    if (deletedFileNames.length > 0) {
+      sendToRenderer('cache-files-evicted', deletedFileNames);
+    }
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn('[cache eviction] error reading cache dir', dirPath, err);
+  }
+});
+
+// ─── Download directory (ADR Section 8) ───────────────────────────────────────
+// Everything below is validated against getDownloadBaseDir() -- the user-chosen
+// download folder, read fresh from trusted main-process settings storage on
+// every call, never trusted from a renderer-supplied base path. Unlike the
+// cache-dir handlers above (mostly sync, called rarely), these are all async
+// (ipcMain.handle): FIX 2's per-song download fan-out calls ensure-dir/commit
+// once per song in a batch, so a sync/blocking round trip here would reintroduce
+// exactly the hot-path problem Lesson #1 warns about.
+
+// Audit fix (findings 1.1/1.2/2.7): every handler below used to swallow an
+// assertUnderDir validation failure and resolve as if nothing happened
+// (undefined/false/[]) -- indistinguishable, from the renderer's side, from a
+// genuine success or a genuine "doesn't exist"/"empty" result. Concretely,
+// this meant: (1) a write whose destination fell outside the *current*
+// download root (e.g. the folder was changed or cleared mid-batch) silently
+// no-op'd while downloadSongFile still reported success and the renderer
+// durably recorded the song as downloaded; (2) a delete whose target path was
+// captured under a *previously* configured root similarly silently no-op'd
+// while the renderer still forgot the manifest/index entry -- orphaning the
+// real file on disk with no record of it anywhere. Every caller already
+// isolates failures correctly (downloadSongFile's own try/catch;
+// useBulkDownload.ts's per-item try/catch around every fan-out member;
+// cleanupEmptyAlbumFolders's callers already wrap it in .catch(() => {})) --
+// they were just never being told a failure had actually happened. Letting
+// assertUnderDir's throw propagate as a real IPC rejection (rather than
+// catching and silently returning) is the fix; no renderer-side change was
+// needed once these actually surface the failure.
+ipcMain.handle('bridge:download:ensure-dir', async (_event, dirPath) => {
+  assertUnderDir(dirPath, getDownloadBaseDir());
+  await fs.promises.mkdir(dirPath, { recursive: true });
+});
+
+ipcMain.handle('bridge:download:exists', async (_event, filePath) => {
+  assertUnderDir(filePath, getDownloadBaseDir());
+  return fs.existsSync(filePath);
+});
+
+// Best-effort only for "the file is already gone" (ENOENT) -- a genuine
+// permission error or a Windows file-in-use lock is now surfaced rather than
+// treated identically to "already cleaned up" (finding 2.7). Path-validation
+// failures are a distinct, always-surfaced case (never swallowed as ENOENT).
+ipcMain.handle('bridge:download:remove-if-exists', async (_event, filePath) => {
+  assertUnderDir(filePath, getDownloadBaseDir());
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.rmSync(filePath);
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+});
+
+// Mirrors bridge:cache:commit-download's temp-then-atomic-rename sequence.
+ipcMain.handle('bridge:download:commit', async (_event, tempPath, finalPath, data) => {
+  assertUnderDir(tempPath, getDownloadBaseDir());
+  assertUnderDir(finalPath, getDownloadBaseDir());
+  await fs.promises.writeFile(tempPath, Buffer.from(data));
+  try {
+    fs.renameSync(tempPath, finalPath);
+  } catch (err) {
+    if (err.code !== 'ENOENT' || !fs.existsSync(finalPath)) throw err;
+  }
+});
+
+ipcMain.handle('bridge:download:remove-file', async (_event, filePath) => {
+  assertUnderDir(filePath, getDownloadBaseDir());
+  try {
+    await fs.promises.unlink(filePath);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+});
+
+// Returns both files and subdirectories with a type flag -- FIX 2's collision
+// detection and FIX 5/6's empty-folder cleanup both need to distinguish them,
+// unlike bridge:cache-dir:list's flat file-only listing.
+ipcMain.handle('bridge:download:list-entries', async (_event, dirPath) => {
+  assertUnderDir(dirPath, getDownloadBaseDir());
+  try {
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    return entries.map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }));
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+});
+
+// Only removes the directory if a real readdir confirms it's genuinely empty
+// (ADR 8.5: never force-delete in case the user placed their own file there).
+ipcMain.handle('bridge:download:remove-dir-if-empty', async (_event, dirPath) => {
+  assertUnderDir(dirPath, getDownloadBaseDir());
+  try {
+    const entries = await fs.promises.readdir(dirPath);
+    if (entries.length > 0) return false;
+    await fs.promises.rmdir(dirPath);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return true;
+    return false;
   }
 });
 
@@ -1355,7 +1509,21 @@ ipcMain.handle('import-settings', async () => {
     });
     if (canceled || filePaths.length === 0) return { success: false };
     const parsed = JSON.parse(fs.readFileSync(filePaths[0], 'utf-8'));
-    const accepted = validateImportedSettings(parsed, settings.store, SETTINGS_DENY_LIST);
+    // Self-audit fix: this must stay scoped to CREDENTIAL_KEYS specifically,
+    // not the broader SETTINGS_DENY_LIST -- downloadPath was added to that
+    // combined set to block the live, renderer-facing bridge:settings:set/
+    // delete channels (finding 1.4), but a settings backup/restore file is a
+    // different trust boundary entirely: it's the user's own previously
+    // exported data, and the actual write below (settings.set, a few lines
+    // down) is a trusted, main-process-internal call, never routed through
+    // the renderer-facing channel this fix was actually protecting. Using
+    // the combined deny list here would have silently dropped downloadPath
+    // from every future settings restore with no error and no indication
+    // anything was skipped -- caught in this phase's own self-audit, not by
+    // a test. Credentials still correctly stay excluded from import (their
+    // own dedicated setCredentials endpoint is the only trusted write path
+    // for those, matching the reasoning CREDENTIAL_KEYS already exists for).
+    const accepted = validateImportedSettings(parsed, settings.store, CREDENTIAL_KEYS);
     if (!accepted) return { success: false, error: true };
     Object.entries(accepted).forEach(([key, value]) => {
       settings.set(key, value);
@@ -1392,6 +1560,42 @@ ipcMain.handle('file-path', async () => {
     properties: ['openFile', 'openDirectory'],
   });
   return filePath;
+});
+
+// Downloads (ADR Section 8.1): the real, non-mocked counterpart to the e2e
+// suite's mockOpenDialog fixture -- same dialog.showOpenDialog call shape
+// (openDirectory) and same { filePaths } result shape the mock already
+// returns, so the existing fixture works against this handler unmodified.
+//
+// Audit fix: downloadPath is now on SETTINGS_DENY_LIST, so the renderer can no
+// longer persist it itself via the generic bridge:settings:set channel --
+// this handler writes it directly, in the main process, using only the real
+// OS-selected path (never a renderer-supplied value). The renderer still
+// gets the path back in the response purely so it can update its own local
+// display state / cache invalidation; it is no longer the thing that actually
+// persists the setting.
+ipcMain.handle('select-download-folder', async () => {
+  try {
+    const { filePaths, canceled } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Download Folder',
+      properties: ['openDirectory'],
+    });
+    if (canceled || filePaths.length === 0) return { success: false };
+    settings.set('downloadPath', filePaths[0]);
+    return { success: true, path: filePaths[0] };
+  } catch {
+    return { success: false, error: true };
+  }
+});
+
+// Audit fix: the dedicated counterpart to select-download-folder above for
+// clearing the setting -- takes no renderer-supplied value at all, so there
+// is nothing for a compromised/buggy renderer to spoof. Mirrors the same
+// "narrow, dedicated write path" shape as setCredentials/disconnect for
+// CREDENTIAL_KEYS.
+ipcMain.handle('bridge:settings:clear-download-path', () => {
+  settings.set('downloadPath', '');
+  return { success: true };
 });
 
 ipcMain.on('minimize', () => {

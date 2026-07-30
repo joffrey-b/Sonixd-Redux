@@ -15,9 +15,13 @@ const downloadFile = async (url: string): Promise<ArrayBuffer> => {
   return response.arrayBuffer();
 };
 
-const cacheSong = async (fileName: string, url: string): Promise<void> => {
+// Returns whether a cache file exists for this song once the call completes
+// (true whether it was already cached or newly written this call, false if
+// nothing was written) -- used by call sites to update the cached-songs index
+// (ADR Section 5.3/6) the moment a write actually succeeds, without polling.
+const cacheSong = async (fileName: string, url: string): Promise<boolean> => {
   if (fileName.includes('undefined')) {
-    return;
+    return false;
   }
 
   const cachePath = getSongCachePath();
@@ -31,19 +35,21 @@ const cacheSong = async (fileName: string, url: string): Promise<void> => {
   await cache.removeIfExists(tempSongPath);
 
   if (await cache.exists(cachedSongPath)) {
-    return;
+    return true;
   }
 
   if (url.includes('placeholder')) {
-    return;
+    return false;
   }
 
   try {
     const buffer = await downloadFile(url);
     await cache.commitDownload(tempSongPath, cachedSongPath, buffer);
     evictCacheIfNeeded(cachePath, 'songCacheSizeLimit').catch(() => {});
+    return true;
   } catch {
     await cache.removeIfExists(tempSongPath);
+    return false;
   }
 };
 

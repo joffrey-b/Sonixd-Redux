@@ -9,6 +9,8 @@ import FolderOpenIcon from '@rsuite/icons/legacy/FolderOpen';
 import HeartIcon from '@rsuite/icons/legacy/Heart';
 import HeartOIcon from '@rsuite/icons/legacy/HeartO';
 import Trash2Icon from '@rsuite/icons/legacy/Trash2';
+import CloudDownloadIcon from '@rsuite/icons/legacy/CloudDownload';
+import DownloadIcon from '@rsuite/icons/legacy/Download';
 
 import useLongPress from 'react-use/lib/useLongPress';
 import {
@@ -71,6 +73,9 @@ import TextCell from './TableCells/TextCell';
 import LinkCell from './TableCells/LinkCell';
 import CustomCell from './TableCells/CustomCell';
 import { settings } from '../shared/bridge';
+import { selectCachedSongIdSet } from '../../redux/cachedSongsSlice';
+import { selectDownloadedSongIdSet } from '../../redux/downloadedSongsSlice';
+import { getOfflineStatusIconState } from '../../shared/isAvailableOffline';
 
 const StyledTable = styled(Table)<{ rowHeight: number; $isDragging?: boolean }>`
   .rs-table-row.selected {
@@ -262,6 +267,8 @@ const ListViewTable = ({
   const configState = useAppSelector((state) => state.config);
   const playQueue = useAppSelector((state) => state.playQueue);
   const multiSelect = useAppSelector((state) => state.multiSelect);
+  const cachedSongIds = useAppSelector(selectCachedSongIdSet);
+  const downloadedSongIds = useAppSelector(selectDownloadedSongIdSet);
   const [sortColumn, setSortColumn] = useState<string | undefined>();
   const [sortType, setSortType] = useState<'asc' | 'desc' | undefined>();
   const [sortedData, setSortedData] = useState(data);
@@ -621,6 +628,27 @@ const ListViewTable = ({
       <div ref={tableContainerRef} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         <StyledTable
           draggable="false"
+          // Audit fix: no rowKey was ever passed here. rsuite-table falls back
+          // to the row's array position for its own internal row identity
+          // when rowKey is unset (confirmed in rsuite-table's own source:
+          // `rowData[rowKey] !== undefined ? rowData[rowKey] : props.key`,
+          // where props.key is the positional key React assigned when this
+          // table's own internal .map() ran). Harmless for a stable sort, but
+          // this table backs every Album/Artist/Playlist/Song list in the
+          // app, several of which default to a RANDOM sort (viewSlice.ts) --
+          // and the underlying data comes from React Query, which can refetch
+          // and reorder at any point (remount, refetch-on-focus, cache
+          // invalidation), not just once at initial load. When a reorder
+          // lands, a positional key means the row at position N gets its
+          // content swapped in place rather than being recognized as a
+          // different item -- a click aimed at one row can resolve against
+          // whatever now occupies that slot instead. Caught via a live e2e
+          // run: repeatedly navigating to one album deterministically opened
+          // a different one. `uniqueId` is already this file's own
+          // established stable-identity field for every row type it renders
+          // (used for selection/drag/now-playing comparisons a few lines
+          // below), so it's the correct key here too -- not a new convention.
+          rowKey="uniqueId"
           rowClassName={(rowData: RowDataType) => {
             const currentData = sortColumn && !nowPlaying ? sortedData : data;
             const isLastRow =
@@ -1489,6 +1517,57 @@ const ListViewTable = ({
                           }}
                         >
                           {convertByteToMegabyte(rowData[column.dataKey])} MB
+                        </CustomCell>
+                      );
+                    }
+
+                    if (column.dataKey === 'offlineStatus') {
+                      const offlineStatus = getOfflineStatusIconState(
+                        rowData.id as string,
+                        rowData.isDir as boolean | undefined,
+                        cachedSongIds,
+                        downloadedSongIds
+                      );
+                      return (
+                        <CustomCell
+                          rowData={rowData}
+                          rowIndex={rowIndex}
+                          column={column}
+                          rowHeight={rowHeight}
+                          handleRowClick={(e: React.MouseEvent) => {
+                            handleRowClick(
+                              e as unknown as MouseEvent,
+                              {
+                                ...rowData,
+                                rowIndex,
+                              },
+                              sortColumn && !nowPlaying ? sortedData : data
+                            );
+                          }}
+                          handleRowDoubleClick={() => {
+                            handleRowDoubleClick({
+                              ...rowData,
+                              tableData: sortColumn && !nowPlaying ? sortedData : data,
+                              rowIndex,
+                            });
+                          }}
+                          onMouseDown={(e: React.MouseEvent) => {
+                            handleStartSelectDrag.onMouseDown({ e, rowData });
+                            handleSelectMouseDown(e, rowData);
+                          }}
+                          onMouseEnter={() => handleContinueSelectDrag(rowData)}
+                          onMouseUp={() => {
+                            handleSelectMouseUp();
+                            handleStartSelectDrag.onMouseUp();
+                          }}
+                        >
+                          {/* Blank by default (Section 6) -- downloaded (Phase 4, currently
+                              unreachable) takes precedence over cached when both are true. */}
+                          {offlineStatus === 'downloaded' ? (
+                            <DownloadIcon style={{ opacity: 0.9 }} />
+                          ) : offlineStatus === 'cached' ? (
+                            <CloudDownloadIcon style={{ opacity: 0.5 }} />
+                          ) : null}
                         </CustomCell>
                       );
                     }

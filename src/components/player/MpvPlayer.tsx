@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { cache, ipcRenderer, settings } from '../shared/bridge';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
@@ -15,7 +15,9 @@ import { EqState } from '../../redux/eqSlice';
 import { PeqState } from '../../redux/peqSlice';
 import { buildMpvAfChain } from '../../shared/mpvEqFilter';
 import { resolveSongPlaybackSource } from '../../shared/resolveSongPlaybackSource';
+import { resolveDownloadedPathWithResilience } from '../../shared/downloadedPathResilience';
 import cacheSong from '../shared/cacheSong';
+import { addCachedSongId } from '../../redux/cachedSongsSlice';
 import { notifyToast } from '../shared/toast';
 import { apiController } from '../../api/controller';
 import { Server } from '../../types';
@@ -31,6 +33,12 @@ const entryListKey = (pq: PlayQueue) => {
 const MpvPlayer = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  // Fix 6: wraps the raw in-memory lookup with an existence check +
+  // self-correction (ADR Section 8.5) -- see downloadedPathResilience.ts.
+  const resolveDownloadedPath = useCallback(
+    (songId: string) => resolveDownloadedPathWithResilience(songId, dispatch),
+    [dispatch]
+  );
   const playQueue = useAppSelector((state) => state.playQueue);
   const player = useAppSelector((state) => state.player);
   const config = useAppSelector((state) => state.config);
@@ -131,11 +139,17 @@ const MpvPlayer = () => {
           preloadedNextUrlRef.current = nextUrl;
           const pause = playerStatusRef.current !== 'PLAYING';
           const [resolvedCurrentUrl, resolvedNextUrl] = await Promise.all([
-            resolveSongPlaybackSource(currentSong, miscRef.current.songCachePath, cache.exists),
+            resolveSongPlaybackSource(
+              currentSong,
+              miscRef.current.songCachePath,
+              cache.exists,
+              resolveDownloadedPath
+            ),
             resolveSongPlaybackSource(
               nextSong ?? undefined,
               miscRef.current.songCachePath,
-              cache.exists
+              cache.exists,
+              resolveDownloadedPath
             ),
           ]);
           ipcRenderer.send('player-set-queue', {
@@ -192,7 +206,12 @@ const MpvPlayer = () => {
         cacheSong(
           `${endedSong.id}.${endedSong.suffix || 'mp3'}`,
           endedSong.streamUrl.replace(/stream/, 'download')
-        );
+        )
+          .then((cached) => {
+            if (cached) dispatch(addCachedSongId(endedSong.id));
+            return undefined;
+          })
+          .catch(() => {});
       }
 
       // At end of queue with no repeat — MPV stopped, just sync Redux status
@@ -237,7 +256,8 @@ const MpvPlayer = () => {
       resolveSongPlaybackSource(
         newNextSong ?? undefined,
         miscRef.current.songCachePath,
-        cache.exists
+        cache.exists,
+        resolveDownloadedPath
       )
         .then((resolvedNewNextUrl) => {
           // A newer auto-next or queue change may have superseded this preload
@@ -309,8 +329,18 @@ const MpvPlayer = () => {
     // override the pre-pause and make MPV play correctly.
     const shouldPause = playerStatusRef.current !== 'PLAYING';
     Promise.all([
-      resolveSongPlaybackSource(currentSong, miscRef.current.songCachePath, cache.exists),
-      resolveSongPlaybackSource(nextSong ?? undefined, miscRef.current.songCachePath, cache.exists),
+      resolveSongPlaybackSource(
+        currentSong,
+        miscRef.current.songCachePath,
+        cache.exists,
+        resolveDownloadedPath
+      ),
+      resolveSongPlaybackSource(
+        nextSong ?? undefined,
+        miscRef.current.songCachePath,
+        cache.exists,
+        resolveDownloadedPath
+      ),
     ])
       .then(([resolvedCurrentUrl, resolvedNextUrl]) => {
         // A newer track change may have superseded this resolution while it was
@@ -335,7 +365,12 @@ const MpvPlayer = () => {
     const nextUrl = nextSong?.streamUrl || null;
     if (nextUrl === preloadedNextUrlRef.current) return;
     preloadedNextUrlRef.current = nextUrl;
-    resolveSongPlaybackSource(nextSong ?? undefined, miscRef.current.songCachePath, cache.exists)
+    resolveSongPlaybackSource(
+      nextSong ?? undefined,
+      miscRef.current.songCachePath,
+      cache.exists,
+      resolveDownloadedPath
+    )
       .then((resolvedNextUrl) => {
         // A newer queue change may have superseded this preload while it was
         // in flight — don't let a stale lookup override it.
@@ -350,6 +385,7 @@ const MpvPlayer = () => {
     playQueue.entry,
     playQueue.shuffledEntry,
     playQueue.sortedEntry,
+    resolveDownloadedPath,
   ]);
 
   // Restart current song from the beginning — fired when next/prev wraps to the same song
@@ -448,11 +484,17 @@ const MpvPlayer = () => {
         if (currentUrl) {
           preloadedNextUrlRef.current = nextUrl;
           const [resolvedCurrentUrl, resolvedNextUrl] = await Promise.all([
-            resolveSongPlaybackSource(currentSong, miscRef.current.songCachePath, cache.exists),
+            resolveSongPlaybackSource(
+              currentSong,
+              miscRef.current.songCachePath,
+              cache.exists,
+              resolveDownloadedPath
+            ),
             resolveSongPlaybackSource(
               nextSong ?? undefined,
               miscRef.current.songCachePath,
-              cache.exists
+              cache.exists,
+              resolveDownloadedPath
             ),
           ]);
           if (cancelled) return null;

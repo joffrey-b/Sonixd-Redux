@@ -49,6 +49,18 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let syncInFlight: Promise<number> | null = null;
 const syncProgressListeners = new Set<(fetched: number, total: number | null) => void>();
 
+// Fix I: usePlaylistsCache.ts duplicates the shape of this file's
+// syncInFlight guard + getSnapshot()/hasCacheForCurrentServer() trio for its
+// own playlists sync. Deliberately not extracted into a shared helper here --
+// this sync additionally carries paginated batch-fetching and progress-listener
+// reporting that the playlists sync has no equivalent of (its own sync is a
+// flat N+1 fan-out with per-item error isolation instead), and the two
+// hasXCacheForCurrentServer checks differ in what counts as "no cache yet"
+// (an empty song list is never valid; an empty playlist list legitimately is).
+// A shared abstraction would need enough parameters to accommodate both that
+// it wouldn't meaningfully reduce the duplication, and doing it by touching
+// this already-shipped, already-tested sync path isn't worth that risk for
+// the value gained. See PHASE-3-FIX-SUMMARY.md (Fix I) for the full writeup.
 interface CacheSnapshot {
   songs?: LibraryCacheSong[];
   lastSyncedAt?: string | null;
@@ -97,6 +109,22 @@ const scheduleSongMapFlush = () => {
   }, 5000);
 };
 
+// Module-level guard, not per-hook-instance -- useLibraryCache() is called
+// from many components, including Card.tsx (rendered once per grid item),
+// so every visible album/artist/playlist card used to register its own
+// 'flush-cache-now' IPC listener via its own useEffect. A grid view with
+// more than 10 visible cards alone was enough to exceed Node's default
+// max-listener threshold and log a MaxListenersExceededWarning. There's
+// only one songMap/flushTimer for the whole process, so there only needs
+// to be one listener for its whole lifetime, regardless of how many
+// components currently use this hook.
+let flushListenerRegistered = false;
+const ensureFlushListenerRegistered = () => {
+  if (flushListenerRegistered) return;
+  flushListenerRegistered = true;
+  ipcRenderer.on('flush-cache-now', flushSongMapNow);
+};
+
 // Call after a full sync to ensure the next helper call reads fresh data.
 export const invalidateSongMap = () => {
   if (flushTimer !== null) {
@@ -110,10 +138,7 @@ const useLibraryCache = () => {
   const config = useAppSelector((state) => state.config);
 
   useEffect(() => {
-    ipcRenderer.on('flush-cache-now', flushSongMapNow);
-    return () => {
-      ipcRenderer.removeListener('flush-cache-now', flushSongMapNow);
-    };
+    ensureFlushListenerRegistered();
   }, []);
 
   const syncLibrary = useCallback(

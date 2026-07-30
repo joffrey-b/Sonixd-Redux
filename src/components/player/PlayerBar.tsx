@@ -38,7 +38,9 @@ import {
   StyledButton,
   StyledInputNumber,
   StyledRate,
+  StyledTag,
 } from '../shared/styled';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
 import { Artist, Play, Server, Song } from '../../types';
 import { InfoModal } from '../modal/Modal';
 import useGetLyrics from '../../hooks/useGetLyrics';
@@ -54,6 +56,7 @@ import Slider from '../slider/Slider';
 import useDiscordRpc from '../../hooks/useDiscordRpc';
 import { incrementPlayCountInCache } from '../../hooks/useLibraryCache';
 import { shouldScrobble as checkShouldScrobble } from '../../shared/scrobbleLogic';
+import { submitScrobbleWithQueueFallback } from '../../shared/offlineSubmission';
 import useJukebox from '../../hooks/useJukebox';
 import { notifyToast } from '../shared/toast';
 
@@ -65,6 +68,7 @@ const PlayerBar = () => {
   const config = useAppSelector((state) => state.config);
   const isMpv = config.playback.playerBackend === 'mpv';
   const folder = useAppSelector((state) => state.folder);
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
   const dispatch = useAppDispatch();
   const [currentTime, setCurrentTime] = useState(0);
   const [isDraggingVolume, setIsDraggingVolume] = useState(false);
@@ -643,16 +647,15 @@ const PlayerBar = () => {
       mpvSubmissionScrobbledRef.current = true;
       incrementPlayCountInCache(playQueue.current?.id);
       if (playQueue.current?.id) dispatch(incrementEntryPlayCount(playQueue.current.id));
-      apiController({
+      // Fire-and-forget by design -- see the identical comment at the
+      // Web Audio call sites in Player.tsx for why this local catch exists.
+      submitScrobbleWithQueueFallback({
         serverType: config.serverType,
-        endpoint: 'scrobble',
-        args: {
-          id: playQueue.current?.id,
-          albumId: playQueue.current?.albumId,
-          submission: true,
-          position: config.serverType === Server.Jellyfin ? currentTime * 1e7 : undefined,
-        },
-      });
+        id: playQueue.current?.id,
+        albumId: playQueue.current?.albumId,
+        position: config.serverType === Server.Jellyfin ? currentTime * 1e7 : undefined,
+        effectiveOffline,
+      }).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMpv, currentTime, playQueue.scrobble]);
@@ -731,16 +734,15 @@ const PlayerBar = () => {
       jukeboxSubmissionScrobbledRef.current = true;
       incrementPlayCountInCache(playQueue.current?.id);
       if (playQueue.current?.id) dispatch(incrementEntryPlayCount(playQueue.current.id));
-      apiController({
+      // Fire-and-forget by design -- see the identical comment at the
+      // Web Audio call sites in Player.tsx for why this local catch exists.
+      submitScrobbleWithQueueFallback({
         serverType: config.serverType,
-        endpoint: 'scrobble',
-        args: {
-          id: playQueue.current?.id,
-          albumId: playQueue.current?.albumId,
-          submission: true,
-          position: config.serverType === Server.Jellyfin ? position * 1e7 : undefined,
-        },
-      });
+        id: playQueue.current?.id,
+        albumId: playQueue.current?.albumId,
+        position: config.serverType === Server.Jellyfin ? position * 1e7 : undefined,
+        effectiveOffline,
+      }).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isJukebox, jukebox.status.position, playQueue.scrobble]);
@@ -1265,6 +1267,25 @@ const PlayerBar = () => {
                     marginRight: '10px',
                   }}
                 >
+                  {/* Persistent offline indicator (ADR Section 3.4) -- visible for the
+                      entire duration of any offline state, manually forced or detected,
+                      not a toast. Placed near the player bar's existing per-song status
+                      controls since PlayerBar is always mounted regardless of playback
+                      state, unlike NowPlayingView/other conditionally-rendered views. */}
+                  {effectiveOffline && (
+                    <CustomTooltip
+                      text={t(
+                        'Offline -- actions will be queued and synced once connectivity is restored.'
+                      )}
+                    >
+                      <StyledTag
+                        data-testid="offline-indicator"
+                        style={{ cursor: 'default', marginRight: '8px' }}
+                      >
+                        {t('Offline')}
+                      </StyledTag>
+                    </CustomTooltip>
+                  )}
                   {config.serverType === Server.Subsonic && (
                     <StyledRate
                       aria-label="rating"

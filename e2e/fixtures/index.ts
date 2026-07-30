@@ -40,15 +40,31 @@ export async function loginViaUI(
     const jellyfinToggle = window.locator('[data-testid="server-type-jellyfin"]');
     if (await jellyfinToggle.isVisible()) await jellyfinToggle.click();
   }
-  await window.click('[data-testid="connect-button"]');
+  // Login.tsx's handleConnect/handleConnectJellyfin end a successful login with
+  // an unconditional window.location.reload() once credentials are persisted.
+  // Register the wait for that reload's own 'domcontentloaded' BEFORE clicking,
+  // so we're guaranteed to observe the *next* one (the reload) rather than one
+  // that already fired for the current document.
+  const reloaded = window.waitForEvent('domcontentloaded', { timeout: 30_000 });
+  // noWaitAfter: page.click() otherwise also waits for any navigation the
+  // click itself initiates before resolving (documented Playwright
+  // behavior) -- redundant with, and racing against, the explicit
+  // `reloaded` wait right above. A live run hit this exact race on a
+  // Jellyfin login (both the click and the registered wait stalling for the
+  // same 30s timeout at once); this leaves only the explicit wait in charge
+  // of observing the reload.
+  await window.click('[data-testid="connect-button"]', { noWaitAfter: true });
+  await reloaded;
   // The sidebar (and its nav-albums item) is always present in the DOM, even on the
   // login screen — disableSidebar only sets data-disabled on each nav item (a JS-level
   // check inside RSuite's Nav.Item click handler, not a native HTML disabled attribute),
-  // it doesn't unmount anything. Waiting for visibility or for a stale element reference
-  // to detach both race ahead of the actual async login flow (network auth -> IPC
-  // settings persistence -> window.location.reload()) and can resolve on a transient
-  // mid-reload DOM state. Polling the live data-disabled attribute is the one signal
-  // that's actually tied to whether login succeeded.
+  // it doesn't unmount anything. App.tsx's disableSidebar gate reads settings.get('server')
+  // synchronously on every render, so a Redux-triggered re-render of the pre-reload
+  // document can flip data-disabled to 'false' moments before the already-queued reload
+  // actually tears the page down (confirmed live: this raced a fixture helper's
+  // app.evaluate() call in the very next test step, destroying its execution context).
+  // Waiting for the real reload above closes that race; this poll is a final
+  // confirmation that the post-reload app actually finished mounting logged-in.
   await expect(window.locator('[data-testid="nav-albums"]')).toHaveAttribute(
     'data-disabled',
     'false',

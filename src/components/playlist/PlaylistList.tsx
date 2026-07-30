@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Form, Whisper } from 'rsuite';
@@ -22,6 +22,9 @@ import ColumnSortPopover from '../shared/ColumnSortPopover';
 import useListClickHandler from '../../hooks/useListClickHandler';
 import Popup from '../shared/Popup';
 import { settings } from '../shared/bridge';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
+import usePlaylistsCache from '../../hooks/usePlaylistsCache';
+import { playlistCacheEntryToPlaylist } from '../../shared/offlineLibrary';
 
 const PlaylistList = () => {
   const { t } = useTranslation();
@@ -34,15 +37,31 @@ const PlaylistList = () => {
   const playlistTriggerRef = useRef<OverlayTriggerHandle | null>(null);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [viewType, setViewType] = useState(settings.get('playlistViewType') || 'list');
+
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { getCachedPlaylists } = usePlaylistsCache();
+
   const {
-    isLoading,
-    isError,
-    data: playlists,
+    isLoading: onlineIsLoading,
+    isError: onlineIsError,
+    data: onlinePlaylists,
     error,
   } = useQuery({
     queryKey: ['playlists'],
     queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getPlaylists' }),
+    enabled: !effectiveOffline,
   });
+
+  // Offline browsing (ADR Section 5.2/5.3) -- reads the new playlists
+  // snapshot instead of the server; online path above is unchanged.
+  const offlinePlaylists = useMemo(() => {
+    if (!effectiveOffline) return undefined;
+    return getCachedPlaylists().map(playlistCacheEntryToPlaylist);
+  }, [effectiveOffline, getCachedPlaylists]);
+
+  const playlists = effectiveOffline ? offlinePlaylists : onlinePlaylists;
+  const isLoading = effectiveOffline ? false : onlineIsLoading;
+  const isError = effectiveOffline ? false : onlineIsError;
   const filteredData = useSearchQuery(misc.searchQuery, playlists, ['title', 'comment', 'owner']);
   const { sortedData, sortColumns } = useColumnSort(
     playlists,
@@ -74,7 +93,7 @@ const PlaylistList = () => {
   });
 
   if (isError) {
-    return <span>{t('Error: {{error}}', { error: error.message })}</span>;
+    return <span>{t('Error: {{error}}', { error: error?.message })}</span>;
   }
 
   return (

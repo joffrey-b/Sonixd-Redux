@@ -8,10 +8,14 @@ interface FileEntry {
   mtimeMs: number;
 }
 
+// Returns the bare filenames actually deleted (FIX D) -- so the caller can
+// notify the renderer's cached-songs index to remove exactly those ids
+// without needing a second directory listing. Empty array if nothing needed
+// evicting or every delete attempt failed.
 export async function evictOldestFilesUntilUnderLimit(
   dirPath: string,
   limitBytes: number
-): Promise<void> {
+): Promise<string[]> {
   const entries = await fs.promises.readdir(dirPath);
   const stats = await Promise.all(
     entries.map(async (name) => {
@@ -27,13 +31,15 @@ export async function evictOldestFilesUntilUnderLimit(
   );
   const files = stats.filter((f): f is FileEntry => f !== null);
   let totalSize = files.reduce((acc, f) => acc + f.size, 0);
-  if (totalSize <= limitBytes) return;
+  if (totalSize <= limitBytes) return [];
   files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  const deletedFileNames: string[] = [];
   for (const f of files) {
     if (totalSize <= limitBytes) break;
     try {
       await fs.promises.unlink(f.fullPath);
       totalSize -= f.size;
+      deletedFileNames.push(f.name);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn(
@@ -43,4 +49,5 @@ export async function evictOldestFilesUntilUnderLimit(
       );
     }
   }
+  return deletedFileNames;
 }

@@ -27,7 +27,12 @@ import {
   incrementEntryPlayCount,
 } from '../../redux/playQueueSlice';
 import cacheSong from '../shared/cacheSong';
+import { resolveSongPlaybackSource } from '../../shared/resolveSongPlaybackSource';
+import { resolveDownloadedPathWithResilience } from '../../shared/downloadedPathResilience';
+import { addCachedSongId } from '../../redux/cachedSongsSlice';
 import { apiController } from '../../api/controller';
+import { submitScrobbleWithQueueFallback } from '../../shared/offlineSubmission';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
 import { Artist, Server, Song } from '../../types';
 import { setStatus } from '../../redux/playerSlice';
 import { EqState } from '../../redux/eqSlice';
@@ -57,7 +62,8 @@ const gaplessListenHandler = (
   serverType: Server,
   duration: number,
   scrobbleThreshold: number,
-  dispatch: AppDispatch
+  dispatch: AppDispatch,
+  effectiveOffline: boolean
 ) => {
   const currentSeek = currentPlayerRef.current?.audioEl.current?.currentTime || 0;
 
@@ -100,16 +106,18 @@ const gaplessListenHandler = (
     setScrobbled(true);
     incrementPlayCountInCache(playQueue.currentSongId);
     dispatch(incrementEntryPlayCount(playQueue.currentSongId));
-    apiController({
+    // Fire-and-forget by design (matches this call site's pre-existing
+    // shape) -- the wrapper re-throws after queueing a failed attempt so
+    // callers that DO await it (useFavorite.ts/useRating.ts) see the same
+    // failure signal they always did, but nothing here awaits it, so that
+    // rejection must be caught locally or it becomes an unhandled rejection.
+    submitScrobbleWithQueueFallback({
       serverType,
-      endpoint: 'scrobble',
-      args: {
-        id: playQueue.currentSongId,
-        albumId: playQueue.current?.albumId,
-        submission: true,
-        position: serverType === Server.Jellyfin ? currentSeek * 1e7 : undefined,
-      },
-    });
+      id: playQueue.currentSongId,
+      albumId: playQueue.current?.albumId,
+      position: serverType === Server.Jellyfin ? currentSeek * 1e7 : undefined,
+      effectiveOffline,
+    }).catch(() => {});
   }
 };
 
@@ -129,7 +137,8 @@ const listenHandler = (
   setScrobbled: React.Dispatch<React.SetStateAction<boolean>>,
   serverType: Server,
   duration: number,
-  scrobbleThreshold: number
+  scrobbleThreshold: number,
+  effectiveOffline: boolean
 ) => {
   // Jellyfin only returns the duration in the last ~2 seconds of the song so we need to pass the
   // duration into the handler instead of fetching it here
@@ -280,16 +289,18 @@ const listenHandler = (
     setScrobbled(true);
     incrementPlayCountInCache(playQueue.currentSongId);
     dispatch(incrementEntryPlayCount(playQueue.currentSongId));
-    apiController({
+    // Fire-and-forget by design (matches this call site's pre-existing
+    // shape) -- the wrapper re-throws after queueing a failed attempt so
+    // callers that DO await it (useFavorite.ts/useRating.ts) see the same
+    // failure signal they always did, but nothing here awaits it, so that
+    // rejection must be caught locally or it becomes an unhandled rejection.
+    submitScrobbleWithQueueFallback({
       serverType,
-      endpoint: 'scrobble',
-      args: {
-        id: playQueue.currentSongId,
-        albumId: playQueue.current?.albumId,
-        submission: true,
-        position: serverType === Server.Jellyfin ? currentSeek * 1e7 : undefined,
-      },
-    });
+      id: playQueue.currentSongId,
+      albumId: playQueue.current?.albumId,
+      position: serverType === Server.Jellyfin ? currentSeek * 1e7 : undefined,
+      effectiveOffline,
+    }).catch(() => {});
   }
 };
 
@@ -317,6 +328,7 @@ const Player = (
   const player = useAppSelector((state) => state.player);
   const misc = useAppSelector((state) => state.misc);
   const config = useAppSelector((state) => state.config);
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
   const isMpv = config.playback.playerBackend === 'mpv';
   const isJukebox = useAppSelector((state) => state.jukebox?.enabled ?? false);
   const cacheSongs = settings.get('cacheSongs');
@@ -329,6 +341,25 @@ const Player = (
   // reset by a full extra playthrough. Tracking one continuous position — whichever
   // element most recently reported it — catches every loop instead of every other one.
   const prevSeekRef = useRef(0);
+  // Audit fix: which song's src has actually been dispatched to player1/player2
+  // so far -- set only once getSrc1/getSrc2's async resolution actually
+  // completes and setPlayerSrc is dispatched (see dispatchSrcWhenResolved
+  // below), not merely once Redux's currentIndex/currentSongId updates.
+  // A manual track switch (e.g. row double-click) resets `scrobbled` to false
+  // immediately on the new currentSongId (see the dedicated effect below,
+  // which deliberately does NOT wait for the audio element itself), but the
+  // <audio> element's actual currentTime/duration only catch up to the new
+  // song once its resolved src is assigned, up to ~100ms+ later. Trusting
+  // currentTime/duration for a scrobble decision during that gap risks
+  // reading the OUTGOING song's near-complete position against the
+  // already-reset (false) `scrobbled` flag -- reintroducing the exact
+  // carryover bug carryover.spec.ts guards against (caught by a live e2e
+  // run: an immediate, spurious scrobble for the new track under Web Audio).
+  // Gating the scrobble check on "the element has actually loaded the song
+  // Redux currently wants on this player slot" closes that window regardless
+  // of the precise browser-timing mechanism.
+  const player1LoadedSongIdRef = useRef<string | undefined>(undefined);
+  const player2LoadedSongIdRef = useRef<string | undefined>(undefined);
   const eq = useAppSelector((state) => state.eq as EqState);
   const peq = useAppSelector((state) => state.peq as PeqState);
 
@@ -352,21 +383,31 @@ const Player = (
   const connectedEl2Ref = useRef<HTMLAudioElement | null>(null);
   const quicksaveTimerRef = useRef<number | null>(null);
 
-  // Cache existence is checked through the bridge now (async, see cache.exists) --
-  // these can no longer return synchronously, so callers await/then the result.
+  // Audit fix (finding 2.6): getSrc1/getSrc2 used to inline their own copy of
+  // the downloaded -> cached -> network check order instead of calling
+  // resolveSongPlaybackSource.ts's shared implementation (Phase 0 mirrored
+  // the logic into that module rather than refactoring these two functions
+  // to call it). The two copies happened to still match, but were two
+  // independent places the same precedence logic could silently drift out of
+  // sync if either was edited in isolation -- e.g. a future fix to the shared
+  // resolver's behavior wouldn't automatically apply here. Now calls the
+  // exact same function MpvPlayer.tsx already does, via the identical
+  // resolveDownloadedPath wrapper shape (memoized so cache.exists/streamUrl
+  // resolution behavior for both backends can only ever come from one place).
+  const resolveDownloadedPath = useCallback(
+    (songId: string) => resolveDownloadedPathWithResilience(songId, dispatch),
+    [dispatch]
+  );
+
   const getSrc1 = useCallback(async () => {
     const song = playQueue[currentEntryList][playQueue.player1.index];
-    const ext = song?.suffix || 'mp3';
-    const cachedSongPath = `${misc.songCachePath}/${song?.id}.${ext}`;
-    return (await cache.exists(cachedSongPath)) ? cachedSongPath : song?.streamUrl;
-  }, [misc.songCachePath, currentEntryList, playQueue]);
+    return resolveSongPlaybackSource(song, misc.songCachePath, cache.exists, resolveDownloadedPath);
+  }, [misc.songCachePath, currentEntryList, playQueue, resolveDownloadedPath]);
 
   const getSrc2 = useCallback(async () => {
     const song = playQueue[currentEntryList][playQueue.player2.index];
-    const ext = song?.suffix || 'mp3';
-    const cachedSongPath = `${misc.songCachePath}/${song?.id}.${ext}`;
-    return (await cache.exists(cachedSongPath)) ? cachedSongPath : song?.streamUrl;
-  }, [misc.songCachePath, currentEntryList, playQueue]);
+    return resolveSongPlaybackSource(song, misc.songCachePath, cache.exists, resolveDownloadedPath);
+  }, [misc.songCachePath, currentEntryList, playQueue, resolveDownloadedPath]);
 
   useImperativeHandle(ref, () => ({
     get player1() {
@@ -692,28 +733,39 @@ const Player = (
     let timer1: ReturnType<typeof setTimeout> | undefined;
     let timer2: ReturnType<typeof setTimeout> | undefined;
 
-    const dispatchSrcWhenResolved = (player: 1 | 2, srcPromise: Promise<string | undefined>) => {
+    const dispatchSrcWhenResolved = (
+      player: 1 | 2,
+      srcPromise: Promise<string | undefined>,
+      songId: string | undefined
+    ) => {
       srcPromise
         .then((src) => {
-          if (!cancelled) dispatch(setPlayerSrc({ player, src: src ?? '' }));
+          if (!cancelled) {
+            dispatch(setPlayerSrc({ player, src: src ?? '' }));
+            if (player === 1) player1LoadedSongIdRef.current = songId;
+            else player2LoadedSongIdRef.current = songId;
+          }
           return null;
         })
         .catch(() => {});
     };
 
+    const song1Id = playQueue[currentEntryList][playQueue.player1.index]?.id;
+    const song2Id = playQueue[currentEntryList][playQueue.player2.index]?.id;
+
     if (playQueue[currentEntryList].length > 0 && !playQueue.isFading) {
       // Adding a small delay when setting the track src helps to not break the player when we're modifying
       // the currentSongIndex such as when sorting the table, shuffling, or drag and dropping rows.
       // It can also prevent loading unneeded tracks when rapidly incrementing/decrementing the player.
-      timer1 = setTimeout(() => dispatchSrcWhenResolved(1, getSrc1()), 100);
-      timer2 = setTimeout(() => dispatchSrcWhenResolved(2, getSrc2()), 100);
+      timer1 = setTimeout(() => dispatchSrcWhenResolved(1, getSrc1(), song1Id), 100);
+      timer2 = setTimeout(() => dispatchSrcWhenResolved(2, getSrc2(), song2Id), 100);
     } else if (playQueue[currentEntryList].length > 0) {
       // If fading, just instantly switch the track, otherwise the player breaks
       // from the timeout due to the listen handlers that run during the fade
       // If switching to the NowPlayingView while on player1 and fading, dispatching
       // the src for player1 will cause the player to break
-      dispatchSrcWhenResolved(1, getSrc1());
-      dispatchSrcWhenResolved(2, getSrc2());
+      dispatchSrcWhenResolved(1, getSrc1(), song1Id);
+      dispatchSrcWhenResolved(2, getSrc2(), song2Id);
     }
 
     return () => {
@@ -724,6 +776,11 @@ const Player = (
   }, [currentEntryList, dispatch, getSrc1, getSrc2, playQueue]);
 
   const handleListenPlayer1 = useCallback(() => {
+    // Audit fix: don't trust this tick's currentTime/duration until the
+    // element has actually loaded the song Redux wants on player1 -- see
+    // player1LoadedSongIdRef's comment above.
+    if (player1LoadedSongIdRef.current !== playQueue[currentEntryList][playQueue.player1.index]?.id)
+      return;
     const currentSeek = player1Ref.current?.audioEl.current?.currentTime || 0;
     if (prevSeekRef.current > 5 && currentSeek < 2) setScrobbled(false);
     prevSeekRef.current = currentSeek;
@@ -743,11 +800,15 @@ const Player = (
       setScrobbled,
       config.serverType,
       playQueue[currentEntryList][playQueue.player1.index]?.duration || 0,
-      playQueue.scrobbleThreshold
+      playQueue.scrobbleThreshold,
+      effectiveOffline
     );
-  }, [config.serverType, currentEntryList, dispatch, playQueue, scrobbled]);
+  }, [config.serverType, currentEntryList, dispatch, effectiveOffline, playQueue, scrobbled]);
 
   const handleListenPlayer2 = useCallback(() => {
+    // Audit fix: see handleListenPlayer1's identical guard above.
+    if (player2LoadedSongIdRef.current !== playQueue[currentEntryList][playQueue.player2.index]?.id)
+      return;
     const currentSeek = player2Ref.current?.audioEl.current?.currentTime || 0;
     if (prevSeekRef.current > 5 && currentSeek < 2) setScrobbled(false);
     prevSeekRef.current = currentSeek;
@@ -767,9 +828,10 @@ const Player = (
       setScrobbled,
       config.serverType,
       playQueue[currentEntryList][playQueue.player2.index]?.duration || 0,
-      playQueue.scrobbleThreshold
+      playQueue.scrobbleThreshold,
+      effectiveOffline
     );
-  }, [config.serverType, currentEntryList, dispatch, playQueue, scrobbled]);
+  }, [config.serverType, currentEntryList, dispatch, effectiveOffline, playQueue, scrobbled]);
 
   function setMetadata(arg: Song | null | undefined) {
     if (!('mediaSession' in navigator) || !arg) return;
@@ -796,12 +858,16 @@ const Player = (
     }
     if (player1Ref.current?.audioEl.current) player1Ref.current.audioEl.current.currentTime = 0;
     if (cacheSongs) {
+      const endedSongId1 = playQueue[currentEntryList][playQueue.player1.index].id;
       cacheSong(
-        `${playQueue[currentEntryList][playQueue.player1.index].id}.${
-          playQueue[currentEntryList][playQueue.player1.index].suffix || 'mp3'
-        }`,
+        `${endedSongId1}.${playQueue[currentEntryList][playQueue.player1.index].suffix || 'mp3'}`,
         playQueue[currentEntryList][playQueue.player1.index].streamUrl.replace(/stream/, 'download')
-      ).catch(() => {});
+      )
+        .then((cached) => {
+          if (cached) dispatch(addCachedSongId(endedSongId1));
+          return undefined;
+        })
+        .catch(() => {});
     }
 
     if (
@@ -862,12 +928,16 @@ const Player = (
     }
     if (player2Ref.current?.audioEl.current) player2Ref.current.audioEl.current.currentTime = 0;
     if (cacheSongs) {
+      const endedSongId2 = playQueue[currentEntryList][playQueue.player2.index].id;
       cacheSong(
-        `${playQueue[currentEntryList][playQueue.player2.index].id}.${
-          playQueue[currentEntryList][playQueue.player2.index].suffix || 'mp3'
-        }`,
+        `${endedSongId2}.${playQueue[currentEntryList][playQueue.player2.index].suffix || 'mp3'}`,
         playQueue[currentEntryList][playQueue.player2.index].streamUrl.replace(/stream/, 'download')
-      ).catch(() => {});
+      )
+        .then((cached) => {
+          if (cached) dispatch(addCachedSongId(endedSongId2));
+          return undefined;
+        })
+        .catch(() => {});
     }
     if (
       (playQueue.repeat === 'none' &&
@@ -917,6 +987,12 @@ const Player = (
   }, [cacheSongs, config.serverType, currentEntryList, dispatch, playQueue]);
 
   const handleGaplessPlayer1 = useCallback(() => {
+    // Audit fix: see player1LoadedSongIdRef's comment above -- don't trust
+    // this tick's currentTime/duration (and don't let a stale reading fire a
+    // scrobble against the already-reset `scrobbled` flag) until the element
+    // has actually loaded the song Redux currently wants on player1.
+    if (player1LoadedSongIdRef.current !== playQueue[currentEntryList][playQueue.player1.index]?.id)
+      return;
     const currentSeek = player1Ref.current?.audioEl.current?.currentTime || 0;
     if (prevSeekRef.current > 5 && currentSeek < 2) setScrobbled(false);
     prevSeekRef.current = currentSeek;
@@ -934,11 +1010,15 @@ const Player = (
         ? (player1Ref.current?.audioEl.current?.duration ?? 0)
         : (playQueue[currentEntryList][playQueue.player1.index]?.duration ?? 0),
       playQueue.scrobbleThreshold,
-      dispatch
+      dispatch,
+      effectiveOffline
     );
-  }, [config.serverType, currentEntryList, dispatch, playQueue, scrobbled]);
+  }, [config.serverType, currentEntryList, dispatch, effectiveOffline, playQueue, scrobbled]);
 
   const handleGaplessPlayer2 = useCallback(() => {
+    // Audit fix: see handleGaplessPlayer1's identical guard above.
+    if (player2LoadedSongIdRef.current !== playQueue[currentEntryList][playQueue.player2.index]?.id)
+      return;
     const currentSeek = player2Ref.current?.audioEl.current?.currentTime || 0;
     if (prevSeekRef.current > 5 && currentSeek < 2) setScrobbled(false);
     prevSeekRef.current = currentSeek;
@@ -956,9 +1036,10 @@ const Player = (
         ? (player2Ref.current?.audioEl.current?.duration ?? 0)
         : (playQueue[currentEntryList][playQueue.player2.index]?.duration ?? 0),
       playQueue.scrobbleThreshold,
-      dispatch
+      dispatch,
+      effectiveOffline
     );
-  }, [config.serverType, currentEntryList, dispatch, playQueue, scrobbled]);
+  }, [config.serverType, currentEntryList, dispatch, effectiveOffline, playQueue, scrobbled]);
 
   const handleOnPlay = useCallback(
     (playerNumber: 1 | 2) => {

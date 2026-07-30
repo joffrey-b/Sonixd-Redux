@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import React from 'react';
+import React, { useMemo } from 'react';
 import _ from 'lodash';
 import { useQuery } from '@tanstack/react-query';
 
@@ -15,6 +15,9 @@ import { setFilter, setPagination } from '../../redux/viewSlice';
 import { Item } from '../../types';
 import CenterLoader from '../loader/CenterLoader';
 import useListClickHandler from '../../hooks/useListClickHandler';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
+import useLibraryCache from '../../hooks/useLibraryCache';
+import { buildGenresFromSongs } from '../../shared/offlineLibrary';
 
 const GenreList = () => {
   const { t } = useTranslation();
@@ -23,10 +26,13 @@ const GenreList = () => {
   const config = useAppSelector((state) => state.config);
   const misc = useAppSelector((state) => state.misc);
   const folder = useAppSelector((state) => state.folder);
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { getCachedSongs } = useLibraryCache();
+
   const {
-    isLoading,
-    isError,
-    data: genres,
+    isLoading: onlineIsLoading,
+    isError: onlineIsError,
+    data: onlineGenres,
     error,
   } = useQuery({
     queryKey: ['genrePageList'],
@@ -38,7 +44,22 @@ const GenreList = () => {
       });
       return _.orderBy(res, 'songCount', 'desc');
     },
+    enabled: !effectiveOffline,
   });
+
+  // Offline browsing (ADR Section 5.1) -- Genres has no dedicated storage of
+  // its own even when online (it's already a computed view over the song
+  // list there too); the offline version is pure client-side computation
+  // over the same local snapshot Albums/Artists use, not a new sync.
+  const offlineGenres = useMemo(() => {
+    if (!effectiveOffline) return undefined;
+    return _.orderBy(buildGenresFromSongs(getCachedSongs()), 'songCount', 'desc');
+  }, [effectiveOffline, getCachedSongs]);
+
+  const genres = effectiveOffline ? offlineGenres : onlineGenres;
+  const isLoading = effectiveOffline ? false : onlineIsLoading;
+  const isError = effectiveOffline ? false : onlineIsError;
+
   const filteredData = useSearchQuery(misc.searchQuery, genres ?? [], ['title']);
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({

@@ -41,6 +41,15 @@ async function ensureRatingColumnVisible(window: Page) {
   await picker.click();
   await window.getByText('Rating', { exact: true }).click();
   await window.keyboard.press('Escape');
+  // Escape closes the CheckPicker dropdown asynchronously (RSuite's
+  // useRootClose + a focus-return side effect) -- a live run of the
+  // identical helper in rating.spec.ts caught the very next click stalling
+  // for a full 30s timeout because the popup hadn't actually finished
+  // closing yet. Wait for it to be gone rather than assuming the keypress
+  // landed. Scoped to `window`, not `picker` -- the popup no longer renders
+  // inside the trigger's own container (see the container-prop fix in
+  // ListViewConfig.tsx).
+  await expect(window.locator('.rs-picker-check-menu')).toBeHidden({ timeout: 5_000 });
 }
 
 async function navigateToAlbum(window: Page, albumTitle: string) {

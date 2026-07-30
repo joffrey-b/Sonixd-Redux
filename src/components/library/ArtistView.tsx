@@ -15,7 +15,10 @@ import {
   PlayAppendButton,
   PlayAppendNextButton,
   PlayButton,
+  RemoveFromOfflineButton,
 } from '../shared/ToolbarButtons';
+import useBulkDownload from '../../hooks/useBulkDownload';
+import { selectDownloadProgress } from '../../redux/downloadProgressSlice';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import useSearchQuery from '../../hooks/useSearchQuery';
 import GenericPage from '../layout/GenericPage';
@@ -45,6 +48,14 @@ import usePlayQueueHandler from '../../hooks/usePlayQueueHandler';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
 import { useCopyToClipboardConfirm } from '../../hooks/useCopyToClipboardConfirm';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
+import useLibraryCache from '../../hooks/useLibraryCache';
+import {
+  buildAlbumsFromSongs,
+  buildArtistsFromSongs,
+  libraryCacheSongToSong,
+} from '../../shared/offlineLibrary';
+import useIsAvailableOffline from '../../hooks/useIsAvailableOffline';
 
 const fac = new FastAverageColor();
 
@@ -84,7 +95,23 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
 
   const { id } = useParams();
   const artistId = rest.id ? rest.id : id;
-  const { isLoading, isError, data, error } = useQuery<Artist | undefined, Error>({
+
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { getCachedSongs } = useLibraryCache();
+
+  // Offline browsing (ADR Section 5.1) -- this artist's own songs, filtered
+  // once and reused by the album/top-songs/all-songs reconstructions below.
+  const offlineArtistSongs = React.useMemo(() => {
+    if (!effectiveOffline || !artistId) return [];
+    return getCachedSongs().filter((song) => song.albumArtistId === artistId);
+  }, [effectiveOffline, artistId, getCachedSongs]);
+
+  const {
+    isLoading: onlineIsLoading,
+    isError: onlineIsError,
+    data: onlineData,
+    error,
+  } = useQuery<Artist | undefined, Error>({
     queryKey: ['artist', artistId, musicFolder],
     queryFn: () =>
       apiController({
@@ -92,9 +119,28 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
         endpoint: 'getArtist',
         args: { id: artistId, musicFolderId: musicFolder },
       }),
+    enabled: !effectiveOffline,
   });
 
-  const { isLoading: isLoadingTopSongs, data: topSongs } = useQuery({
+  // Compilation ("appears on") albums are not reconstructed offline -- doing
+  // so would require scanning every song in the entire snapshot for
+  // track-level artist credits, not just this artist's own albums. Known
+  // limitation, documented in PHASE-3-SUMMARY.md.
+  const offlineData = React.useMemo(() => {
+    if (!effectiveOffline || !artistId || offlineArtistSongs.length === 0) return undefined;
+    const [artistAggregate] = buildArtistsFromSongs(offlineArtistSongs);
+    return {
+      ...artistAggregate,
+      id: artistId,
+      album: buildAlbumsFromSongs(offlineArtistSongs),
+    };
+  }, [effectiveOffline, artistId, offlineArtistSongs]);
+
+  const data = effectiveOffline ? offlineData : onlineData;
+  const isLoading = effectiveOffline ? false : onlineIsLoading;
+  const isError = effectiveOffline ? false : onlineIsError;
+
+  const { isLoading: onlineIsLoadingTopSongs, data: onlineTopSongs } = useQuery({
     queryKey: ['artistTopSongs', data?.title],
     queryFn: () =>
       apiController({
@@ -105,10 +151,21 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
           count: 100,
         },
       }),
-    enabled: Boolean(data?.title || data?.id),
+    enabled: Boolean(data?.title || data?.id) && !effectiveOffline,
   });
 
-  const { data: allSongs } = useQuery({
+  const offlineTopSongs = React.useMemo(() => {
+    if (!effectiveOffline) return undefined;
+    return [...offlineArtistSongs]
+      .sort((a, b) => (b.playCount || 0) - (a.playCount || 0))
+      .slice(0, 100)
+      .map(libraryCacheSongToSong);
+  }, [effectiveOffline, offlineArtistSongs]);
+
+  const topSongs = effectiveOffline ? offlineTopSongs : onlineTopSongs;
+  const isLoadingTopSongs = effectiveOffline ? false : onlineIsLoadingTopSongs;
+
+  const { data: onlineAllSongs } = useQuery({
     queryKey: ['artistSongs', artistId],
     queryFn: () =>
       apiController({
@@ -116,8 +173,15 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
         endpoint: 'getArtistSongs',
         args: { id: artistId, musicFolderId: musicFolder },
       }),
-    enabled: Boolean(location.pathname.match('/songs')),
+    enabled: Boolean(location.pathname.match('/songs')) && !effectiveOffline,
   });
+
+  const offlineAllSongs = React.useMemo(() => {
+    if (!effectiveOffline) return undefined;
+    return offlineArtistSongs.map(libraryCacheSongToSong);
+  }, [effectiveOffline, offlineArtistSongs]);
+
+  const allSongs = effectiveOffline ? offlineAllSongs : onlineAllSongs;
 
   const { sortedData: albumsByYearDesc } = useColumnSort(albums, Item.Album, {
     column: 'year',
@@ -145,6 +209,8 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
     }
   }, [artistId, navigate, rest.isModal]);
 
+  const isAvailableOfflineCheck = useIsAvailableOffline();
+
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
     doubleClick: (rowData: RowDataType, injectedSongs?: MouseEvent) => {
       // injectedSongs is actually Song[] | undefined smuggled via the event slot — see JSX wrappers below
@@ -156,6 +222,9 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
       if (rowData.type === Item.Music) {
         if (rowData.isDir) {
           navigate(`/library/folder?folderId=${rowData.parent}`);
+        } else if (effectiveOffline && !isAvailableOfflineCheck(rowData.id as string)) {
+          // Fix C: see AlbumView.tsx for the full rationale.
+          notifyToast('warning', t("This track isn't available offline."));
         } else {
           dispatch(
             setPlayQueueByRowClick({
@@ -178,7 +247,9 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
   const { handleRating } = useRating();
   const { requestCopyConfirmation, confirmCopyModal } = useCopyToClipboardConfirm();
 
-  const handleDownload = async (type: 'copy' | 'download') => {
+  // Copy-to-clipboard only now -- the Download button's own zip mechanism is
+  // replaced below by the offline per-song download fan-out (ADR Section 8.3).
+  const handleCopyLinks = async () => {
     if (config.serverType === Server.Jellyfin) {
       const downloadUrls: string[] = [];
 
@@ -198,34 +269,17 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
         );
       }
 
-      if (type === 'download') {
-        downloadUrls.forEach((link) => {
-          if (/^https?:\/\//i.test(link)) shell.openExternal(link);
-        });
-      }
-
-      if (type === 'copy') {
-        clipboard.writeText(downloadUrls.join('\n'));
-        notifyToast('info', t('Download links copied!'));
-      }
+      clipboard.writeText(downloadUrls.join('\n'));
+      notifyToast('info', t('Download links copied!'));
     } else if (data?.album?.[0]?.parent) {
-      if (type === 'download') {
-        const dlUrl = await apiController({
+      clipboard.writeText(
+        await apiController({
           serverType: config.serverType,
           endpoint: 'getDownloadUrl',
           args: { id: data.album[0].parent },
-        });
-        if (/^https?:\/\//i.test(dlUrl)) shell.openExternal(dlUrl);
-      } else {
-        clipboard.writeText(
-          await apiController({
-            serverType: config.serverType,
-            endpoint: 'getDownloadUrl',
-            args: { id: data.album[0].parent },
-          })
-        );
-        notifyToast('info', t('Download links copied!'));
-      }
+        })
+      );
+      notifyToast('info', t('Download links copied!'));
     } else {
       const downloadUrls: string[] = [];
       for (let i = 0; i < (data?.album?.length ?? 0); i += 1) {
@@ -251,17 +305,40 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
         }
       }
 
-      if (type === 'download') {
-        downloadUrls.forEach((link) => {
-          if (/^https?:\/\//i.test(link)) shell.openExternal(link);
-        });
-      }
-
-      if (type === 'copy') {
-        clipboard.writeText(downloadUrls.join('\n'));
-        notifyToast('info', t('Download links copied!'));
-      }
+      clipboard.writeText(downloadUrls.join('\n'));
+      notifyToast('info', t('Download links copied!'));
     }
+  };
+
+  const { downloadSongs, removeDownloadedSongs } = useBulkDownload();
+  const downloadProgress = useAppSelector(selectDownloadProgress);
+
+  // getArtistSongs is implemented for both Subsonic and Jellyfin (confirmed
+  // in controller.ts) -- a uniform, flat song list for the whole artist,
+  // unlike the per-server-shape branching handleCopyLinks above still needs
+  // for the zip-link case.
+  //
+  // Audit fix (Section 5 reuse finding): Download and Delete are two separate
+  // user actions (never both fetched in the course of one click), so this
+  // isn't a redundant-in-one-operation fetch -- but the identical
+  // apiController call was duplicated verbatim in both handler bodies.
+  // Shared here so there's one fetch to read/maintain, not two copies that
+  // could drift out of sync with each other.
+  const fetchArtistSongs = () =>
+    apiController({
+      serverType: config.serverType,
+      endpoint: 'getArtistSongs',
+      args: { id: data?.id, musicFolderId: musicFolder },
+    });
+
+  const handleOfflineDownload = async () => {
+    const songs = await fetchArtistSongs();
+    await downloadSongs(songs || []);
+  };
+
+  const handleOfflineDelete = async () => {
+    const songs = await fetchArtistSongs();
+    await removeDownloadedSongs((songs || []).map((song: { id: string }) => song.id));
   };
 
   useEffect(() => {
@@ -350,8 +427,17 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
     return <span>Error: {error?.message}</span>;
   }
 
+  // Offline (FIX A): this guard already existed and already prevented a crash
+  // (unlike AlbumView.tsx/PlaylistView.tsx, which had none) -- but it silently
+  // rendered a blank page with no explanation. Upgraded to the same "not
+  // found" message for consistency, mirroring PodcastChannelView.tsx's
+  // existing pattern.
   if (!data) {
-    return null;
+    return (
+      <div style={{ padding: '60px 20px', textAlign: 'center', opacity: 0.5 }}>
+        {t('Artist not found.')}
+      </div>
+    );
   }
 
   return (
@@ -391,7 +477,11 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
                 details={data}
                 playClick={{ type: 'artist', id: data.id }}
                 url={`/library/artist/${artistId}`}
-                handleFavorite={handleFavorite}
+                handleFavorite={(rowData: RowDataType) =>
+                  effectiveOffline
+                    ? notifyToast('warning', t("Favorite status isn't available offline"))
+                    : handleFavorite(rowData)
+                }
               />
             }
             cacheImages={{
@@ -580,6 +670,10 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
                       size="lg"
                       appearance="subtle"
                       isFavorite={data.starred}
+                      disabled={effectiveOffline}
+                      tooltipText={
+                        effectiveOffline ? t("Favorite status isn't available offline") : undefined
+                      }
                       onClick={() =>
                         handleFavorite(data, {
                           custom: () =>
@@ -594,13 +688,22 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
                       data-testid="download-action-download"
                       size="lg"
                       appearance="subtle"
-                      onClick={() => handleDownload('download')}
+                      loading={downloadProgress.inProgress}
+                      disabled={effectiveOffline || downloadProgress.inProgress}
+                      onClick={handleOfflineDownload}
+                    />
+                    <RemoveFromOfflineButton
+                      data-testid="download-action-remove-offline"
+                      size="lg"
+                      appearance="subtle"
+                      disabled={downloadProgress.inProgress}
+                      onClick={handleOfflineDelete}
                     />
                     <CopyToClipboardButton
                       data-testid="download-action-copy"
                       size="lg"
                       appearance="subtle"
-                      onClick={() => requestCopyConfirmation(() => handleDownload('copy'))}
+                      onClick={() => requestCopyConfirmation(() => handleCopyLinks())}
                     />
                     <Whisper
                       trigger="hover"
@@ -711,7 +814,9 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
                     'viewInFolder',
                   ]}
                   handleFavorite={(rowData: RowDataType) =>
-                    handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
+                    effectiveOffline
+                      ? notifyToast('warning', t("Favorite status isn't available offline"))
+                      : handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
                   }
                 />
               )}
@@ -739,7 +844,9 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
                   cacheType="album"
                   isModal={rest.isModal}
                   handleFavorite={(rowData: RowDataType) =>
-                    handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
+                    effectiveOffline
+                      ? notifyToast('warning', t("Favorite status isn't available offline"))
+                      : handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
                   }
                 />
               )}
@@ -941,9 +1048,24 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
                     type="album"
                     noScrollbar
                     handleFavorite={(rowData: RowDataType) =>
-                      handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
+                      effectiveOffline
+                        ? notifyToast('warning', t("Favorite status isn't available offline"))
+                        : handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
                     }
                   />
+                </StyledPanel>
+              )}
+
+              {/* Fix L: compilation ("appears on") albums are never reconstructed
+                  offline (see the offlineData useMemo above) -- without this branch,
+                  the section would just silently vanish, indistinguishable from an
+                  artist that genuinely has zero appears-on credits when online. */}
+              {compilationAlbumsByYearDesc.length === 0 && effectiveOffline && (
+                <StyledPanel>
+                  <SectionTitle>{`${t('Appears On')} `}</SectionTitle>
+                  <div style={{ padding: '10px 0', opacity: 0.5 }}>
+                    {t('Not available offline.')}
+                  </div>
                 </StyledPanel>
               )}
 
@@ -1000,7 +1122,9 @@ const ArtistView = ({ ...rest }: ArtistViewProps) => {
                     type="album"
                     noScrollbar
                     handleFavorite={(rowData: RowDataType) =>
-                      handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
+                      effectiveOffline
+                        ? notifyToast('warning', t("Favorite status isn't available offline"))
+                        : handleFavorite(rowData, { queryKey: ['artist', artistId, musicFolder] })
                     }
                   />
                 </StyledPanel>

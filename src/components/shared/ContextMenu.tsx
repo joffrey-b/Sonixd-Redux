@@ -43,9 +43,17 @@ import {
 } from '../../shared/utils';
 import { setStatus } from '../../redux/playerSlice';
 import { apiController } from '../../api/controller';
+import {
+  submitRatingWithQueueFallback,
+  submitFavoriteWithQueueFallback,
+} from '../../shared/offlineSubmission';
 import { Playlist, Server, Song } from '../../types';
 import SpectrogramModal from './SpectrogramModal';
 import { updateStarredInCache, updateRatingInCache } from '../../hooks/useLibraryCache';
+import useBulkDownload from '../../hooks/useBulkDownload';
+import { selectDownloadedSongIdSet } from '../../redux/downloadedSongsSlice';
+import { selectDownloadProgress } from '../../redux/downloadProgressSlice';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
 
 export const ContextMenuButton = ({
   text,
@@ -109,6 +117,10 @@ export const GlobalContextMenu = () => {
   const multiSelect = useAppSelector((state) => state.multiSelect);
   const config = useAppSelector((state) => state.config);
   const folder = useAppSelector((state) => state.folder);
+  const downloadedSongIds = useAppSelector(selectDownloadedSongIdSet);
+  const downloadProgress = useAppSelector(selectDownloadProgress);
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { downloadSongs, removeDownloadedSongs } = useBulkDownload();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- WhisperInstance lacks getState() in RSuite 6 types; runtime call uses internal RSuite component API
   const addToPlaylistTriggerRef = useRef<any>(null);
   const playlistPickerContainerRef = useRef(null);
@@ -655,6 +667,30 @@ export const GlobalContextMenu = () => {
 
     const ids = _.map(sortedEntries, 'id') as string[];
 
+    // Audit finding: this batch action had no offline handling at all (not
+    // even the try-then-queue-on-failure pattern the single-song path uses)
+    // -- offline, batchStar would just fail with a raw error toast and
+    // nothing would ever get synced. No batch equivalent in the offline
+    // queue, so fall back to one submitFavoriteWithQueueFallback call per
+    // id (which itself already checks effectiveOffline and queues) rather
+    // than attempting the batch endpoint at all while offline.
+    if (effectiveOffline) {
+      await Promise.all(
+        ids.map((id) =>
+          submitFavoriteWithQueueFallback({
+            serverType: config.serverType,
+            id,
+            itemType: sortedEntries[0].type as string,
+            starred: true,
+            effectiveOffline,
+          }).catch(() => {})
+        )
+      );
+      dispatch(setStar({ id: ids, type: 'star' }));
+      ids.forEach((id) => updateStarredInCache(id, true));
+      return;
+    }
+
     try {
       const res = await apiController({
         serverType: config.serverType,
@@ -681,6 +717,24 @@ export const GlobalContextMenu = () => {
     // Run the unstar on all entries regardless of their starred status, since Airsonic
     // does not output the 'starred' property for starred artists
     const ids = _.map(multiSelect.selected, 'id') as string[];
+
+    // See handleFavorite's identical offline branch above.
+    if (effectiveOffline) {
+      await Promise.all(
+        ids.map((id) =>
+          submitFavoriteWithQueueFallback({
+            serverType: config.serverType,
+            id,
+            itemType: multiSelect.selected[0].type as string,
+            starred: false,
+            effectiveOffline,
+          }).catch(() => {})
+        )
+      );
+      dispatch(setStar({ id: ids, type: 'unstar' }));
+      ids.forEach((id) => updateStarredInCache(id, false));
+      return;
+    }
 
     try {
       // Infer the type from the first selected entry
@@ -742,16 +796,62 @@ export const GlobalContextMenu = () => {
   const handleRating = async (rating: number) => {
     dispatch(setContextMenu({ show: false }));
     const ids = _.map(multiSelect.selected, 'id') as string[];
-    await apiController({
-      serverType: config.serverType,
-      endpoint: 'setRating',
-      args: { ids, rating },
-    });
+    // One call per selected id (not a bulk-specific queue format) -- unlike
+    // star/unstar, a terminal rating applied to every id has no partial-
+    // batch-success ambiguity, so the existing per-{id, actionType}
+    // coalescing model handles this with zero new queue logic. Promise.all
+    // (not allSettled) deliberately preserves this handler's original
+    // all-or-nothing behavior: before this queue existed, any single
+    // rejection here already aborted the dispatch/cache/refetch calls below;
+    // a failing id still gets queued for replay first, since
+    // submitRatingWithQueueFallback queues before it re-throws.
+    await Promise.all(
+      ids.map((id) =>
+        submitRatingWithQueueFallback({
+          serverType: config.serverType,
+          id,
+          rating,
+          effectiveOffline,
+        })
+      )
+    );
     dispatch(setRate({ id: ids, rating }));
     dispatch(setPlaylistRate({ id: ids, rating }));
     ids.forEach((id) => updateRatingInCache(id, rating));
     await refetchActive();
   };
+
+  // ADR Section 8.4: per-song right-click Download / Remove from offline.
+  // Reuses useBulkDownload's fan-out (Fix 5's exact same mechanism) so a
+  // multi-select right-click gets the same CONCURRENCY/isolation guarantees
+  // as the Album/Artist/Playlist buttons, not a separate one-off path.
+  const handleDownload = async () => {
+    dispatch(setContextMenu({ show: false }));
+    const songs = multiSelect.selected.filter(
+      (entry) => entry.type === 'music'
+    ) as unknown as Song[];
+    if (songs.length === 0) return;
+    await downloadSongs(songs);
+  };
+
+  const handleRemoveFromOffline = async () => {
+    dispatch(setContextMenu({ show: false }));
+    const ids = (
+      multiSelect.selected.filter((entry) => entry.type === 'music') as unknown as Song[]
+    ).map((entry) => entry.id);
+    if (ids.length === 0) return;
+    await removeDownloadedSongs(ids);
+  };
+
+  // Audit fix: the Now Playing queue's rows are real songs too (its rows are
+  // tagged type: 'nowPlaying', not 'music', purely for view-context purposes
+  // -- see ListViewTable.tsx's `nowPlaying ? 'nowPlaying' : rowData.type` and
+  // handlePlay's own 'music|nowPlaying|folder' match above). Gating on
+  // 'music' alone left Download/Remove-from-offline wrongly disabled for a
+  // right-click on a currently-queued track.
+  const noSelectedSongsDownloaded =
+    !misc.contextMenu.type?.match('music|nowPlaying') ||
+    !(multiSelect.selected as unknown as Song[]).some((entry) => downloadedSongIds.has(entry.id));
 
   return (
     <>
@@ -761,8 +861,8 @@ export const GlobalContextMenu = () => {
           yPos={misc.contextMenu.yPos}
           minWidth={200}
           maxWidth={350}
-          numOfButtons={12}
-          numOfDividers={3}
+          numOfButtons={14}
+          numOfDividers={4}
         >
           <ContextMenuButton
             text={t('Play')}
@@ -943,6 +1043,21 @@ export const GlobalContextMenu = () => {
               }
             />
           </Whisper>
+          <ContextMenuDivider />
+          <ContextMenuButton
+            data-testid="context-menu-download"
+            text={t('Download')}
+            onClick={handleDownload}
+            disabled={
+              !misc.contextMenu.type?.match('music|nowPlaying') || downloadProgress.inProgress
+            }
+          />
+          <ContextMenuButton
+            data-testid="context-menu-remove-from-offline"
+            text={t('Remove from offline')}
+            onClick={handleRemoveFromOffline}
+            disabled={noSelectedSongsDownloaded || downloadProgress.inProgress}
+          />
           <ContextMenuDivider />
           <ContextMenuButton
             text={t('View in modal')}

@@ -9,6 +9,7 @@ import { notifyToast } from '../components/shared/toast';
 import { GenericItem, Item, Song } from '../types';
 import { mockSettings } from '../shared/mockSettings';
 import { settings } from '../components/shared/bridge';
+import { emitRequestSuccess } from '../shared/connectivityEvents';
 
 interface JellyfinNameId {
   Id?: string;
@@ -217,7 +218,16 @@ jellyfinApi.interceptors.request.use(
 );
 
 jellyfinApi.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // Any successful response is evidence of connectivity -- notify listeners
+    // (offlineQueueFlush.ts subscribes to attempt a queue flush, cheap no-op
+    // when the queue is empty). An event rather than a direct call/import to
+    // avoid a real import/no-cycle dependency cycle -- see
+    // connectivityEvents.ts. Fire-and-forget: stays sync/non-blocking,
+    // matching this interceptor's existing discipline.
+    emitRequestSuccess();
+    return res;
+  },
   (err) => {
     if (err.response && err.response.status === 401) {
       notifyToast('warning', i18n.t('Session expired. Logging out.'));

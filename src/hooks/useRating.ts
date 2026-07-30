@@ -2,10 +2,9 @@ import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RowDataType } from 'rsuite-table';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import { apiController } from '../api/controller';
-import { setRate } from '../redux/playQueueSlice';
-import { setPlaylistRate } from '../redux/playlistSlice';
-import { updateRatingInCache } from './useLibraryCache';
+import { submitRatingWithQueueFallback } from '../shared/offlineSubmission';
+import { applyRatingSuccess } from '../shared/applyMutationSuccess';
+import { selectEffectiveOffline } from '../redux/connectivitySlice';
 
 interface RatableItem {
   id: string;
@@ -28,13 +27,15 @@ export const useRating = () => {
   const queryClient = useQueryClient();
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
 
   const handleRating = useCallback(
     async (rowData: RowDataType, options: RatingOptions) => {
-      await apiController({
+      await submitRatingWithQueueFallback({
         serverType: config.serverType,
-        endpoint: 'setRating',
-        args: { ids: [rowData.id], rating: options.rating },
+        id: rowData.id,
+        rating: options.rating,
+        effectiveOffline,
       });
 
       if (options?.queryKey) {
@@ -67,14 +68,12 @@ export const useRating = () => {
         options.custom();
       }
 
-      await queryClient.refetchQueries({ queryKey: ['starred'], type: 'active' });
-      await queryClient.refetchQueries({ queryKey: ['searchpage'], type: 'active' });
-
-      dispatch(setRate({ id: [rowData.id], rating: options.rating }));
-      dispatch(setPlaylistRate({ id: [rowData.id], rating: options.rating }));
-      updateRatingInCache(rowData.id, options.rating);
+      // Shared with offlineQueueFlush.ts's replayEntry -- see
+      // applyMutationSuccess.ts for why these specific side effects (and not
+      // the queryKey-specific update above) are the ones extracted.
+      await applyRatingSuccess({ id: rowData.id, rating: options.rating }, dispatch, queryClient);
     },
-    [config.serverType, dispatch, queryClient]
+    [config.serverType, effectiveOffline, queryClient, dispatch]
   );
 
   return { handleRating };

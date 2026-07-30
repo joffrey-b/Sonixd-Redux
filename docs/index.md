@@ -23,5 +23,6 @@ Welcome to the Sonixd Redux documentation. Use the links below to navigate to a 
 15. [Keyboard Shortcuts](keyboard-shortcuts.md) - Default shortcuts and how to customize them
 16. [Settings](settings.md) - Full settings reference
 17. [Self-Signed Certificates](self-signed-certificates.md) - Connecting to servers with self-signed certificates
+18. [Offline Mode](offline-mode.md) - Automatic offline detection, offline browsing and playback, and downloading music for offline use
 
 ---

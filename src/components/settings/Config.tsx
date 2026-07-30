@@ -12,6 +12,8 @@ import PlaybackConfig from './ConfigPanels/PlaybackConfig';
 import LookAndFeelConfig from './ConfigPanels/LookAndFeelConfig';
 import PlayerConfig from './ConfigPanels/PlayerConfig';
 import CacheConfig from './ConfigPanels/CacheConfig';
+import DownloadConfig from './ConfigPanels/DownloadConfig';
+import ConnectivityConfig from './ConfigPanels/ConnectivityConfig';
 import WindowConfig from './ConfigPanels/WindowConfig';
 import packageJson from '../../package.json';
 import ServerConfig from './ConfigPanels/ServerConfig';
@@ -293,6 +295,8 @@ const Config = () => {
         <>
           <ServerConfig bordered />
           <CacheConfig bordered />
+          <DownloadConfig bordered />
+          <ConnectivityConfig bordered />
           <WindowConfig bordered />
           <BackupConfig bordered />
         </>

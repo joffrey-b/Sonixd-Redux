@@ -106,8 +106,18 @@ test.describe('PEQ toggle while playing — Web Audio', () => {
     await window.locator(`text=${TRACKS.track01.album}`).first().dblclick();
     await window.locator(`text=${TRACKS.track01.title}`).first().dblclick();
     await window.waitForSelector('[data-testid="player-bar"]');
-    await window.waitForTimeout(2000);
 
+    // Audit fix: this used to be a fixed 2s wait before capturing `before`,
+    // assuming playback would already be ticking by then. That's a much
+    // tighter margin than this suite's own established, proven pattern for
+    // "wait until playback has actually started" (playback.spec.ts's
+    // checkTimeCounterAdvances polls up to 15s for the counter to leave
+    // '0:00') -- caught by a live e2e run where the MPV variant below
+    // intermittently still read '0:00' for both `before` and `after`.
+    await window.waitForFunction(
+      () => document.querySelector('[data-testid="player-current-time"]')?.textContent !== '0:00',
+      { timeout: 15_000 }
+    );
     const before = await window.locator('[data-testid="player-current-time"]').textContent();
 
     await openPeqSettings(window);
@@ -130,8 +140,12 @@ test.describe('PEQ toggle while playing — MPV', () => {
     await window.locator(`text=${TRACKS.track01.album}`).first().dblclick();
     await window.locator(`text=${TRACKS.track01.title}`).first().dblclick();
     await window.waitForSelector('[data-testid="player-bar"]');
-    await window.waitForTimeout(2000);
 
+    // Audit fix: see the Web Audio variant's identical comment above.
+    await window.waitForFunction(
+      () => document.querySelector('[data-testid="player-current-time"]')?.textContent !== '0:00',
+      { timeout: 15_000 }
+    );
     const before = await window.locator('[data-testid="player-current-time"]').textContent();
 
     await openPeqSettings(window);

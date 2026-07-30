@@ -12,7 +12,12 @@ export default defineConfig({
     ['list'],
   ],
   use: {
-    trace: 'on-first-retry',
+    // 'on-first-retry' never fires with retries: 0 above -- this suite would
+    // never capture a trace on any failure. 'retain-on-failure' matches the
+    // screenshot/video settings below: free on passing runs, keeps a full
+    // trace (network timeline, console, step-by-step snapshots) on any test
+    // that actually fails.
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },

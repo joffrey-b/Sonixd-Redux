@@ -91,9 +91,25 @@ const GridCard = ({
 
   for (let i = startIndex; i <= stopIndex; i += 1) {
     const item = items[i];
+    // Audit fix: was keyed by array position (`card-${i}`), not the item's own
+    // identity. Harmless for a stable sort, but this app's own album/artist/
+    // playlist grids default to a random sort (setDefaultSettings.ts), and
+    // React Query can refetch and re-order the underlying data at any point
+    // (remount, refetch-on-focus, cache invalidation). When that reorder
+    // lands, React reconciles by key: with a positional key, it reuses the
+    // same DOM node for position `i` and just swaps its content/props in
+    // place, rather than recognizing "this is now a different item" --
+    // meaning a click that was correctly aimed at one item can resolve
+    // against a completely different one if the reorder happens in the
+    // narrow window around the click. Caught via a live e2e run: navigating
+    // to one album deterministically opened a different one instead. Keying
+    // by the item's own id (already available via playClick.idProperty, used
+    // identically two lines below) makes each card's identity track its data
+    // regardless of how the list reorders.
+    const itemId = item[playClick.idProperty];
     cards.push(
       <div
-        key={`card-${i}`}
+        key={itemId !== undefined && itemId !== null ? String(itemId) : `card-${i}`}
         data-testid="album-card"
         style={{
           flex: `0 0 ${cardWidth}px`,

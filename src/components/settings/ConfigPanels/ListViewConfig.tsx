@@ -89,7 +89,6 @@ const ListViewConfig = ({
   const config = useAppSelector((state) => state.config);
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const columnListType = settingsConfig.columnList.split('List')[0] as ColumnList;
-  const columnPickerContainerRef = useRef(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tableRef is passed to ListViewTable which has pre-existing type errors; using any to avoid cascading type issues
   const tableRef = useRef<any>(null);
 
@@ -124,12 +123,8 @@ const ListViewConfig = ({
     <div style={{ width: '100%' }}>
       <div>
         <StyledPanel>
-          <StyledInputPickerContainer
-            ref={columnPickerContainerRef}
-            data-testid={`column-picker-${columnListType}`}
-          >
+          <StyledInputPickerContainer data-testid={`column-picker-${columnListType}`}>
             <StyledCheckPicker
-              container={() => columnPickerContainerRef.current as unknown as HTMLElement}
               data={columnPicker}
               defaultValue={defaultColumns}
               value={selectedColumns}

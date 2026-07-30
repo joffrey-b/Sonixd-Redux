@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
@@ -6,6 +6,9 @@ import { List } from 'react-window';
 import styled from 'styled-components';
 import { apiController } from '../../api/controller';
 import { useAppSelector } from '../../redux/hooks';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
+import usePlaylistsCache from '../../hooks/usePlaylistsCache';
+import { playlistCacheEntryToPlaylist } from '../../shared/offlineLibrary';
 import CenterLoader from '../loader/CenterLoader';
 import { StyledButton } from '../shared/styled';
 
@@ -62,11 +65,26 @@ const PlaylistRow = ({
 
 const SidebarPlaylists = ({ width }: { width?: number }) => {
   const config = useAppSelector((state) => state.config);
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { getCachedPlaylists } = usePlaylistsCache();
 
-  const { isLoading, data: playlists } = useQuery({
+  const { isLoading: onlineIsLoading, data: onlinePlaylists } = useQuery({
     queryKey: ['playlists'],
     queryFn: () => apiController({ serverType: config.serverType, endpoint: 'getPlaylists' }),
+    enabled: !effectiveOffline,
   });
+
+  // Mirrors PlaylistList.tsx's offline-browsing fallback (ADR Section 5.2/5.3)
+  // -- without this, the sidebar's playlist entries silently disappeared
+  // while offline even though the main Playlists page correctly fell back
+  // to the cache, since this query had no offline branch of its own.
+  const offlinePlaylists = useMemo(() => {
+    if (!effectiveOffline) return undefined;
+    return getCachedPlaylists().map(playlistCacheEntryToPlaylist);
+  }, [effectiveOffline, getCachedPlaylists]);
+
+  const playlists = effectiveOffline ? offlinePlaylists : onlinePlaylists;
+  const isLoading = effectiveOffline ? false : onlineIsLoading;
 
   if (isLoading) return <CenterLoader absolute />;
 

@@ -81,9 +81,18 @@ async function exportTo(app: ElectronApplication, window: Page, filePath: string
   await mockSaveDialog(app, filePath);
   await navigateToBackupSettings(window);
   await window.click('[data-testid="settings-export-button"]');
-  await expect(window.locator('text=Settings exported successfully.')).toBeVisible({
-    timeout: 10_000,
-  });
+  const exportToast = window.locator('text=Settings exported successfully.');
+  await expect(exportToast).toBeVisible({ timeout: 10_000 });
+  // Audit fix: "success" toasts auto-dismiss after 2.5s (toast.ts), but this
+  // only waited for the toast to APPEAR, not for it to clear. Every caller
+  // of importFrom() in this file calls it immediately after exportTo() (in
+  // one case with no UI interaction at all in between, just local file I/O),
+  // so the export toast could still be on screen -- and, per this suite's
+  // own file-header comment, this exact settings panel has a documented
+  // history of stacked-notification races. Waiting for it to actually
+  // disappear here removes that overlap window for every caller, rather
+  // than patching it once per call site.
+  await expect(exportToast).not.toBeVisible({ timeout: 5_000 });
 }
 
 async function importFrom(app: ElectronApplication, window: Page, filePath: string) {
@@ -101,7 +110,14 @@ async function importFrom(app: ElectronApplication, window: Page, filePath: stri
   // notifications, hit by the sidebar-restore test once it started chaining
   // two imports in the same test).
   const reloadPromise = window.waitForEvent('load', { timeout: 30_000 });
-  await window.click('[data-testid="settings-import-button"]');
+  // noWaitAfter: page.click() otherwise also waits for any navigation the
+  // click itself initiates before resolving (documented Playwright
+  // behavior) -- redundant with, and racing against, the explicit
+  // reloadPromise wait right above. A live run hit BOTH of them stalling
+  // for the same 30s timeout at once; this leaves only the explicit wait
+  // in charge of observing the reload, which fires on a delayed 1s
+  // setTimeout, not synchronously from the click.
+  await window.click('[data-testid="settings-import-button"]', { noWaitAfter: true });
   await expect(window.locator('text=Settings imported. Reloading...')).toBeVisible({
     timeout: 10_000,
   });

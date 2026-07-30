@@ -59,11 +59,14 @@ describe('evictOldestFilesUntilUnderLimit', () => {
       .mockResolvedValueOnce(makeStatResult(300, 2000)) // new.mp3
       .mockResolvedValueOnce(makeStatResult(300, 1000)); // old.mp3 — older
 
-    await evictOldestFilesUntilUnderLimit(DIR, 400);
+    const deleted = await evictOldestFilesUntilUnderLimit(DIR, 400);
 
     // old.mp3 should be deleted first (lowest mtimeMs)
     expect(unlinkSpy).toHaveBeenCalledWith(path.join(DIR, 'old.mp3'));
     expect(unlinkSpy).not.toHaveBeenCalledWith(path.join(DIR, 'new.mp3'));
+    // Fix D: the caller (main.dev.mjs) needs the bare filenames actually
+    // deleted to notify the renderer's cached-songs index.
+    expect(deleted).toEqual(['old.mp3']);
   });
 
   it('deletes multiple files until under the limit', async () => {
@@ -115,6 +118,15 @@ describe('evictOldestFilesUntilUnderLimit', () => {
 
     await expect(evictOldestFilesUntilUnderLimit(DIR, 100)).resolves.not.toThrow();
     expect(unlinkSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty array when nothing needs evicting (Fix D)', async () => {
+    readdirSpy.mockResolvedValue(['a.mp3'] as unknown as fs.Dirent[]);
+    statSpy.mockResolvedValue(makeStatResult(100, 1000));
+
+    const deleted = await evictOldestFilesUntilUnderLimit(DIR, 500);
+
+    expect(deleted).toEqual([]);
   });
 
   it('correctly sums file sizes before comparing to limit', async () => {

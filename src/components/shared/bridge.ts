@@ -61,6 +61,9 @@ declare global {
           deviceId?: string;
           legacyAuth?: boolean;
         }>;
+        getCachePath: () => Promise<string | undefined>;
+        getDownloadPath: () => Promise<string | undefined>;
+        clearDownloadPath: () => Promise<{ success: boolean }>;
       };
       osRelease: string;
       setDefaultSettings: (force: boolean) => void;
@@ -82,6 +85,15 @@ declare global {
         list: (dirPath: string) => Promise<string[]>;
         removeFiles: (dirPath: string, fileNames: string[]) => Promise<void>;
         evictIfNeeded: (dirPath: string, limitBytes: number) => Promise<void>;
+      };
+      downloadDir: {
+        ensureDir: (dirPath: string) => Promise<void>;
+        exists: (filePath: string) => Promise<boolean>;
+        removeIfExists: (filePath: string) => Promise<void>;
+        commit: (tempPath: string, finalPath: string, data: ArrayBuffer) => Promise<void>;
+        removeFile: (filePath: string) => Promise<void>;
+        listEntries: (dirPath: string) => Promise<{ name: string; isDirectory: boolean }[]>;
+        removeDirIfEmpty: (dirPath: string) => Promise<boolean>;
       };
       recovery: {
         write: (filePath: string, data: string) => Promise<void>;
@@ -136,6 +148,10 @@ export const settings = {
   delete: (key: string): Promise<boolean> => window.bridge.settings.delete(key),
   getCredentials: (): ReturnType<typeof window.bridge.settings.getCredentials> =>
     window.bridge.settings.getCredentials(),
+  getCachePath: (): Promise<string | undefined> => window.bridge.settings.getCachePath(),
+  getDownloadPath: (): Promise<string | undefined> => window.bridge.settings.getDownloadPath(),
+  clearDownloadPath: (): Promise<{ success: boolean }> =>
+    window.bridge.settings.clearDownloadPath(),
 };
 
 // Computed once in preload (always a real Node context) and exposed as a plain
@@ -170,6 +186,20 @@ export const cacheDir = {
     window.bridge.cacheDir.removeFiles(dirPath, fileNames),
   evictIfNeeded: (dirPath: string, limitBytes: number): Promise<void> =>
     window.bridge.cacheDir.evictIfNeeded(dirPath, limitBytes),
+};
+
+export const downloadDir = {
+  ensureDir: (dirPath: string): Promise<void> => window.bridge.downloadDir.ensureDir(dirPath),
+  exists: (filePath: string): Promise<boolean> => window.bridge.downloadDir.exists(filePath),
+  removeIfExists: (filePath: string): Promise<void> =>
+    window.bridge.downloadDir.removeIfExists(filePath),
+  commit: (tempPath: string, finalPath: string, data: ArrayBuffer): Promise<void> =>
+    window.bridge.downloadDir.commit(tempPath, finalPath, data),
+  removeFile: (filePath: string): Promise<void> => window.bridge.downloadDir.removeFile(filePath),
+  listEntries: (dirPath: string): Promise<{ name: string; isDirectory: boolean }[]> =>
+    window.bridge.downloadDir.listEntries(dirPath),
+  removeDirIfEmpty: (dirPath: string): Promise<boolean> =>
+    window.bridge.downloadDir.removeDirIfEmpty(dirPath),
 };
 
 export const recovery = {

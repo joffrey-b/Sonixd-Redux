@@ -2,10 +2,9 @@ import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { RowDataType } from 'rsuite-table';
 import { useAppDispatch, useAppSelector } from '../redux/hooks';
-import { apiController } from '../api/controller';
-import { setStar } from '../redux/playQueueSlice';
-import { setPlaylistStar } from '../redux/playlistSlice';
-import { updateStarredInCache } from './useLibraryCache';
+import { submitFavoriteWithQueueFallback } from '../shared/offlineSubmission';
+import { applyFavoriteSuccess } from '../shared/applyMutationSuccess';
+import { selectEffectiveOffline } from '../redux/connectivitySlice';
 
 interface StarrableItem {
   id: string;
@@ -28,16 +27,19 @@ type StarrableCacheData =
 const useFavorite = () => {
   const dispatch = useAppDispatch();
   const config = useAppSelector((state) => state.config);
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
   const queryClient = useQueryClient();
 
   const handleFavorite = useCallback(
     async (rowData: RowDataType, options?: FavoriteOptions) => {
       const favorite = !rowData.starred;
 
-      await apiController({
+      await submitFavoriteWithQueueFallback({
         serverType: config.serverType,
-        endpoint: favorite ? 'star' : 'unstar',
-        args: { id: rowData.id, type: rowData.type },
+        id: rowData.id,
+        itemType: rowData.type,
+        starred: favorite,
+        effectiveOffline,
       });
 
       if (options?.queryKey) {
@@ -76,11 +78,12 @@ const useFavorite = () => {
         options.custom();
       }
 
-      dispatch(setStar({ id: [rowData.id], type: favorite ? 'star' : 'unstar' }));
-      dispatch(setPlaylistStar({ id: [rowData.id], type: favorite ? 'star' : 'unstar' }));
-      updateStarredInCache(rowData.id, favorite);
+      // Shared with offlineQueueFlush.ts's replayEntry -- see
+      // applyMutationSuccess.ts for why these specific side effects (and not
+      // the queryKey-specific update above) are the ones extracted.
+      await applyFavoriteSuccess({ id: rowData.id, starred: favorite }, dispatch, queryClient);
     },
-    [config.serverType, dispatch, queryClient]
+    [config.serverType, effectiveOffline, queryClient, dispatch]
   );
 
   return { handleFavorite };

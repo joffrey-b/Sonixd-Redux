@@ -13,9 +13,12 @@ import {
   PlayAppendButton,
   PlayAppendNextButton,
   PlayButton,
+  RemoveFromOfflineButton,
   SaveButton,
   UndoButton,
 } from '../shared/ToolbarButtons';
+import useBulkDownload from '../../hooks/useBulkDownload';
+import { selectDownloadProgress } from '../../redux/downloadProgressSlice';
 import { useAppDispatch, useAppSelector } from '../../redux/hooks';
 import { fixPlayer2Index, setPlayQueueByRowClick } from '../../redux/playQueueSlice';
 import { clearSelected } from '../../redux/multiSelectSlice';
@@ -59,6 +62,11 @@ import { useRating } from '../../hooks/useRating';
 import { useBrowserDownload } from '../../hooks/useBrowserDownload';
 import { useCopyToClipboardConfirm } from '../../hooks/useCopyToClipboardConfirm';
 import { settings, cache, recovery as recoveryBridge } from '../shared/bridge';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
+import usePlaylistsCache from '../../hooks/usePlaylistsCache';
+import useLibraryCache from '../../hooks/useLibraryCache';
+import { playlistCacheEntryToPlaylistWithSongs } from '../../shared/offlineLibrary';
+import useIsAvailableOffline from '../../hooks/useIsAvailableOffline';
 
 const PlaylistView = ({ ...rest }) => {
   const { t } = useTranslation();
@@ -76,8 +84,17 @@ const PlaylistView = ({ ...rest }) => {
   const playlistId = rest.id ? rest.id : id;
   const playlistImagePath = `${misc.imageCachePath}playlist_${playlistId}.jpg`;
   const isPlaylistImageCached = useIsCached(playlistImagePath);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- data has 50+ access sites guarded at runtime by isLoading/isError early returns; narrowing would require extensive restructuring
-  const { isLoading, isError, data, error }: any = useQuery({
+
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { getCachedPlaylists } = usePlaylistsCache();
+  const { getCachedSongs } = useLibraryCache();
+
+  const {
+    isLoading: onlineIsLoading,
+    isError: onlineIsError,
+    data: onlineData,
+    error,
+  } = useQuery({
     queryKey: ['playlist', playlistId],
     queryFn: () =>
       apiController({
@@ -85,7 +102,23 @@ const PlaylistView = ({ ...rest }) => {
         endpoint: 'getPlaylist',
         args: { id: playlistId },
       }),
+    enabled: !effectiveOffline,
   });
+
+  // Offline browsing (ADR Section 5.2/5.3) -- resolves the cached playlist's
+  // song id references against the existing song snapshot; online path
+  // above is unchanged.
+  const offlineData = React.useMemo(() => {
+    if (!effectiveOffline || !playlistId) return undefined;
+    const entry = getCachedPlaylists().find((p) => p.id === playlistId);
+    if (!entry) return undefined;
+    const songsById = new Map(getCachedSongs().map((song) => [song.id, song]));
+    return playlistCacheEntryToPlaylistWithSongs(entry, songsById);
+  }, [effectiveOffline, playlistId, getCachedPlaylists, getCachedSongs]);
+
+  const data = effectiveOffline ? offlineData : onlineData;
+  const isLoading = effectiveOffline ? false : onlineIsLoading;
+  const isError = effectiveOffline ? false : onlineIsError;
 
   const [customPlaylistImage, setCustomPlaylistImage] = useState<string | string[]>(
     'img/placeholder.png'
@@ -154,8 +187,16 @@ const PlaylistView = ({ ...rest }) => {
     }
   }, [data?.song, playlist]);
 
+  const isAvailableOfflineCheck = useIsAvailableOffline();
+
   const { handleRowClick, handleRowDoubleClick, handleDragEnd } = useListClickHandler({
     doubleClick: (rowData: RowDataType) => {
+      // Fix C: see AlbumView.tsx for the full rationale.
+      if (effectiveOffline && !isAvailableOfflineCheck(rowData.id as string)) {
+        notifyToast('warning', t("This track isn't available offline."));
+        return;
+      }
+
       dispatch(
         setPlayQueueByRowClick({
           entries: rowData.tableData,
@@ -174,6 +215,16 @@ const PlaylistView = ({ ...rest }) => {
   const { handlePlayQueueAdd } = usePlayQueueHandler();
   const { handleDownload } = useBrowserDownload();
   const { requestCopyConfirmation, confirmCopyModal } = useCopyToClipboardConfirm();
+  const { downloadSongs, removeDownloadedSongs } = useBulkDownload();
+  const downloadProgress = useAppSelector(selectDownloadProgress);
+
+  const handleOfflineDownload = () => {
+    downloadSongs(data.song || []);
+  };
+
+  const handleOfflineDelete = () => {
+    removeDownloadedSongs((data.song || []).map((song: { id: string }) => song.id));
+  };
 
   const handleSave = async (recovery: boolean) => {
     dispatch(clearSelected());
@@ -423,8 +474,20 @@ const PlaylistView = ({ ...rest }) => {
   if (isError) {
     return (
       <span>
-        {t('Error')}: {error.message}
+        {t('Error')}: {error?.message}
       </span>
+    );
+  }
+
+  // Offline (FIX A): see AlbumView.tsx for the full rationale -- effectiveOffline
+  // forces isLoading/isError to false above regardless of whether the playlist
+  // was actually found in the local playlistsSnapshot. Without this guard the
+  // JSX below dereferences `data.xxx` unconditionally and crashes.
+  if (!data) {
+    return (
+      <div style={{ padding: '60px 20px', textAlign: 'center', opacity: 0.5 }}>
+        {t('Playlist not found.')}
+      </div>
     );
   }
 
@@ -618,15 +681,22 @@ const PlaylistView = ({ ...rest }) => {
                       size="lg"
                       appearance="subtle"
                       downloadSize={getAlbumSize(data.song)}
-                      onClick={() => handleDownload(data, 'download', true)}
+                      loading={downloadProgress.inProgress}
+                      disabled={effectiveOffline || downloadProgress.inProgress}
+                      onClick={handleOfflineDownload}
+                    />
+                    <RemoveFromOfflineButton
+                      data-testid="download-action-remove-offline"
+                      size="lg"
+                      appearance="subtle"
+                      disabled={downloadProgress.inProgress}
+                      onClick={handleOfflineDelete}
                     />
                     <CopyToClipboardButton
                       data-testid="download-action-copy"
                       size="lg"
                       appearance="subtle"
-                      onClick={() =>
-                        requestCopyConfirmation(() => handleDownload(data, 'copy', true))
-                      }
+                      onClick={() => requestCopyConfirmation(() => handleDownload(data, true))}
                     />
                     {showDeleteConfirm ? (
                       <>

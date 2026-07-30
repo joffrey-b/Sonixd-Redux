@@ -4,6 +4,8 @@ import { StyledButton } from '../shared/styled';
 import { settings } from '../shared/bridge';
 import { reloadPage } from '../../shared/navigation';
 import { clearCredentialCache } from '../../api/api';
+import { clearOfflineQueuePathCache } from '../../shared/offlineActionQueue';
+import { clearDownloadPathCache } from '../../shared/downloadPath';
 
 // Only api.ts's cache is cleared directly here — jellyfinApi.ts imports
 // handleDisconnect below for its own 401 auto-disconnect, so importing its
@@ -15,6 +17,8 @@ import { clearCredentialCache } from '../../api/api';
 export const handleDisconnect = async () => {
   await settings.disconnect();
   clearCredentialCache();
+  clearOfflineQueuePathCache();
+  clearDownloadPathCache();
   reloadPage();
 };
 
@@ -30,6 +34,8 @@ const DisconnectButton = () => {
     try {
       await settings.disconnect();
       clearCredentialCache();
+      clearOfflineQueuePathCache();
+      clearDownloadPathCache();
       reloadPage();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Failed to disconnect'));

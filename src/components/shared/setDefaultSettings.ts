@@ -52,6 +52,11 @@ export interface Settings {
   globalMediaHotkeys: boolean;
   systemMediaTransportControls: boolean;
   cachePath?: string;
+  // Downloads (ADR Section 8): a separate, user-chosen folder, distinct from
+  // cachePath -- unset by default (no computed default, unlike cachePath),
+  // since there is no sensible app-controlled fallback for real, user-visible
+  // files. Download actions must be gated in the UI on this being configured.
+  downloadPath?: string;
   titleBarStyle?: string;
   artistPageLegacy: boolean;
   startPage: string;
@@ -113,6 +118,7 @@ export interface Settings {
   scrollWithCurrentSong: boolean;
   cacheImages: boolean;
   cacheSongs: boolean;
+  forceOfflineMode: boolean;
   pollingInterval: number;
   fadeDuration: number;
   fadeType: string;
@@ -295,6 +301,7 @@ export const DEFAULT_SETTINGS: Settings = {
   scrollWithCurrentSong: true,
   cacheImages: true,
   cacheSongs: false,
+  forceOfflineMode: false,
   pollingInterval: 10,
   fadeDuration: 0,
   fadeType: 'equalPower',
@@ -2150,8 +2157,54 @@ export const setDefaultSettings = (force: boolean) => {
         flexGrow: 1,
         label: i18n.t('Favorite')?.toString(),
       },
+      {
+        id: i18n.t('Offline')?.toString(),
+        dataKey: 'offlineStatus',
+        alignment: 'center',
+        flexGrow: 1,
+        label: i18n.t('Offline Status')?.toString(),
+      },
     ]);
   }
+
+  // musicListColumns migration: the block above only runs for a genuinely fresh
+  // install (or force=true) -- an existing user already has 'musicListColumns'
+  // set, so it's skipped entirely and the new Offline Status column added above
+  // would never reach them. Same version-gated, append-only, run-once shape as
+  // the sidebar/PEQ migrations above: only add it if missing, and only ever on
+  // the version-0 -> version-1 transition, so a user who has since removed the
+  // column themselves via the column picker doesn't get it silently re-added on
+  // a later launch. A fresh install's column list already includes it (set by
+  // the block directly above), so this is a no-op there too.
+  //
+  // Deliberately a standalone top-level key, NOT a dotted 'musicListColumns.version'
+  // sub-key: unlike sidebar/peq (where 'sidebar'/'peq' are stable wrapper objects
+  // with their own 'version' property alongside 'selected'/bands), 'musicListColumns'
+  // itself holds the column array directly. Every time a user reorders/toggles a
+  // column (ListViewConfig.tsx's settings.set('musicListColumns', ...)), the whole
+  // array is replaced -- a version marker attached as a dot-path onto that same key
+  // would be silently wiped out by that normal, expected user action, making the
+  // migration re-run and re-add a column the user deliberately removed. Caught by
+  // writing this migration's own tests before trusting it, not by inspection alone.
+  const MUSIC_LIST_COLUMNS_MIGRATION_VERSION = 1;
+  const musicListColumnsVersion: number =
+    (settings.get('musicListColumnsMigrationVersion') as number) || 0;
+  if (musicListColumnsVersion < 1) {
+    const cols = (settings.get('musicListColumns') as Column[]) || [];
+    if (cols.length > 0 && !cols.some((c) => c.dataKey === 'offlineStatus')) {
+      settings.set('musicListColumns', [
+        ...cols,
+        {
+          id: i18n.t('Offline')?.toString(),
+          dataKey: 'offlineStatus',
+          alignment: 'center',
+          flexGrow: 1,
+          label: i18n.t('Offline Status')?.toString(),
+        },
+      ]);
+    }
+  }
+  settings.set('musicListColumnsMigrationVersion', MUSIC_LIST_COLUMNS_MIGRATION_VERSION);
 
   if (force || !settings.has('albumListColumns')) {
     settings.set('albumListColumns', [

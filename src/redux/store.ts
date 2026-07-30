@@ -20,6 +20,10 @@ import smartPlaylistReducer, {
   setLibrarySyncedAt,
 } from './smartPlaylistSlice';
 import jukeboxReducer from './jukeboxSlice';
+import connectivityReducer, { setManuallyForced } from './connectivitySlice';
+import cachedSongsReducer from './cachedSongsSlice';
+import downloadedSongsReducer from './downloadedSongsSlice';
+import downloadProgressReducer from './downloadProgressSlice';
 import type { SmartPlaylist } from '../types';
 
 const smartPlaylistListener = createListenerMiddleware();
@@ -55,6 +59,16 @@ smartPlaylistListener.startListening({
   },
 });
 
+// Only isManuallyForced is persisted -- pingConfirmedUnreachable is a
+// runtime-only concept re-derived by the ping mechanism on every launch (ADR
+// Section 3.4), so there is deliberately no listener for it here.
+smartPlaylistListener.startListening({
+  actionCreator: setManuallyForced,
+  effect: (action) => {
+    settings.set('forceOfflineMode', action.payload);
+  },
+});
+
 export const store = configureStore({
   reducer: {
     player: playerReducer,
@@ -71,6 +85,10 @@ export const store = configureStore({
     peq: peqReducer,
     smartPlaylist: smartPlaylistReducer,
     jukebox: jukeboxReducer,
+    connectivity: connectivityReducer,
+    cachedSongs: cachedSongsReducer,
+    downloadedSongs: downloadedSongsReducer,
+    downloadProgress: downloadProgressReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

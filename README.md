@@ -33,6 +33,7 @@ Sonixd Redux is a fork of [Sonixd](https://github.com/jeffvli/sonixd) by jeffvli
 
 ### New in Sonixd Redux
 
+- **Offline Mode** - automatic offline detection, offline browsing and playback, and explicit song/album/artist/playlist downloads for guaranteed offline availability
 - **MPV backend** - true gapless playback, ReplayGain, audio device selection, and EQ support via [MPV](https://mpv.io/)
 - **Graphic EQ** - 10-band graphic equalizer
 - **Parametric EQ** - 10-band PEQ with per-band type, frequency, gain, and Q controls, with a live frequency response curve
@@ -132,6 +133,7 @@ Full documentation is available at **[joffrey-b.github.io/Sonixd-Redux](https://
 - [Keyboard Shortcuts](https://joffrey-b.github.io/Sonixd-Redux/keyboard-shortcuts)
 - [Settings Reference](https://joffrey-b.github.io/Sonixd-Redux/settings)
 - [Self-Signed Certificates](https://joffrey-b.github.io/Sonixd-Redux/self-signed-certificates)
+- [Offline Mode](https://joffrey-b.github.io/Sonixd-Redux/offline-mode)
 
 ---
 

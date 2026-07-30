@@ -4,6 +4,73 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.2.0]
+
+This release introduces Offline Mode: Sonixd Redux can now detect when your
+server is unreachable and let you keep browsing and listening to whatever's
+available locally, plus explicitly download music in advance so it's
+guaranteed to be there when you need it.
+
+**Offline Mode is marked experimental for this release.** It's covered by an
+extensive automated test suite (unit and end-to-end) that all passes, and
+I also tested some things by hand myself, but it's a large, first-version feature
+touching playback, downloads, and sync in a lot of new ways, so there may still be
+edge cases I haven't seen. If you don't use it, nothing should change for you.
+If you do and run into something unexpected, please open a GitHub issue.
+
+## What's New
+
+### Offline Mode
+
+- **Automatic offline detection**: the app periodically checks whether your
+  server is reachable. If it stops responding, you get a brief warning
+  first, then the app switches to offline mode automatically - and switches
+  back the moment your connection returns, syncing anything that happened
+  in the meantime.
+- **Manual "Force offline mode" toggle**: available in
+  Settings → System → Connectivity, for saving data on a metered connection
+  or just browsing your downloaded/cached music without any background
+  network activity.
+- **Offline library browsing**: Albums, Artists, Genres, Search, Playlists,
+  Smart Playlists, and Favorites all remain browsable while offline, built
+  from a local snapshot of your library that stays in sync automatically -
+  no setup required.
+- **Playback prefers local copies automatically**: whether you're online or
+  offline, playing a song uses a downloaded copy first, then a cached copy,
+  and only falls back to streaming from your server when neither is
+  available. Starting playback on an album, artist, or playlist with a mix
+  of available and unavailable tracks skips the ones that aren't available
+  instead of failing outright.
+- **Explicit downloads**: set a download folder in
+  Settings → System → Downloads, then download individual songs (right-click
+  → Download) or a whole album/artist's discography/playlist (the Download
+  button on its page) for guaranteed offline availability, saved as real
+  files in a proper Artist/Album folder structure at full, non-transcoded
+  quality. A matching "Remove from offline" option/button removes local
+  copies without touching anything on your server.
+- **Downloads overview screen**: see everything you've downloaded, how much
+  space it's using, and clear it all in one click, from
+  Settings → System → Downloads → View downloads.
+- **Offline status column**: a new column in song lists (visible by
+  default) shows whether each track is cached, downloaded, or neither.
+- **Scrobbles, ratings, and favorites keep working offline**: changes are
+  saved locally and sent to your server automatically the next time you're
+  online, so nothing is lost or has to be redone.
+
+See the new [Offline Mode](https://joffrey-b.github.io/Sonixd-Redux/offline-mode) documentation page for the full picture.
+
+### Fixed
+
+- **Clicking an artist's name could send you back to the Dashboard instead of their page**: this affected the artist name shown under an album cover in grid view - on the main Albums page, the expanded Dashboard views (Recently Played, Recently Added, Random, Most Played), and the Starred → Albums grid.
+- **A spurious console warning ("MaxListenersExceededWarning") could appear when browsing a library grid (Albums, Artists, Playlists) with more than 10 items visible at once.** No functional impact - just noise in the developer console.
+- **The Songs column picker (Look & Feel → List View Layout Editor) couldn't be scrolled with the mouse past the "Title" option**, making a few columns near the bottom of the list unreachable that way (keyboard arrow keys still worked). A long-standing issue, just never noticeable until this release added Offline Status as a 16th option in that list.
+
+### Additional notes
+
+- **If you import a settings backup exported before this version**, the Offline Status column won't be automatically re-enabled for you, since your backup predates it. Just turn it back on in Settings → Look & Feel → List View Layout Editor → Songs, the same as any other column.
+
+---
+
 ## [1.1.1]
 
 ### Fixed

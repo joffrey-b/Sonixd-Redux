@@ -12,6 +12,7 @@ import {
   unstar,
   scrobble,
   getTopSongs,
+  getDownloadUrl,
   jellyfinApi,
 } from '../api/jellyfinApi';
 
@@ -203,5 +204,26 @@ describe('jellyfinScrobble', () => {
   it('does not throw on network error', async () => {
     mockNetworkError();
     await expect(scrobble({ id: 'item-1', submission: true })).rejects.not.toBeNull(); // throws but doesn't crash the process
+  });
+});
+
+// ─── getDownloadUrl ─────────────────────────────────────────────────────────────
+// Audit fix (finding 1.5): this endpoint had zero test coverage anywhere in
+// the codebase -- the offline-mode downloads feature (Phase 4) was verified
+// only against Subsonic. Confirms the real, non-transcoded download URL shape
+// the ADR requires (`/items/{id}/download`, not the `/audio/{id}/download`
+// streamUrl-swap trick that only works for Subsonic and produces the wrong
+// path for Jellyfin) and that it carries a real api_key so the download
+// request is actually authenticated.
+describe('getDownloadUrl (Jellyfin)', () => {
+  it('builds the real, non-transcoded /items/{id}/download URL with the current server + api_key', () => {
+    const url = getDownloadUrl({ id: 'item-1' });
+
+    expect(url).toBe('http://jellyfin.local/items/item-1/download?api_key=jf-token');
+  });
+
+  it('is a synchronous, non-network call -- no request is made', () => {
+    getDownloadUrl({ id: 'item-1' });
+    expect(mockAdapter).not.toHaveBeenCalled();
   });
 });

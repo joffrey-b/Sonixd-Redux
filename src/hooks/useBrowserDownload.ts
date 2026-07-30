@@ -1,21 +1,23 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { clipboard, shell } from '../components/shared/bridge';
+import { clipboard } from '../components/shared/bridge';
 import { apiController } from '../api/controller';
 import { notifyToast } from '../components/shared/toast';
 import { useAppSelector } from '../redux/hooks';
 import { Server } from '../types';
 
+// Copy-to-clipboard only -- the 'download' branch (shell.openExternal of a
+// zip URL) was removed once PlaylistView.tsx's Download button was rewired
+// to the offline per-song download fan-out (ADR Section 8.3), which was this
+// hook's only 'download'-type caller. The `type` param is gone with it;
+// `playlist` stays since 'copy' still needs the same per-server-shape
+// branching.
 export const useBrowserDownload = () => {
   const { t } = useTranslation();
   const config = useAppSelector((state) => state.config);
 
   const handleDownload = useCallback(
-    async (
-      data: { id?: string; song?: { id: string; parent?: string }[] },
-      type: 'copy' | 'download',
-      playlist?: boolean
-    ) => {
+    async (data: { id?: string; song?: { id: string; parent?: string }[] }, playlist?: boolean) => {
       try {
         const downloadUrls = [];
 
@@ -80,12 +82,6 @@ export const useBrowserDownload = () => {
 
         if (downloadUrls.length === 0) {
           return notifyToast('warning', t('No parent album found'));
-        }
-
-        if (type === 'download') {
-          return downloadUrls.forEach((url) => {
-            if (/^https?:\/\//i.test(url)) shell.openExternal(url);
-          });
         }
 
         clipboard.writeText(downloadUrls.join('\n'));

@@ -116,6 +116,16 @@ const IPC_CHANNELS = new Set([
   'update-local-shortcut',
   'flush-cache-now',
   'check-library-cache-migration',
+  'cache-files-evicted',
+  'select-download-folder',
+  // Self-audit fix: downloadPath.ts's clearDownloadPath() invokes this via
+  // the generic bridge.ipcRenderer.invoke pass-through (the same pattern
+  // select-download-folder above already uses), which assertChannel gates --
+  // missing from this whitelist would have thrown "channel not whitelisted"
+  // at runtime in the real app the moment a user clicked "Clear", invisible
+  // to every Jest test here since they all mock ipcRenderer.invoke directly,
+  // never exercising this real whitelist check at all.
+  'bridge:settings:clear-download-path',
 ]);
 
 function assertChannel(channel) {
@@ -142,6 +152,12 @@ const bridge = {
     disconnect: () => ipcRenderer.invoke('bridge:settings:disconnect'),
     delete: (key) => ipcRenderer.invoke('bridge:settings:delete', key),
     getCredentials: () => ipcRenderer.invoke('bridge:settings:getCredentials'),
+    getCachePath: () => ipcRenderer.invoke('bridge:settings:getCachePath'),
+    getDownloadPath: () => ipcRenderer.invoke('bridge:settings:getDownloadPath'),
+    // Audit fix: dedicated write path for downloadPath now that it's on
+    // SETTINGS_DENY_LIST -- see main.dev.mjs's select-download-folder /
+    // bridge:settings:clear-download-path handlers.
+    clearDownloadPath: () => ipcRenderer.invoke('bridge:settings:clear-download-path'),
   },
 
   // Computed once in preload (see `osRelease` above) — exposed as a plain string,
@@ -194,6 +210,24 @@ const bridge = {
       ipcRenderer.invoke('bridge:cache-dir:remove-files', dirPath, fileNames),
     evictIfNeeded: (dirPath, limitBytes) =>
       ipcRenderer.invoke('bridge:cache-dir:evict-if-needed', dirPath, limitBytes),
+  },
+
+  // ADR Section 8: file operations against the user-chosen download folder.
+  // Deliberately separate from `cache`/`cacheDir` above (different base
+  // directory, validated by main.dev.mjs against getDownloadBaseDir(), not
+  // getCacheBaseDir()) -- every method here is async (invoke), unlike
+  // `cacheDir.ensure`'s sync exception, since these are called once per song
+  // during a batch download fan-out (see main.dev.mjs's comment on this block).
+  downloadDir: {
+    ensureDir: (dirPath) => ipcRenderer.invoke('bridge:download:ensure-dir', dirPath),
+    exists: (filePath) => ipcRenderer.invoke('bridge:download:exists', filePath),
+    removeIfExists: (filePath) => ipcRenderer.invoke('bridge:download:remove-if-exists', filePath),
+    commit: (tempPath, finalPath, data) =>
+      ipcRenderer.invoke('bridge:download:commit', tempPath, finalPath, data),
+    removeFile: (filePath) => ipcRenderer.invoke('bridge:download:remove-file', filePath),
+    listEntries: (dirPath) => ipcRenderer.invoke('bridge:download:list-entries', dirPath),
+    removeDirIfEmpty: (dirPath) =>
+      ipcRenderer.invoke('bridge:download:remove-dir-if-empty', dirPath),
   },
 
   // Replaces the renderer's direct fs.existsSync/.readFileSync/.unlinkSync calls in

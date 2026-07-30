@@ -5,6 +5,14 @@ import { arrayMoveMutable } from 'array-move';
 import i18n from '../i18n/i18n';
 import { nowPlaying, settings, recovery, osRelease } from '../components/shared/bridge';
 import type { Song } from '../types';
+// Re-exported for existing callers (cacheSong.ts, cacheImage.ts, usePlayerControls.ts)
+// -- the implementation itself moved to baseCachePath.ts so it can be shared
+// with offlineActionQueue.ts without either module pulling in the other's
+// dependency graph (this file's i18n import in particular). See
+// baseCachePath.ts's own comment for the full reasoning.
+import { joinPath } from './baseCachePath';
+
+export { joinPath };
 
 interface ApiResponse {
   status?: string;
@@ -17,18 +25,6 @@ interface EntryWithId {
   streamUrl?: string;
   title?: string;
 }
-
-// Pure string-based path joining. Node's `path` module compiles to a runtime
-// require("path") in the renderer bundle (target: electron-renderer) -- this only
-// works while nodeIntegration is true. Forward slashes are accepted by Node's fs
-// APIs on every platform including Windows, so a plain join + slash-collapse is a
-// safe drop-in for the two/three-segment joins this codebase actually performs
-// (see C1 / nodeIntegration migration).
-export const joinPath = (...segments: string[]): string =>
-  segments
-    .filter((segment) => segment.length > 0)
-    .join('/')
-    .replace(/\/{2,}/g, '/');
 
 export const getRootCachePath = () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require is intentional: avoids bundling mockSettings in production
@@ -102,7 +98,7 @@ export const shuffle = <T>(array: T[]): T[] => {
 };
 
 // https://stackoverflow.com/questions/15900485/correct-way-to-convert-size-in-bytes-to-kb-mb-gb-in-javascript
-const formatBytes = (bytes: number, decimals = 2) => {
+export const formatBytes = (bytes: number, decimals = 2) => {
   if (bytes === 0) return '0 Bytes';
 
   const k = 1024;

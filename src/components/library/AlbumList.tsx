@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import _ from 'lodash';
 import { ButtonToolbar, Nav, Whisper } from 'rsuite';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -46,6 +46,10 @@ import Popup from '../shared/Popup';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
 import { settings } from '../shared/bridge';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
+import useLibraryCache from '../../hooks/useLibraryCache';
+import { buildAlbumsFromSongs } from '../../shared/offlineLibrary';
+import { notifyToast } from '../shared/toast';
 
 export const getAlbumSortTypes = (t: TFunction) => [
   { label: t('A-Z (Name)'), value: 'alphabeticalByName', role: t('Default') },
@@ -80,6 +84,9 @@ const AlbumList = () => {
   const { gridScroll } = useGridScroll(gridRef);
   const { listScroll } = useListScroll(listRef);
 
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { getCachedSongs } = useLibraryCache();
+
   useEffect(() => {
     if (folder.applied.albums) {
       setMusicFolder({ loaded: true, id: folder.musicFolder });
@@ -98,9 +105,9 @@ const AlbumList = () => {
   }, [config.serverType, musicFolder.id, view.album.filter, view.album.pagination]);
 
   const {
-    isLoading,
-    isError,
-    data: albums,
+    isLoading: onlineIsLoading,
+    isError: onlineIsError,
+    data: onlineAlbums,
     error,
   } = useQuery<AlbumListData>({
     queryKey: currentQueryKey,
@@ -157,8 +164,49 @@ const AlbumList = () => {
       view.album.pagination.recordsPerPage !== 0 && config.serverType === Server.Jellyfin
         ? 600000
         : Infinity,
-    enabled: musicFolder.loaded,
+    // Offline: read from the local library snapshot instead (below) -- the
+    // online path/query itself is otherwise completely unchanged.
+    enabled: musicFolder.loaded && !effectiveOffline,
   });
+
+  // Offline browsing (ADR Section 5.1) -- additive branch alongside the
+  // online query above, not entangled with it. Once substituted below, every
+  // existing downstream consumer (search/advanced-filter/column-sort) keeps
+  // operating unchanged on whatever `albums.data` turns out to be.
+  //
+  // Bug fix: this used to always return the full, unordered library
+  // regardless of view.album.filter -- online, "Newest"/"Random"/"Most
+  // Played" are each genuinely different, meaningfully-ordered server
+  // requests (getAlbumList2 type=newest/random/frequent), but offline they
+  // all silently collapsed into the same "everything, snapshot order" list.
+  // Approximated here with what's actually available in the local snapshot:
+  // "newest" by created date, "frequent" by aggregate play count (see
+  // buildAlbumsFromSongs), "random" by a local shuffle. "recent" (Recently
+  // Played) has no equivalent -- there's no last-played timestamp synced
+  // into the snapshot at all -- so it's left as the unordered full list,
+  // same as before this fix, rather than faking an order that isn't real.
+  const offlineAlbums = useMemo<AlbumListData | undefined>(() => {
+    if (!effectiveOffline) return undefined;
+    const songs = getCachedSongs();
+    const built = buildAlbumsFromSongs(songs);
+
+    let data = built;
+    if (view.album.filter === 'newest') {
+      data = [...built].sort(
+        (a, b) => new Date(b.created).getTime() - new Date(a.created).getTime()
+      );
+    } else if (view.album.filter === 'frequent') {
+      data = [...built].sort((a, b) => (b.playCount || 0) - (a.playCount || 0));
+    } else if (view.album.filter === 'random') {
+      data = _.shuffle(built);
+    }
+
+    return { data, totalRecordCount: data.length };
+  }, [effectiveOffline, getCachedSongs, view.album.filter]);
+
+  const albums = effectiveOffline ? offlineAlbums : onlineAlbums;
+  const isLoading = effectiveOffline ? false : onlineIsLoading;
+  const isError = effectiveOffline ? false : onlineIsError;
 
   const { data: genres } = useQuery<AlbumSortType[]>({
     queryKey: ['genreList'],
@@ -419,7 +467,11 @@ const AlbumList = () => {
           ]}
           loading={isLoading}
           handleFavorite={(rowData: RowDataType) =>
-            handleFavorite(rowData, { queryKey: ['albumList', view.album.filter, musicFolder.id] })
+            effectiveOffline
+              ? notifyToast('warning', t("Favorite status isn't available offline"))
+              : handleFavorite(rowData, {
+                  queryKey: ['albumList', view.album.filter, musicFolder.id],
+                })
           }
           initialScrollOffset={Number(localStorage.getItem('scroll_list_albumList'))}
           onScroll={(scrollIndex: number) => {
@@ -486,7 +538,12 @@ const AlbumList = () => {
             urlProperty: 'albumId',
           }}
           cardSubtitle={{
-            prefix: 'artist',
+            // Must be an absolute path (leading slash) -- Card.tsx builds
+            // subUrl as `${prefix}/${id}` and navigates to it directly. A
+            // bare 'artist' produced a relative path that didn't match any
+            // route and silently fell through to the app's catch-all
+            // `/*` route (Dashboard), instead of the artist page.
+            prefix: '/library/artist',
             property: 'albumArtist',
             urlProperty: 'albumArtistId',
             unit: '',
@@ -495,7 +552,11 @@ const AlbumList = () => {
           size={config.lookAndFeel.gridView.cardSize}
           cacheType="album"
           handleFavorite={(rowData: RowDataType) =>
-            handleFavorite(rowData, { queryKey: ['albumList', view.album.filter, musicFolder.id] })
+            effectiveOffline
+              ? notifyToast('warning', t("Favorite status isn't available offline"))
+              : handleFavorite(rowData, {
+                  queryKey: ['albumList', view.album.filter, musicFolder.id],
+                })
           }
           initialScrollOffset={Number(localStorage.getItem('scroll_grid_albumList'))}
           onScroll={(scrollIndex: number) => {

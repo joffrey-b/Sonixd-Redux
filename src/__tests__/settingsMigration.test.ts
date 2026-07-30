@@ -29,9 +29,17 @@ function resetPeqMigrationState(opts: { version?: number; bands?: unknown } = {}
   }
 }
 
+function resetMusicListColumnsMigrationState(opts: { version?: number; columns?: unknown } = {}) {
+  settings.set('musicListColumnsMigrationVersion', opts.version ?? 0);
+  if (opts.columns !== undefined) {
+    settings.set('musicListColumns', opts.columns);
+  }
+}
+
 beforeEach(() => {
   resetSidebarMigrationState({ version: 4 }); // default: already migrated
   resetPeqMigrationState({ version: 1 }); // default: already migrated
+  resetMusicListColumnsMigrationState({ version: 1 }); // default: already migrated
 });
 
 describe('PEQ band migration', () => {
@@ -171,6 +179,80 @@ describe('sidebar migration', () => {
     // Should not have added any new items
     expect(selected).toEqual(fullSelected);
     expect(settings.get('sidebar.version')).toBe(4);
+  });
+});
+
+describe('musicListColumns migration (Fix B)', () => {
+  const BASE_COLUMNS = [
+    {
+      id: '#',
+      dataKey: 'index',
+      alignment: 'center',
+      resizable: true,
+      width: 50,
+      label: '# (Drag/Drop)',
+    },
+    {
+      id: 'Title',
+      dataKey: 'combinedtitle',
+      alignment: 'left',
+      flexGrow: 5,
+      label: 'Title (Combined)',
+    },
+  ];
+
+  it("appends the offline-status column to an existing user's column list exactly once", () => {
+    resetMusicListColumnsMigrationState({ version: 0, columns: BASE_COLUMNS });
+    setDefaultSettings(false);
+
+    const cols = settings.get('musicListColumns') as { dataKey: string }[];
+    const count = cols.filter((c) => c.dataKey === 'offlineStatus').length;
+    expect(count).toBe(1);
+    // Existing customization (column order/presence) is otherwise untouched.
+    expect(cols.slice(0, 2)).toEqual(BASE_COLUMNS);
+  });
+
+  it('does not re-add it if the user has since removed it', () => {
+    // Migration already ran once (version 1) and the user has since removed
+    // the column themselves via the column picker.
+    resetMusicListColumnsMigrationState({ version: 1, columns: BASE_COLUMNS });
+    setDefaultSettings(false);
+
+    const cols = settings.get('musicListColumns') as { dataKey: string }[];
+    expect(cols.some((c) => c.dataKey === 'offlineStatus')).toBe(false);
+  });
+
+  it('does not duplicate the column if it is already present', () => {
+    const alreadyHasIt = [...BASE_COLUMNS, { dataKey: 'offlineStatus' }];
+    resetMusicListColumnsMigrationState({ version: 0, columns: alreadyHasIt });
+    setDefaultSettings(false);
+
+    const cols = settings.get('musicListColumns') as { dataKey: string }[];
+    const count = cols.filter((c) => c.dataKey === 'offlineStatus').length;
+    expect(count).toBe(1);
+  });
+
+  it('a fresh install still includes it in the default array', () => {
+    // The test Store mock (.erb/mocks/electronStoreMock.js) has no .delete() --
+    // reach into its exposed .settings object directly to simulate a key that
+    // was genuinely never set, matching what settings.has('musicListColumns')
+    // sees on a real fresh install.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (settings as any).settings.musicListColumns;
+    resetMusicListColumnsMigrationState({ version: 0 });
+
+    setDefaultSettings(false);
+
+    const cols = settings.get('musicListColumns') as { dataKey: string }[];
+    expect(cols.some((c) => c.dataKey === 'offlineStatus')).toBe(true);
+  });
+
+  it('does not modify config already at current version', () => {
+    resetMusicListColumnsMigrationState({ version: 1, columns: BASE_COLUMNS });
+    setDefaultSettings(false);
+
+    const cols = settings.get('musicListColumns') as unknown[];
+    expect(cols).toEqual(BASE_COLUMNS);
   });
 });
 

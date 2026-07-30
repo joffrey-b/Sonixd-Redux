@@ -388,7 +388,11 @@ const StarredView = () => {
                     urlProperty: 'albumId',
                   }}
                   cardSubtitle={{
-                    prefix: 'artist',
+                    // Must be an absolute path (leading slash) -- see the
+                    // identical fix/comment in AlbumList.tsx. A bare
+                    // 'artist' silently fell through to the app's catch-all
+                    // route (Dashboard) instead of the artist page.
+                    prefix: '/library/artist',
                     property: 'albumArtist',
                     urlProperty: 'albumArtistId',
                     unit: '',

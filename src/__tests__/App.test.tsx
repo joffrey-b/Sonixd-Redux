@@ -562,6 +562,10 @@ const mockInitialState = {
   favorite: favoriteState,
   artist: artistState,
   view: viewState,
+  connectivity: { pingConfirmedUnreachable: false, isManuallyForced: false },
+  cachedSongs: { songIds: [] },
+  downloadedSongs: { songIds: [] },
+  downloadProgress: { inProgress: false, completed: 0, total: 0 },
 };
 
 describe('App', () => {

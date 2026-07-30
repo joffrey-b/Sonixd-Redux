@@ -124,10 +124,11 @@ export const DeleteButton = ({ ...rest }) => {
 
 export const FavoriteButton = ({
   isFavorite,
+  tooltipText,
   ...rest
-}: ButtonWrapperProps & { isFavorite?: unknown }) => {
+}: ButtonWrapperProps & { isFavorite?: unknown; tooltipText?: string }) => {
   return (
-    <CustomTooltip text={i18n.t('Toggle favorite')}>
+    <CustomTooltip text={tooltipText || i18n.t('Toggle favorite')}>
       <StyledButton
         aria-label={isFavorite ? i18n.t('Remove from favorites') : i18n.t('Add to favorites')}
         tabIndex={0}
@@ -179,6 +180,21 @@ export const ShuffleButton = ({ ...rest }) => {
     <CustomTooltip text={i18n.t('Shuffle queue')}>
       <StyledButton aria-label={i18n.t('Shuffle queue')} tabIndex={0} {...rest}>
         <RandomIcon />
+      </StyledButton>
+    </CustomTooltip>
+  );
+};
+
+// ADR Section 8.4/8.5: "Remove from offline" -- deliberately distinct wording
+// (and a distinct icon, Trash2Icon, since PlaylistView's own "Delete
+// playlist" button already uses TrashIcon via DeleteButton) from server-side
+// deletion, to avoid any implication this deletes content from the server.
+// Always destructive, never ambiguous with the Download button next to it.
+export const RemoveFromOfflineButton = ({ ...rest }: ButtonWrapperProps) => {
+  return (
+    <CustomTooltip text={i18n.t('Remove from offline')}>
+      <StyledButton aria-label={i18n.t('Remove from offline')} {...rest} tabIndex={0}>
+        <Trash2Icon />
       </StyledButton>
     </CustomTooltip>
   );

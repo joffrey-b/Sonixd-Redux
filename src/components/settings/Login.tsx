@@ -8,6 +8,8 @@ import { settings, setDefaultSettings } from '../shared/bridge';
 import { reloadPage } from '../../shared/navigation';
 import { clearCredentialCache } from '../../api/api';
 import { clearCredentialCache as clearJellyfinCredentialCache } from '../../api/jellyfinApi';
+import { clearOfflineQueuePathCache } from '../../shared/offlineActionQueue';
+import { clearDownloadPathCache } from '../../shared/downloadPath';
 import {
   StyledButton,
   StyledCheckbox,
@@ -94,6 +96,8 @@ const Login = () => {
       // Set defaults on login
       setDefaultSettings(false);
       clearCredentialCache();
+      clearOfflineQueuePathCache();
+      clearDownloadPathCache();
       reloadPage();
     } catch (err) {
       setMessage(
@@ -150,6 +154,8 @@ const Login = () => {
         // Set defaults on login
         setDefaultSettings(false);
         clearJellyfinCredentialCache();
+        clearOfflineQueuePathCache();
+        clearDownloadPathCache();
         reloadPage();
       } catch (err) {
         setMessage(

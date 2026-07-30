@@ -760,7 +760,20 @@ const playQueueSlice = createSlice({
       state.entryVersion += 1;
       resetPlayerDefaults(state);
 
-      state.player1.src = action.payload.entries[0].streamUrl;
+      // Audit fix: this used to optimistically assign the raw network
+      // streamUrl here, which the <audio> element (bound directly to
+      // player1.src in Player.tsx) would start fetching immediately -- before
+      // Player.tsx's own async effect (getSrc1, which checks
+      // downloaded -> cached -> network) has a chance to resolve and
+      // dispatch the correct source ~100ms later via setPlayerSrc. For an
+      // already-downloaded or cached song, that meant a real, wasted network
+      // request fired every time, defeating the offline-mode guarantee (a
+      // live e2e run of offline-downloads.spec.ts caught this directly: one
+      // real stream.view request for a fully-downloaded track). Leaving it
+      // at resetPlayerDefaults' '' and letting the existing async resolution
+      // be the sole writer avoids the premature fetch; Player.tsx's effect
+      // already re-runs on every playQueue change, so the correct src still
+      // lands the same ~100ms later it always did.
 
       action.payload.entries.forEach((entry) => state.entry.push(entry));
       if (state.shuffle) {
@@ -794,7 +807,11 @@ const playQueueSlice = createSlice({
       state.entryVersion += 1;
       resetPlayerDefaults(state);
 
-      state.player1.src = action.payload.entries[action.payload.currentIndex].streamUrl;
+      // Audit fix: see setPlayQueue's identical fix above -- same optimistic
+      // network-streamUrl assignment, same premature-fetch bug, same reason
+      // it's safe to drop (Player.tsx's async getSrc1 resolution is the sole
+      // writer of player1.src from here on, same as it already was ~100ms
+      // later regardless).
 
       // Apply filters to all entries except the entry that was double clicked
       const filteredFromStartToCurrent = filterPlayQueue(

@@ -32,6 +32,16 @@ import ListViewType from '../viewtypes/ListViewType';
 import useFavorite from '../../hooks/useFavorite';
 import { useRating } from '../../hooks/useRating';
 import { settings } from '../shared/bridge';
+import { notifyToast } from '../shared/toast';
+import { selectEffectiveOffline } from '../../redux/connectivitySlice';
+import useLibraryCache from '../../hooks/useLibraryCache';
+import useIsAvailableOffline from '../../hooks/useIsAvailableOffline';
+import {
+  buildAlbumsFromSongs,
+  buildArtistsFromSongs,
+  libraryCacheSongToSong,
+  searchSongsOffline,
+} from '../../shared/offlineLibrary';
 
 const SearchView = () => {
   const { t } = useTranslation();
@@ -70,9 +80,12 @@ const SearchView = () => {
     [navigate]
   );
 
+  const effectiveOffline = useAppSelector(selectEffectiveOffline);
+  const { getCachedSongs } = useLibraryCache();
+
   const {
     data: songResults,
-    isLoading: isLoadingSongs,
+    isLoading: onlineIsLoadingSongs,
     fetchNextPage: fetchNextSongPage,
     isFetchingNextPage: isFetchingNextSongPage,
     hasNextPage: hasNextSongPage,
@@ -92,14 +105,14 @@ const SearchView = () => {
         },
       }),
     initialPageParam: 0,
-    enabled: debouncedSearchQuery !== '' && musicFolder.loaded,
+    enabled: debouncedSearchQuery !== '' && musicFolder.loaded && !effectiveOffline,
     getNextPageParam: (lastPage) => lastPage.song.nextCursor,
     staleTime: 5 * 60 * 1000,
   });
 
   const {
     data: albumResults,
-    isLoading: isLoadingAlbums,
+    isLoading: onlineIsLoadingAlbums,
     fetchNextPage: fetchNextAlbumPage,
     isFetchingNextPage: isFetchingNextAlbumPage,
     hasNextPage: hasNextAlbumPage,
@@ -119,14 +132,14 @@ const SearchView = () => {
         },
       }),
     initialPageParam: 0,
-    enabled: debouncedSearchQuery !== '' && musicFolder.loaded,
+    enabled: debouncedSearchQuery !== '' && musicFolder.loaded && !effectiveOffline,
     getNextPageParam: (lastPage) => lastPage.album.nextCursor,
     staleTime: 5 * 60 * 1000,
   });
 
   const {
     data: artistResults,
-    isLoading: isLoadingArtists,
+    isLoading: onlineIsLoadingArtists,
     fetchNextPage: fetchNextArtistPage,
     isFetchingNextPage: isFetchingNextArtistPage,
     hasNextPage: hasNextArtistPage,
@@ -151,12 +164,13 @@ const SearchView = () => {
         },
       }),
     initialPageParam: 0,
-    enabled: debouncedSearchQuery !== '' && musicFolder.loaded,
+    enabled: debouncedSearchQuery !== '' && musicFolder.loaded && !effectiveOffline,
     getNextPageParam: (lastPage) => lastPage.artist.nextCursor,
     staleTime: 5 * 60 * 1000,
   });
 
   useEffect(() => {
+    if (effectiveOffline) return; // offline branch below populates songData instead
     setSongData(
       _.flatten(
         songResults?.pages.map((page: SearchPage) => {
@@ -164,9 +178,10 @@ const SearchView = () => {
         })
       )
     );
-  }, [songResults]);
+  }, [songResults, effectiveOffline]);
 
   useEffect(() => {
+    if (effectiveOffline) return;
     setAlbumData(
       _.flatten(
         albumResults?.pages.map((page: SearchPage) => {
@@ -174,9 +189,10 @@ const SearchView = () => {
         })
       )
     );
-  }, [albumResults]);
+  }, [albumResults, effectiveOffline]);
 
   useEffect(() => {
+    if (effectiveOffline) return;
     setArtistData(
       _.flatten(
         artistResults?.pages.map((page: SearchPage) => {
@@ -184,28 +200,69 @@ const SearchView = () => {
         })
       )
     );
-  }, [artistResults]);
+  }, [artistResults, effectiveOffline]);
+
+  // Offline browsing (ADR Section 5.1) -- Search has no dedicated storage of
+  // its own even when online (it's already a server-side search); the
+  // offline version is pure client-side computation over the same local
+  // snapshot Albums/Artists use, not a new sync. No pagination offline --
+  // every match is returned in one pass.
+  useEffect(() => {
+    if (!effectiveOffline) return;
+    if (debouncedSearchQuery === '') {
+      setSongData([]);
+      setAlbumData([]);
+      setArtistData([]);
+      return;
+    }
+    const query = debouncedSearchQuery.trim().toLowerCase();
+    const songs = getCachedSongs();
+    setSongData(searchSongsOffline(songs, debouncedSearchQuery).map(libraryCacheSongToSong));
+    setAlbumData(buildAlbumsFromSongs(songs).filter((a) => a.title?.toLowerCase().includes(query)));
+    setArtistData(
+      buildArtistsFromSongs(songs).filter((a) => a.title?.toLowerCase().includes(query))
+    );
+  }, [effectiveOffline, debouncedSearchQuery, getCachedSongs]);
+
+  const isLoadingSongs = effectiveOffline ? false : onlineIsLoadingSongs;
+  const isLoadingAlbums = effectiveOffline ? false : onlineIsLoadingAlbums;
+  const isLoadingArtists = effectiveOffline ? false : onlineIsLoadingArtists;
 
   const { handleFavorite } = useFavorite();
   const { handleRating } = useRating();
+  const isAvailableOfflineCheck = useIsAvailableOffline();
 
   const { handleRowClick, handleRowDoubleClick } = useListClickHandler({
     doubleClick: (rowData: RowDataType) => {
       if (rowData.isDir) {
         navigate(`/library/folder?folderId=${rowData.parent}`);
-      } else {
-        dispatch(
-          setPlayQueueByRowClick({
-            entries: songData.filter((entry) => entry.isDir !== true),
-            currentIndex: rowData.rowIndex as number,
-            currentSongId: rowData.id as string,
-            uniqueSongId: rowData.uniqueId as string,
-            filters: config.playback.filters,
-          })
-        );
-        dispatch(setStatus('PLAYING'));
-        dispatch(fixPlayer2Index());
+        return;
       }
+
+      // Genre has no playback double-click at all (its rows are genre
+      // summaries, not songs -- nothing to gate there). Search's row
+      // double-click is a separate path from the "play all" buttons
+      // (dispatchSongsToQueue/usePlayQueueHandler), which don't cover it --
+      // Album/Artist/Playlist's own row double-click isn't gated here since
+      // that's a judgment call scoped specifically to Search (no offline
+      // browsing view lets you see unavailability before double-clicking a
+      // row the way Album/Artist/Playlist's offline-status column does).
+      if (effectiveOffline && !isAvailableOfflineCheck(rowData.id as string)) {
+        notifyToast('warning', t("This track isn't available offline."));
+        return;
+      }
+
+      dispatch(
+        setPlayQueueByRowClick({
+          entries: songData.filter((entry) => entry.isDir !== true),
+          currentIndex: rowData.rowIndex as number,
+          currentSongId: rowData.id as string,
+          uniqueSongId: rowData.uniqueId as string,
+          filters: config.playback.filters,
+        })
+      );
+      dispatch(setStatus('PLAYING'));
+      dispatch(fixPlayer2Index());
     },
   });
 

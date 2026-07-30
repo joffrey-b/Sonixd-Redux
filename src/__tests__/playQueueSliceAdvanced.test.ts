@@ -21,6 +21,7 @@ import playQueueReducer, {
   setPlayerSrc,
   restoreState,
   setSort,
+  setPlayQueueByRowClick,
   sortPlayQueue,
   moveToTop,
   moveToBottom,
@@ -297,6 +298,35 @@ describe('playQueueSlice — basic reducers', () => {
 
     const state2 = playQueueReducer(state, setPlayerSrc({ player: 2, src: 'http://stream/song2' }));
     expect(state2.player2.src).toBe('http://stream/song2');
+  });
+
+  it('audit fix: setPlayQueue does not optimistically assign the raw streamUrl to player1.src', () => {
+    // Player.tsx's own async effect (downloaded -> cached -> network) is the
+    // sole writer of player1.src, via setPlayerSrc, ~100ms after the queue is
+    // populated -- an optimistic assignment here would make the <audio>
+    // element fetch the network stream immediately, bypassing that check
+    // (caught by a live e2e run: a fully-downloaded track still fired one
+    // real stream.view request).
+    const state = loadQueue([makeSong({ id: 'a', uniqueId: 'uid-a' })]);
+    expect(state.player1.src).toBe('');
+  });
+
+  it('audit fix: setPlayQueueByRowClick does not optimistically assign the raw streamUrl to player1.src', () => {
+    const songs = [
+      makeSong({ id: 'a', uniqueId: 'uid-a' }),
+      makeSong({ id: 'b', uniqueId: 'uid-b' }),
+    ];
+    const state = playQueueReducer(
+      getInitialState(),
+      setPlayQueueByRowClick({
+        entries: songs,
+        currentIndex: 1,
+        currentSongId: 'b',
+        uniqueSongId: 'uid-b',
+        filters: [],
+      })
+    );
+    expect(state.player1.src).toBe('');
   });
 });
 
