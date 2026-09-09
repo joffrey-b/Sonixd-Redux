@@ -53,7 +53,7 @@ fi
 echo "Authenticating..."
 AUTH_RESPONSE=$(curl -s -X POST "$BASE/Users/AuthenticateByName" \
   -H "Content-Type: application/json" \
-  -H "X-Emby-Authorization: $AUTH_HEADER" \
+  -H "Authorization: $AUTH_HEADER" \
   -d '{"Username":"admin","Pw":"admin"}')
 
 TOKEN=$(echo "$AUTH_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['AccessToken'])" 2>/dev/null || true)

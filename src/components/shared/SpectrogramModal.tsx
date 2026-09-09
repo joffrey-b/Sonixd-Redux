@@ -271,6 +271,7 @@ const SpectrogramModal = ({ show, handleHide, streamUrl, title, artist }: Props)
     URL.revokeObjectURL(blobUrl);
 
     let workerActive = true;
+    const abortController = new AbortController();
 
     // Register onerror immediately — if the worker script fails to load (404,
     // CSP block, etc.) the ErrorEvent fires right away, before the async IIFE
@@ -281,7 +282,7 @@ const SpectrogramModal = ({ show, handleHide, streamUrl, title, artist }: Props)
 
     (async () => {
       try {
-        const response = await fetch(streamUrl);
+        const response = await fetch(streamUrl, { signal: abortController.signal });
         if (!workerActive) return;
         if (!response.ok) throw new Error('fetch failed');
         const arrayBuffer = await response.arrayBuffer();
@@ -450,6 +451,7 @@ const SpectrogramModal = ({ show, handleHide, streamUrl, title, artist }: Props)
 
     return () => {
       workerActive = false;
+      abortController.abort();
       worker.postMessage({ type: 'cancel' });
       worker.terminate();
     };

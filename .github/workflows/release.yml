@@ -4,7 +4,7 @@ name: Release
 # every push/PR is handled by the GitLab CI pipeline (.gitlab-ci.yml) — this
 # workflow exists solely to gate and produce release artifacts, with each
 # stage required to pass before the next starts:
-#   test -> e2e -> build-linux + build-windows + build-macos (parallel)
+#   test -> e2e -> create-release -> build-linux + build-windows + build-macos (parallel)
 # A tag push with broken code (or a passing build but a broken e2e suite)
 # can no longer slip through and publish artifacts, which the previous
 # independent publish-*.yml workflows allowed.
@@ -140,13 +140,48 @@ jobs:
         working-directory: e2e
 
   # ---------------------------------------------------------------------------
+  # Creates the draft GitHub release for this tag before any build job starts.
+  # Without this, build-linux/build-windows/build-macos each independently ask
+  # electron-builder to find-or-create a release for this tag when they
+  # publish -- since those three run in parallel, more than one can see "no
+  # release exists yet" at the same moment and each create its own draft,
+  # splitting the ~21 total assets across two separate releases instead of
+  # one (observed firsthand publishing v1.2.1, 2026-09-09: a 17-asset draft
+  # and a 6-asset draft). Creating it here first, sequentially, means every
+  # build job's publish step finds an already-existing release and just
+  # uploads its assets to it -- no race. Idempotent (gh release view first)
+  # so re-running after a partial failure doesn't error on an
+  # already-created release.
+  #
+  # Skipped on a non-tag workflow_dispatch run (no version to create a
+  # release for) -- the build jobs' `if:` below lets them proceed anyway in
+  # that case, preserving today's existing behavior for manual test runs.
+  # ---------------------------------------------------------------------------
+  create-release:
+    needs: [e2e]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release if it doesn't already exist
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists, nothing to do."
+          else
+            gh release create "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft --title "${{ github.ref_name }}" --notes ""
+          fi
+
+  # ---------------------------------------------------------------------------
   # Build jobs — faithfully reproduced from publish-linux.yml,
   # publish-windows.yml and publish-macos.yml. Only the trigger (now on the
-  # parent workflow only) and `needs: [e2e]` have changed; commands, flags
-  # and secrets are otherwise identical to the original workflows.
+  # parent workflow only), `needs`/`if` (create-release, below) have changed;
+  # commands, flags and secrets are otherwise identical to the original
+  # workflows.
   # ---------------------------------------------------------------------------
   build-linux:
-    needs: [e2e]
+    needs: [e2e, create-release]
+    if: needs.create-release.result == 'success' || needs.create-release.result == 'skipped'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout git repo
@@ -175,7 +210,8 @@ jobs:
           yarn postinstall && yarn build && yarn electron-builder --publish always --arm64
 
   build-windows:
-    needs: [e2e]
+    needs: [e2e, create-release]
+    if: needs.create-release.result == 'success' || needs.create-release.result == 'skipped'
     runs-on: windows-latest
     steps:
       - name: Checkout git repo
@@ -226,7 +262,8 @@ jobs:
           shell: cmd
 
   build-macos:
-    needs: [e2e]
+    needs: [e2e, create-release]
+    if: needs.create-release.result == 'success' || needs.create-release.result == 'skipped'
     runs-on: macos-latest
     steps:
       - name: Checkout git repo

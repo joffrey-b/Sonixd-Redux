@@ -79,7 +79,7 @@ describe('jellyfinApi.ts — per-request credentials', () => {
     await jellyfinApi.get('/Users');
 
     const config = mockAdapter.mock.calls[0][0];
-    expect(config.headers?.['X-MediaBrowser-Token']).toBe('default-token');
+    expect(config.headers?.Authorization).toBe('MediaBrowser Token="default-token"');
   });
 
   it('after server switch, next request uses the new server URL', async () => {
@@ -111,6 +111,6 @@ describe('jellyfinApi.ts — per-request credentials', () => {
 
     const config = mockAdapter.mock.calls[0][0];
     // Token should be our per-request mock value, not an empty string from module load time
-    expect(config.headers?.['X-MediaBrowser-Token']).toBe('default-token');
+    expect(config.headers?.Authorization).toBe('MediaBrowser Token="default-token"');
   });
 });

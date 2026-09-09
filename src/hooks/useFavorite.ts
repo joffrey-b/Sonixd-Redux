@@ -21,8 +21,7 @@ interface FavoriteOptions {
 }
 
 type StarrableCacheData =
-  | { data?: StarrableItem[]; album?: StarrableItem[]; song?: StarrableItem[] }
-  | StarrableItem[];
+  { data?: StarrableItem[]; album?: StarrableItem[]; song?: StarrableItem[] } | StarrableItem[];
 
 const useFavorite = () => {
   const dispatch = useAppDispatch();

@@ -1,0 +1,124 @@
+name: Backend Compatibility Check
+
+# Runs the full test suite (lint/typecheck/jest) and the E2E suite weekly,
+# against freshly-pulled Navidrome and Jellyfin images (docker compose pull,
+# same as release.yml's e2e job) -- catches an upstream server release
+# breaking this app (e.g. Jellyfin 12.0 disabling legacy auth headers by
+# default, 2026-09-08) within a week, instead of only at the next actual
+# release attempt. GitHub emails the repo owner automatically when a
+# scheduled workflow run fails -- no notification step needed here.
+#
+# Deliberately a near-duplicate of release.yml's test/e2e jobs rather than a
+# shared/reusable workflow: those jobs gate real releases and stay untouched
+# on their own, so a change here can never affect them.
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch: # allow manual runs, e.g. to verify this workflow itself
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js, NPM and Yarn
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'yarn'
+
+      - name: yarn install
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+        run: |
+          yarn install --frozen-lockfile --network-timeout 300000 --network-concurrency 1
+
+      - name: Download Electron binary
+        run: node node_modules/electron/install.js
+
+      - name: yarn test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          yarn package
+          yarn lint
+          yarn tsc-silent -p ./tsconfig.json --suppress 2702@/node_modules/react-chartjs-2/ 9006@/src/main.dev.mjs
+          yarn test
+
+  e2e:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'yarn'
+
+      - name: Install system dependencies (MPV, Xvfb, audio)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y mpv xvfb libasound2-dev libpulse-dev
+
+      - name: Generate TLS certificate for self-signed cert tests
+        run: bash e2e/scripts/setup-tls.sh
+
+      - name: Start Docker services
+        run: |
+          cd e2e
+          docker compose pull --quiet
+          docker compose up -d
+
+      - name: Wait for services
+        run: bash scripts/wait-for-services.sh
+        working-directory: e2e
+
+      - name: Setup Navidrome
+        run: bash scripts/setup-navidrome.sh
+        working-directory: e2e
+
+      - name: Setup Jellyfin
+        run: bash scripts/setup-jellyfin.sh
+        working-directory: e2e
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --network-timeout 300000
+
+      - name: Build app
+        run: yarn build
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        # See release.yml's identical step for why SONIXD_CI_AUDIO=null.
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" yarn e2e
+        env:
+          DISPLAY: ':99'
+          SONIXD_CI_AUDIO: 'null'
+
+      - name: Capture service logs
+        if: always()
+        run: |
+          cd e2e
+          docker compose logs navidrome > navidrome.log 2>&1 || true
+          docker compose logs jellyfin > jellyfin.log 2>&1 || true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report/
+            e2e/navidrome.log
+            e2e/jellyfin.log
+          retention-days: 14
+
+      - name: Tear down Docker services
+        if: always()
+        run: docker compose down -v
+        working-directory: e2e

@@ -1,7 +1,7 @@
 {
   "name": "sonixd-redux",
   "productName": "Sonixd Redux",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Sonixd Redux",
   "main": "./main.prod.js",
   "author": {
@@ -14,7 +14,7 @@
   },
   "license": "GPL-3.0",
   "devDependencies": {
-    "electron": "42.2.0"
+    "electron": "44.2.0"
   },
   "dependencies": {}
 }

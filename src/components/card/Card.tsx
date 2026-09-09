@@ -138,7 +138,7 @@ const Card = ({
                   </CustomImageGrid>
                 </CustomImageGridWrapper>
               </CoverArtWrapper>
-            ) : rest.coverArt?.match?.('placeholder') ? (
+            ) : !rest.coverArt || rest.coverArt?.match?.('placeholder') ? (
               <CardImgWrapper
                 id="placeholder-wrapper"
                 $size={size}

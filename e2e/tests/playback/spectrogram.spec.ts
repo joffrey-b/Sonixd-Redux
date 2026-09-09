@@ -150,10 +150,19 @@ test.describe('Spectrogram — Solo Track (track-04)', () => {
     // teardown — no crash or hang left behind. Playback was never started in
     // this test, so don't rely on the time counter advancing; just confirm the
     // page is still responsive to a basic interaction.
+    //
+    // Audit fix: this used to check for TRACKS.soloTrack.title ("Solo Track") here,
+    // but clicking nav-albums navigates to the Albums GRID, which lists album names
+    // ("Solo Album"), never individual track titles — confirmed via a live GitHub
+    // Actions failure's ARIA snapshot and screenshot, both showing a fully-settled,
+    // perfectly responsive Albums grid with no "Solo Track" text anywhere on it. The
+    // old assertion could only ever pass by racing a stale pre-navigation frame
+    // still being painted when Playwright's poll happened to catch it — inherently
+    // flaky by construction, not a real signal of app health.
     await expect(window.locator('[data-testid="player-bar"]')).toBeVisible();
     await window.click('[data-testid="nav-albums"]');
     await expect(
-      window.locator('#container-content').getByText(TRACKS.soloTrack.title).first()
+      window.locator('#container-content').getByText(TRACKS.soloTrack.album).first()
     ).toBeVisible({ timeout: 5_000 });
   });
 

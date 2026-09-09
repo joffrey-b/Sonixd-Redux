@@ -210,12 +210,7 @@ export interface Pagination {
 }
 
 export type SmartPlaylistRuleField =
-  | 'genre'
-  | 'year'
-  | 'playCount'
-  | 'rating'
-  | 'starred'
-  | 'duration';
+  'genre' | 'year' | 'playCount' | 'rating' | 'starred' | 'duration';
 
 export type SmartPlaylistRuleOperator = 'is' | 'isNot' | 'gte' | 'lte' | 'gt' | 'lt' | 'between';
 

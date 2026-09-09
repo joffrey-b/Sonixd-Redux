@@ -4,6 +4,27 @@ All notable changes to Sonixd Redux are documented here.
 
 ---
 
+## [1.2.1]
+
+This release fixes a Jellyfin login problem, on top of routine maintenance to
+keep the app's underlying components current and secure.
+
+### Fixed
+
+- **Couldn't log in to a Jellyfin server running version 12.0 or later, or got logged out unexpectedly if already connected**: Jellyfin 12.0 turned off an older authentication method by default that Sonixd Redux was still relying on for both logging in and every request afterward. If you connect to Jellyfin, this is fixed.
+- **Playback and downloads from a Jellyfin server could fail even after logging in successfully**: a separate, older authentication method used specifically for streaming and downloading songs stopped working the same way. Fixed alongside the login issue above.
+- **A playlist with no cover art could briefly try to load a broken/empty image** instead of showing the usual placeholder icon. Cosmetic only, but now shows the placeholder icon consistently.
+
+### Maintenance
+
+- **Electron** (the framework the app is built on) **42.4.0 → 44.2.0**
+- **react-router-dom** (in-app navigation) **7.17.0 → 7.18.3**
+- **nanoid** (internal ID generator) **5.1.11 → 5.1.16**
+- **styled-components** (internal styling library) **6.4.2 → 6.4.4**
+- **Added automated weekly testing against the latest Navidrome and Jellyfin releases**, so a breaking change on their end (like the Jellyfin issue above) gets caught automatically within a week instead of by chance.
+
+---
+
 ## [1.2.0]
 
 This release introduces Offline Mode: Sonixd Redux can now detect when your

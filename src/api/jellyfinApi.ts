@@ -208,7 +208,7 @@ jellyfinApi.interceptors.request.use(
     const raw = await settings.getCredentials();
     const { token, server } = deriveJellyfinCredentials(raw);
     config.baseURL = server;
-    config.headers['X-MediaBrowser-Token'] = token;
+    config.headers.Authorization = `MediaBrowser Token="${token}"`;
 
     return config;
   },
@@ -259,7 +259,7 @@ const getStreamUrl = (id: string, container: string, mediaSourceId: string, eTag
       `&deviceId=${deviceId}` +
       `&mediaSourceId=${mediaSourceId}` +
       `&tag=${eTag}` +
-      `&api_key=${token}`
+      `&ApiKey=${token}`
     );
   }
 
@@ -269,7 +269,7 @@ const getStreamUrl = (id: string, container: string, mediaSourceId: string, eTag
     `?userId=${username}` +
     `&deviceId=${deviceId}` +
     `&audioCodec=aac` +
-    `&api_key=${token}` +
+    `&ApiKey=${token}` +
     `&playSessionId=${deviceId}` +
     `&container=opus,mp3,aac,m4a,m4b,flac,wav,ogg` +
     `&transcodingContainer=ts` +
@@ -306,7 +306,7 @@ const getCoverArtUrl = (item: JellyfinCoverArtItem, size?: number) => {
 
 export const getDownloadUrl = (options: { id: string }) => {
   const { server, token } = getJellyfinCredentials();
-  return `${server}/items/${options.id}/download?api_key=${token}`;
+  return `${server}/items/${options.id}/download?ApiKey=${token}`;
 };
 
 const normalizeAPIResult = (items: unknown[], totalRecordCount?: number) => {

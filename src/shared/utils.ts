@@ -283,12 +283,9 @@ export const moveSelectedUp = <T extends { uniqueId?: string }>(
   const cr = consecutiveRanges(selectedIndexesAsc);
 
   // Handle case when index hits 0
-  if (
-    !(
-      selectedIndexesAsc.includes(0) &&
-      areConsecutive(selectedIndexesAsc, selectedIndexesAsc.length)
-    )
-  ) {
+  if (!(
+    selectedIndexesAsc.includes(0) && areConsecutive(selectedIndexesAsc, selectedIndexesAsc.length)
+  )) {
     selectedIndexesAsc.map((index: number) => {
       if (cr[0]?.includes(0)) {
         if (!cr[0]?.includes(index) && index !== 0) {
@@ -318,12 +315,10 @@ export const moveSelectedDown = <T extends { uniqueId?: string }>(
   const selectedIndexesDesc = selectedIndices.sort((a, b) => b - a);
 
   // Handle case when index hits the end
-  if (
-    !(
-      selectedIndexesDesc.includes(entryData.length - 1) &&
-      areConsecutive(selectedIndexesDesc, selectedIndexesDesc.length)
-    )
-  ) {
+  if (!(
+    selectedIndexesDesc.includes(entryData.length - 1) &&
+    areConsecutive(selectedIndexesDesc, selectedIndexesDesc.length)
+  )) {
     selectedIndexesDesc.map((index) => {
       if (cr[0]?.includes(entryData.length - 1)) {
         if (!cr[0]?.includes(index) && index !== entryData.length - 1) {

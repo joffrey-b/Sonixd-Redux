@@ -130,7 +130,7 @@ const Login = () => {
         },
         {
           headers: {
-            'X-Emby-Authorization': `MediaBrowser Client="Sonixd Redux", Device="PC", DeviceId="${deviceId}", Version="${packageJson.version}"`,
+            Authorization: `MediaBrowser Client="Sonixd Redux", Device="PC", DeviceId="${deviceId}", Version="${packageJson.version}"`,
           },
         }
       );
